@@ -28,8 +28,6 @@ The current app mode is native/root mode. A rootless `VpnService` mode is planne
 The app currently bundles:
 
 - `app/src/main/assets/xray_arm64`
-- `app/src/main/assets/geoip.dat`
-- `app/src/main/assets/geosite.dat`
 
 Only arm64 is wired up at the moment.
 
@@ -69,11 +67,12 @@ When the pushed ref is a tag that starts with `v` such as `v1.3.2`, the workflow
 
 ## Runtime Notes
 
-MaterialXray starts a root shell, extracts Xray and geo data into the app files directory, writes an Xray config, starts the Xray process, waits for the TUN interface, and then applies Android policy routing.
+MaterialXray starts a root shell, extracts Xray into the app files directory, downloads `geoip.dat` and `geosite.dat` into the same runtime directory when needed, writes an Xray config, starts the Xray process, waits for the TUN interface, and then applies Android policy routing.
 
 Xray's own outbound traffic is marked and bound to the detected physical interface so it does not get captured by the TUN route. When Android switches between Wi-Fi and cellular, the service debounces network callbacks, checks the live physical route, and reconnects Xray if the outbound interface changed.
 
 The default TUN interface name is configurable in the app settings. Existing local test devices may have it saved as `wlan2`; the default setting is `xray0`.
+The routing data download URLs are configurable in settings as direct file URLs and default to Loyalsoldier's `v2ray-rules-dat` release downloads.
 
 ## Project Layout
 

@@ -21,17 +21,11 @@ class XrayBinary(private val context: Context) {
         val versionFile = File(binaryDir, "version")
         val currentVersion = getAppVersion()
         val needsExtract = !File(binaryDir, "xray").exists() ||
-            !File(binaryDir, "geoip.dat").exists() ||
-            !File(binaryDir, "geosite.dat").exists() ||
             !versionFile.exists() ||
             versionFile.readText() != currentVersion
 
         if (needsExtract) {
-            // Extract xray binary
             if (!extractAsset(assetName, "xray", executable = true)) return false
-            // Extract geo data files next to the binary
-            extractAsset("geoip.dat", "geoip.dat", executable = false)
-            extractAsset("geosite.dat", "geosite.dat", executable = false)
             versionFile.writeText(currentVersion)
         }
 

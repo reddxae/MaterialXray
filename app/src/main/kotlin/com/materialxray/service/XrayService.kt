@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import com.materialxray.MainActivity
 import com.materialxray.core.root.RootShell
 import com.materialxray.core.xray.ConfigGenerator
+import com.materialxray.core.xray.GeoDataManager
 import com.materialxray.data.db.dao.AppBypassDao
 import com.materialxray.data.repository.SettingsRepository
 import com.materialxray.model.ConnectionState
@@ -35,6 +36,7 @@ class XrayService : Service() {
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var connectionStateHolder: ConnectionStateHolder
     @Inject lateinit var logBuffer: LogBuffer
+    @Inject lateinit var geoDataManager: GeoDataManager
 
     private lateinit var connectionManager: ConnectionManager
     private lateinit var xrayLogStreamer: XrayLogStreamer
@@ -50,6 +52,7 @@ class XrayService : Service() {
             context = this,
             shell = rootShell,
             configGenerator = ConfigGenerator(),
+            geoDataManager = geoDataManager,
             appBypassDao = appBypassDao,
             stateHolder = connectionStateHolder,
             log = logBuffer,
@@ -197,6 +200,7 @@ class XrayService : Service() {
         val text = overrideText ?: when (state) {
             is ConnectionState.Connected -> "${state.serverName} | Native: ${state.tunName} -> ${state.physicalInterface}"
             is ConnectionState.Connecting -> "Connecting..."
+            ConnectionState.UpdatingRoutingData -> "Updating routing data..."
             is ConnectionState.Disconnecting -> "Disconnecting..."
             is ConnectionState.Error -> "Error: ${state.message}"
             ConnectionState.Disconnected -> return

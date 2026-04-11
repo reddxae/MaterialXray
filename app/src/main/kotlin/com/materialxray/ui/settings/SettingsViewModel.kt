@@ -33,10 +33,22 @@ class SettingsViewModel @Inject constructor(
     val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
     val dnsServers = settingsRepo.dnsServers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1.1.1.1,8.8.8.8")
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val geoipUrl = settingsRepo.geoipUrl.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        SettingsRepository.DEFAULT_GEOIP_URL,
+    )
+    val geositeUrl = settingsRepo.geositeUrl.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        SettingsRepository.DEFAULT_GEOSITE_URL,
+    )
 
     fun setTunName(name: String) = viewModelScope.launch { settingsRepo.setTunName(name) }
     fun setDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setDnsServers(servers) }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
+    fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }
+    fun setGeositeUrl(url: String) = viewModelScope.launch { settingsRepo.setGeositeUrl(url) }
 
     fun exportBackup(uri: Uri) {
         viewModelScope.launch {

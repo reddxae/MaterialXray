@@ -17,9 +17,21 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val tunName by viewModel.tunName.collectAsState()
     val dnsServers by viewModel.dnsServers.collectAsState()
     val autoConnect by viewModel.autoConnect.collectAsState()
+    val geoipUrl by viewModel.geoipUrl.collectAsState()
+    val geositeUrl by viewModel.geositeUrl.collectAsState()
 
     var editingTunName by remember(tunName) { mutableStateOf(tunName) }
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
+    var editingGeoipUrl by remember(geoipUrl) { mutableStateOf(geoipUrl) }
+    var editingGeositeUrl by remember(geositeUrl) { mutableStateOf(geositeUrl) }
+    val hasTunNameChanges by remember(editingTunName, tunName) { derivedStateOf { editingTunName != tunName } }
+    val hasDnsChanges by remember(editingDns, dnsServers) { derivedStateOf { editingDns != dnsServers } }
+    val hasGeoipUrlChanges by remember(editingGeoipUrl, geoipUrl) {
+        derivedStateOf { editingGeoipUrl.trim() != geoipUrl }
+    }
+    val hasGeositeUrlChanges by remember(editingGeositeUrl, geositeUrl) {
+        derivedStateOf { editingGeositeUrl.trim() != geositeUrl }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -50,7 +62,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text("Default: xray0") },
             )
-            if (editingTunName != tunName) {
+            if (hasTunNameChanges) {
                 TextButton(onClick = { viewModel.setTunName(editingTunName) }) { Text("Save") }
             }
 
@@ -62,8 +74,36 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = { Text("Comma-separated, e.g. 1.1.1.1,8.8.8.8") },
             )
-            if (editingDns != dnsServers) {
+            if (hasDnsChanges) {
                 TextButton(onClick = { viewModel.setDnsServers(editingDns) }) { Text("Save") }
+            }
+
+            OutlinedTextField(
+                value = editingGeoipUrl,
+                onValueChange = { editingGeoipUrl = it },
+                label = { Text("GeoIP URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                supportingText = {
+                    Text("Direct URL for the geoip.dat download")
+                },
+            )
+            if (hasGeoipUrlChanges) {
+                TextButton(onClick = { viewModel.setGeoipUrl(editingGeoipUrl) }) { Text("Save") }
+            }
+
+            OutlinedTextField(
+                value = editingGeositeUrl,
+                onValueChange = { editingGeositeUrl = it },
+                label = { Text("GeoSite URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                supportingText = {
+                    Text("Direct URL for the geosite.dat download")
+                },
+            )
+            if (hasGeositeUrlChanges) {
+                TextButton(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) { Text("Save") }
             }
 
             HorizontalDivider()

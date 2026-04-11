@@ -3,6 +3,7 @@ package com.materialxray.model
 sealed interface ConnectionState {
     data object Disconnected : ConnectionState
     data object Connecting : ConnectionState
+    data object UpdatingRoutingData : ConnectionState
     data class Connected(
         val serverName: String,
         val corePid: Int,

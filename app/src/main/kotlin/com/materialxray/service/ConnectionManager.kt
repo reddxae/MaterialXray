@@ -14,6 +14,7 @@ class ConnectionManager(
     private val context: Context,
     private val shell: RootShell,
     private val configGenerator: ConfigGenerator,
+    private val geoDataManager: GeoDataManager,
     private val appBypassDao: AppBypassDao,
     private val stateHolder: ConnectionStateHolder,
     private val log: LogBuffer,
@@ -57,12 +58,28 @@ class ConnectionManager(
             prepareLogFile()
             onXrayLogReady()
 
-            log.append(LogSource.APP, "Extracting xray binary and geo data...")
+            log.append(LogSource.APP, "Extracting xray binary...")
             if (!xrayBinary.ensureExtracted()) {
                 fail("xray binary not found — check assets")
                 return
             }
             log.append(LogSource.APP, "xray binary ready at ${xrayBinary.binaryPath}")
+
+            log.append(LogSource.APP, "Checking routing data...")
+            if (geoDataManager.needsRefresh()) {
+                stateHolder.update(ConnectionState.UpdatingRoutingData)
+                log.append(LogSource.APP, "Updating routing data...")
+            }
+            val geoDataStatus = geoDataManager.ensureReady()
+            stateHolder.update(ConnectionState.Connecting)
+            if (geoDataStatus.downloaded) {
+                log.append(
+                    LogSource.APP,
+                    "Routing data updated (geoip=${geoDataStatus.geoipUrl}, geosite=${geoDataStatus.geositeUrl})",
+                )
+            } else {
+                log.append(LogSource.APP, "Routing data already up to date")
+            }
 
             val physicalRoute = tunManager.detectPhysicalRoute(tunName)
             if (physicalRoute == null) {

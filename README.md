@@ -39,6 +39,16 @@ Only arm64 is wired up at the moment.
 ./gradlew assembleDebug
 ```
 
+Build a signed release locally:
+
+```sh
+RELEASE_KEYSTORE_PATH=/path/to/release.keystore \
+RELEASE_KEY_ALIAS=your_alias \
+RELEASE_KEY_PASSWORD=your_key_password \
+RELEASE_STORE_PASSWORD=your_store_password \
+./gradlew assembleRelease
+```
+
 Run unit tests:
 
 ```sh
@@ -50,6 +60,12 @@ Install the debug build to a connected device:
 ```sh
 ./gradlew installDebug
 ```
+
+## CI
+
+GitHub Actions builds `app:assembleDebug` on every pushed commit and uploads `app-debug.apk` as a workflow artifact.
+
+When the pushed ref is a tag that starts with `v` such as `v1.3.2`, the workflow switches to `app:assembleRelease`, signs the APK from CI secrets, and publishes a GitHub Release with the signed APK attached.
 
 ## Runtime Notes
 

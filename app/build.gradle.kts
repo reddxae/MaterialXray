@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ksp)
@@ -5,6 +7,25 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
 }
+
+val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH")
+    .orElse(providers.gradleProperty("releaseKeystorePath"))
+    .orNull
+val releaseKeyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS")
+    .orElse(providers.gradleProperty("releaseKeyAlias"))
+    .orNull
+val releaseKeyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD")
+    .orElse(providers.gradleProperty("releaseKeyPassword"))
+    .orNull
+val releaseStorePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD")
+    .orElse(providers.gradleProperty("releaseStorePassword"))
+    .orNull
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseKeyAlias,
+    releaseKeyPassword,
+    releaseStorePassword,
+).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.materialxray"
@@ -18,22 +39,28 @@ android {
         versionName = "1.0.0"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = File(requireNotNull(releaseKeystorePath))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
     buildFeatures {
         compose = true
-    }
-
-    androidResources {
-        noCompress += "xray_arm64"
-        noCompress += "xray_x86_64"
-        noCompress += "geoip.dat"
-        noCompress += "geosite.dat"
     }
 
     packaging {

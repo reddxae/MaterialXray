@@ -11,6 +11,6 @@ local.properties
 # xray binaries (downloaded via scripts/download-xray.sh)
 app/src/main/jniLibs/
 
-# Brainstorm artifacts
-.superpowers/
-handoff.md
+app/release/
+gradle/gradle-daemon-jvm.properties
+

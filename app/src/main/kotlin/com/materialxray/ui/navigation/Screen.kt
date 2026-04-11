@@ -14,6 +14,6 @@ enum class Screen(
 ) {
     Home("home", "Home", Icons.Default.Home),
     Logs("logs", "Logs", Icons.AutoMirrored.Filled.Article),
-    Apps("apps", "Apps", Icons.Default.Apps),
+    Routing("routing", "Routing", Icons.Default.Apps),
     Settings("settings", "Settings", Icons.Default.Settings),
 }

@@ -11,6 +11,7 @@ import com.materialxray.data.repository.SubscriptionRepository
 import com.materialxray.model.ConnectionState
 import com.materialxray.model.ServerConfig
 import com.materialxray.service.ConnectionStateHolder
+import com.materialxray.service.RoutingChangeManager
 import com.materialxray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,6 +36,7 @@ class HomeViewModel @Inject constructor(
     private val serverRepo: ServerRepository,
     private val subscriptionRepo: SubscriptionRepository,
     private val connectionStateHolder: ConnectionStateHolder,
+    private val routingChangeManager: RoutingChangeManager,
 ) : ViewModel() {
     private val json = Json { ignoreUnknownKeys = true }
     private val endpointSummaryCache = mutableMapOf<String, String>()
@@ -67,6 +69,7 @@ class HomeViewModel @Inject constructor(
 
     fun connect() {
         val server = selectedServer.value ?: return
+        routingChangeManager.clearPendingChanges()
         XrayService.connect(context, server)
     }
 
@@ -75,7 +78,18 @@ class HomeViewModel @Inject constructor(
     }
 
     fun selectServer(serverId: Long) {
-        viewModelScope.launch { settingsRepo.setLastServerId(serverId) }
+        viewModelScope.launch {
+            if (serverId == selectedServerId.value) return@launch
+            settingsRepo.setLastServerId(serverId)
+
+            val state = connectionState.value
+            if (state is ConnectionState.Connected || state is ConnectionState.Error) {
+                val serverEntity = allServers.value.find { it.id == serverId } ?: return@launch
+                val config = runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull() ?: return@launch
+                routingChangeManager.clearPendingChanges()
+                XrayService.connect(context, config)
+            }
+        }
     }
 
     fun addSubscription(name: String, url: String) {

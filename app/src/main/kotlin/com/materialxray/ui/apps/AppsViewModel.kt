@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.materialxray.data.db.dao.AppBypassDao
 import com.materialxray.data.db.entity.AppBypassEntity
+import com.materialxray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ data class AppItem(
 class AppsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val appBypassDao: AppBypassDao,
+    private val routingChangeManager: RoutingChangeManager,
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -74,6 +76,7 @@ class AppsViewModel @Inject constructor(
         viewModelScope.launch {
             if (app.isExcluded) appBypassDao.delete(app.packageName)
             else appBypassDao.upsert(AppBypassEntity(app.packageName, app.uid, excluded = true))
+            routingChangeManager.markPendingChanges()
         }
     }
 
@@ -82,10 +85,14 @@ class AppsViewModel @Inject constructor(
     fun excludeAll() {
         viewModelScope.launch {
             _installedApps.value.forEach { appBypassDao.upsert(AppBypassEntity(it.packageName, it.uid, excluded = true)) }
+            routingChangeManager.markPendingChanges()
         }
     }
 
     fun includeAll() {
-        viewModelScope.launch { appBypassDao.deleteAll() }
+        viewModelScope.launch {
+            appBypassDao.deleteAll()
+            routingChangeManager.markPendingChanges()
+        }
     }
 }

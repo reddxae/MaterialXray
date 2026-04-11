@@ -89,6 +89,9 @@ class XrayService : Service() {
                     stopSelf()
                 }
             }
+            ACTION_RELOAD -> {
+                scope.launch { reloadActiveConnection() }
+            }
         }
         return START_STICKY
     }
@@ -111,11 +114,30 @@ class XrayService : Service() {
     private fun stopLogTail() = xrayLogStreamer.stop()
 
     private suspend fun connectWithCurrentSettings(config: ServerConfig) {
+        connectWithCurrentSettings(config, ConnectionState.Connecting)
+    }
+
+    private suspend fun connectWithCurrentSettings(
+        config: ServerConfig,
+        transitionState: ConnectionState,
+    ) {
         val tunName = settingsRepo.tunName.first()
         val fwmark = settingsRepo.fwmark.first()
         val routeTable = settingsRepo.routeTable.first()
         val dns = settingsRepo.dnsServers.first()
-        connectionManager.connect(config, tunName, fwmark, routeTable, dns)
+        val routingRules = settingsRepo.routingRules.first()
+        connectionManager.connect(config, tunName, fwmark, routeTable, dns, routingRules, transitionState)
+    }
+
+    private suspend fun reloadActiveConnection() {
+        val config = activeConfig ?: return
+        networkReconnectJob?.cancel()
+        stopLogTail()
+        logBuffer.append(LogSource.APP, "Applying routing changes...")
+        connectionStateHolder.update(ConnectionState.ApplyingRoutingChanges)
+        updateNotification()
+        connectionManager.disconnect(updateState = false)
+        connectWithCurrentSettings(config, ConnectionState.ApplyingRoutingChanges)
     }
 
     private fun registerNetworkCallback() {
@@ -200,6 +222,7 @@ class XrayService : Service() {
         val text = overrideText ?: when (state) {
             is ConnectionState.Connected -> "${state.serverName} | Native: ${state.tunName} -> ${state.physicalInterface}"
             is ConnectionState.Connecting -> "Connecting..."
+            ConnectionState.ApplyingRoutingChanges -> "Applying routing changes..."
             ConnectionState.UpdatingRoutingData -> "Updating routing data..."
             is ConnectionState.Disconnecting -> "Disconnecting..."
             is ConnectionState.Error -> "Error: ${state.message}"
@@ -244,6 +267,7 @@ class XrayService : Service() {
         const val NOTIFICATION_ID = 1
         const val ACTION_CONNECT = "com.materialxray.CONNECT"
         const val ACTION_DISCONNECT = "com.materialxray.DISCONNECT"
+        const val ACTION_RELOAD = "com.materialxray.RELOAD"
         const val EXTRA_SERVER_CONFIG = "server_config"
         private const val NETWORK_RECONNECT_DELAY_MS = 2_000L
 
@@ -258,6 +282,12 @@ class XrayService : Service() {
         fun disconnect(context: Context) {
             context.startService(
                 Intent(context, XrayService::class.java).setAction(ACTION_DISCONNECT)
+            )
+        }
+
+        fun reload(context: Context) {
+            context.startService(
+                Intent(context, XrayService::class.java).setAction(ACTION_RELOAD)
             )
         }
     }

@@ -4,9 +4,14 @@ import android.content.Context
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.materialxray.model.RoutingRule
+import com.materialxray.model.RoutingRuleCatalog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,6 +22,7 @@ class SettingsRepository @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val store get() = context.dataStore
+    private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
         val TUN_NAME = stringPreferencesKey("tun_name")
@@ -27,7 +33,11 @@ class SettingsRepository @Inject constructor(
         val LAST_SERVER_ID = longPreferencesKey("last_server_id")
         val GEOIP_URL = stringPreferencesKey("geoip_url")
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
+        val ROUTING_RULES = stringPreferencesKey("routing_rules")
+        val ROUTING_RULES_VERSION = intPreferencesKey("routing_rules_version")
+        val ROUTING_RULE_STATES = stringPreferencesKey("routing_rule_states")
         private val LEGACY_GEO_DATA_BASE_URL = stringPreferencesKey("geo_data_base_url")
+        private const val CURRENT_ROUTING_RULES_VERSION = 2
 
         const val DEFAULT_GEOIP_URL =
             "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
@@ -51,6 +61,13 @@ class SettingsRepository @Inject constructor(
             ?: prefs[LEGACY_GEO_DATA_BASE_URL]?.let { legacyBaseUrl -> appendLegacyFileName(legacyBaseUrl, "geosite.dat") }
             ?: DEFAULT_GEOSITE_URL
     }
+    val routingRules: Flow<List<RoutingRule>> = store.data.map { prefs ->
+        decodeRoutingRules(
+            rulesEncoded = prefs[ROUTING_RULES],
+            rulesVersion = prefs[ROUTING_RULES_VERSION],
+            statesEncoded = prefs[ROUTING_RULE_STATES],
+        )
+    }
 
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
     suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }
@@ -67,6 +84,23 @@ class SettingsRepository @Inject constructor(
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
         val trimmedUrl = url.trim()
         if (trimmedUrl.isEmpty()) prefs.remove(GEOSITE_URL) else prefs[GEOSITE_URL] = trimmedUrl
+    }
+    suspend fun setRoutingRule(rule: RoutingRule) = store.edit { prefs ->
+        val updatedRules = decodeRoutingRules(
+            rulesEncoded = prefs[ROUTING_RULES],
+            rulesVersion = prefs[ROUTING_RULES_VERSION],
+            statesEncoded = prefs[ROUTING_RULE_STATES],
+        ).map { existing ->
+            if (existing.id == rule.id) rule else existing
+        }
+        prefs[ROUTING_RULES] = encodeRoutingRules(updatedRules)
+        prefs[ROUTING_RULES_VERSION] = CURRENT_ROUTING_RULES_VERSION
+        prefs.remove(ROUTING_RULE_STATES)
+    }
+    suspend fun setRoutingRules(rules: List<RoutingRule>) = store.edit { prefs ->
+        prefs[ROUTING_RULES] = encodeRoutingRules(rules)
+        prefs[ROUTING_RULES_VERSION] = CURRENT_ROUTING_RULES_VERSION
+        prefs.remove(ROUTING_RULE_STATES)
     }
 
     suspend fun getAllAsMap(): Map<String, String> {
@@ -85,6 +119,9 @@ class SettingsRepository @Inject constructor(
             map["last_server_id"]?.let { prefs[LAST_SERVER_ID] = it.toLongOrNull() ?: -1L }
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
+            map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }
+            map["routing_rules_version"]?.let { prefs[ROUTING_RULES_VERSION] = it.toIntOrNull() ?: CURRENT_ROUTING_RULES_VERSION }
+            map["routing_rule_states"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULE_STATES] = it }
             map["geo_data_base_url"]?.takeIf { it.isNotBlank() }?.let { legacyBaseUrl ->
                 prefs[GEOIP_URL] = appendLegacyFileName(legacyBaseUrl, "geoip.dat")
                 prefs[GEOSITE_URL] = appendLegacyFileName(legacyBaseUrl, "geosite.dat")
@@ -94,4 +131,42 @@ class SettingsRepository @Inject constructor(
 
     private fun appendLegacyFileName(baseUrl: String, fileName: String): String =
         "${baseUrl.trim().trimEnd('/')}/$fileName"
+
+    private fun decodeRoutingRuleStates(encoded: String?): Map<String, Boolean> =
+        runCatching {
+            if (encoded.isNullOrBlank()) {
+                emptyMap()
+            } else {
+                json.decodeFromString(kotlinx.serialization.builtins.MapSerializer(String.serializer(), Boolean.serializer()), encoded)
+            }
+        }.getOrDefault(emptyMap())
+
+    private fun encodeRoutingRuleStates(states: Map<String, Boolean>): String =
+        json.encodeToString(kotlinx.serialization.builtins.MapSerializer(String.serializer(), Boolean.serializer()), states)
+
+    private fun decodeRoutingRules(
+        rulesEncoded: String?,
+        rulesVersion: Int?,
+        statesEncoded: String?,
+    ): List<RoutingRule> {
+        val savedRules = runCatching {
+            if (rulesEncoded.isNullOrBlank() || rulesVersion != CURRENT_ROUTING_RULES_VERSION) {
+                null
+            } else {
+                json.decodeFromString(ListSerializer(RoutingRule.serializer()), rulesEncoded)
+            }
+        }.getOrNull()
+
+        if (savedRules != null) {
+            return RoutingRuleCatalog.mergeWithDefaults(savedRules)
+        }
+
+        val stateOverrides = decodeRoutingRuleStates(statesEncoded)
+        return RoutingRuleCatalog.defaults().map { rule ->
+            rule.copy(enabled = stateOverrides[rule.id] ?: rule.enabled)
+        }
+    }
+
+    private fun encodeRoutingRules(rules: List<RoutingRule>): String =
+        json.encodeToString(ListSerializer(RoutingRule.serializer()), rules)
 }

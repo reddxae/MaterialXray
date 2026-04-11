@@ -1,16 +1,20 @@
 package com.materialxray.core.xray
 
 import com.materialxray.model.Protocol
+import com.materialxray.model.RoutingRule
+import com.materialxray.model.RoutingRuleOperator
 import com.materialxray.model.ServerConfig
 import kotlinx.serialization.json.*
 
 class ConfigGenerator {
+    private val json = Json { prettyPrint = true }
 
     fun generate(
         server: ServerConfig,
         tunName: String = "xray0",
         fwmark: Int = 255,
         dnsServers: String = "1.1.1.1,8.8.8.8",
+        routingRules: List<RoutingRule> = emptyList(),
         physicalInterface: String? = null,
     ): String {
         val config = buildJsonObject {
@@ -21,10 +25,11 @@ class ConfigGenerator {
                 add(buildProxyOutbound(server, fwmark, physicalInterface))
                 add(buildDirectOutbound(fwmark, physicalInterface))
                 add(buildDnsOutbound(fwmark, physicalInterface))
+                add(buildBlockOutbound())
             })
-            put("routing", buildRouting())
+            put("routing", buildRouting(routingRules))
         }
-        return Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), config)
+        return json.encodeToString(JsonObject.serializer(), config)
     }
 
     fun injectTunIntoRawConfig(rawJson: String, tunName: String = "xray0", fwmark: Int = 255): String {
@@ -40,7 +45,7 @@ class ConfigGenerator {
             JsonObject(obj)
         } ?: emptyList()
         original["outbounds"] = JsonArray(outbounds)
-        return Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), JsonObject(original))
+        return json.encodeToString(JsonObject.serializer(), JsonObject(original))
     }
 
     private fun buildTunInbound(tunName: String) = buildJsonObject {
@@ -165,6 +170,11 @@ class ConfigGenerator {
         put("streamSettings", buildJsonObject { put("sockopt", buildSockopt(fwmark, physicalInterface)) })
     }
 
+    private fun buildBlockOutbound() = buildJsonObject {
+        put("tag", "block")
+        put("protocol", "blackhole")
+    }
+
     private fun buildSockopt(fwmark: Int, physicalInterface: String?) = buildJsonObject {
         put("mark", fwmark)
         put("domainStrategy", "UseIP")
@@ -179,8 +189,8 @@ class ConfigGenerator {
         })
     }
 
-    private fun buildRouting() = buildJsonObject {
-        put("domainStrategy", "AsIs")
+    private fun buildRouting(routingRules: List<RoutingRule>) = buildJsonObject {
+        put("domainStrategy", "IPOnDemand")
         put("rules", buildJsonArray {
             add(buildJsonObject {
                 put("type", "field")
@@ -188,8 +198,49 @@ class ConfigGenerator {
                 put("port", "53")
                 put("outboundTag", "dns-out")
             })
-            add(buildJsonObject { put("type", "field"); put("ip", buildJsonArray { add("geoip:private") }); put("outboundTag", "direct") })
-            add(buildJsonObject { put("type", "field"); put("port", "0-65535"); put("outboundTag", "proxy") })
+            routingRules.filter { it.enabled }.forEach { rule ->
+                if (rule.operator == RoutingRuleOperator.OR) {
+                    buildOrRules(rule).forEach { add(it) }
+                } else {
+                    add(rule.toXrayRule())
+                }
+            }
         })
+    }
+
+    private fun buildOrRules(rule: RoutingRule): List<JsonObject> {
+        fun base(): MutableMap<String, JsonElement> = mutableMapOf(
+            "type" to JsonPrimitive("field"),
+            "outboundTag" to JsonPrimitive(rule.outboundTag),
+        )
+
+        val rules = mutableListOf<JsonObject>()
+
+        if (rule.domains.isNotEmpty()) {
+            rules += JsonObject(base().apply {
+                put("domain", buildJsonArray { rule.domains.forEach { add(it) } })
+            })
+        }
+        if (rule.ips.isNotEmpty()) {
+            rules += JsonObject(base().apply {
+                put("ip", buildJsonArray { rule.ips.forEach { add(it) } })
+            })
+        }
+        rule.port?.takeIf { it.isNotBlank() }?.let { port ->
+            rules += JsonObject(base().apply {
+                put("port", JsonPrimitive(port))
+            })
+        }
+        if (rule.protocols.isNotEmpty()) {
+            rules += JsonObject(base().apply {
+                put("protocol", buildJsonArray { rule.protocols.forEach { add(it) } })
+            })
+        }
+
+        if (rules.isEmpty()) {
+            rules += JsonObject(base())
+        }
+
+        return rules
     }
 }

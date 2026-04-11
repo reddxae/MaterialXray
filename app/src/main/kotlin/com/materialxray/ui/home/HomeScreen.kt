@@ -37,6 +37,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     val isConnected = connectionState is ConnectionState.Connected
     val isTransitioning = connectionState is ConnectionState.Connecting ||
+        connectionState is ConnectionState.ApplyingRoutingChanges ||
         connectionState is ConnectionState.UpdatingRoutingData ||
         connectionState is ConnectionState.Disconnecting
 
@@ -158,6 +159,7 @@ private fun ConnectionPanel(
             text = when (connectionState) {
                 is ConnectionState.Connected -> "Connected"
                 is ConnectionState.Connecting -> "Connecting..."
+                ConnectionState.ApplyingRoutingChanges -> "Applying routing changes..."
                 ConnectionState.UpdatingRoutingData -> "Updating routing data..."
                 is ConnectionState.Disconnecting -> "Disconnecting..."
                 is ConnectionState.Error -> "Error"

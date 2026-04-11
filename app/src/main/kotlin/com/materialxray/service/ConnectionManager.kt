@@ -6,6 +6,7 @@ import com.materialxray.core.root.RootShell.NetworkNamespace
 import com.materialxray.core.xray.*
 import com.materialxray.data.db.dao.AppBypassDao
 import com.materialxray.model.ConnectionState
+import com.materialxray.model.RoutingRule
 import com.materialxray.model.ServerConfig
 import kotlinx.coroutines.delay
 import java.io.FileOutputStream
@@ -33,8 +34,10 @@ class ConnectionManager(
         fwmark: Int,
         routeTable: Int,
         dnsServers: String,
+        routingRules: List<RoutingRule>,
+        transitionState: ConnectionState = ConnectionState.Connecting,
     ) {
-        stateHolder.update(ConnectionState.Connecting)
+        stateHolder.update(transitionState)
         val routeMark = routeTable
         val bypassTable = routeTable + 1
         log.clear()
@@ -71,7 +74,7 @@ class ConnectionManager(
                 log.append(LogSource.APP, "Updating routing data...")
             }
             val geoDataStatus = geoDataManager.ensureReady()
-            stateHolder.update(ConnectionState.Connecting)
+            stateHolder.update(transitionState)
             if (geoDataStatus.downloaded) {
                 log.append(
                     LogSource.APP,
@@ -111,6 +114,7 @@ class ConnectionManager(
                 tunName,
                 fwmark,
                 dnsServers,
+                routingRules,
                 physicalInterface = physicalRoute.dev,
             )
             xrayBinary.writeConfig(configJson)
@@ -199,11 +203,19 @@ class ConnectionManager(
     }
 
     suspend fun disconnect() {
-        stateHolder.update(ConnectionState.Disconnecting)
-        log.append(LogSource.APP, "Disconnecting...")
+        disconnect(updateState = true)
+    }
+
+    suspend fun disconnect(updateState: Boolean) {
+        if (updateState) {
+            stateHolder.update(ConnectionState.Disconnecting)
+            log.append(LogSource.APP, "Disconnecting...")
+        }
         cleanupManager.ensureCleanState()
-        log.append(LogSource.APP, "Disconnected")
-        stateHolder.update(ConnectionState.Disconnected)
+        if (updateState) {
+            log.append(LogSource.APP, "Disconnected")
+            stateHolder.update(ConnectionState.Disconnected)
+        }
     }
 
     private suspend fun fail(message: String) {

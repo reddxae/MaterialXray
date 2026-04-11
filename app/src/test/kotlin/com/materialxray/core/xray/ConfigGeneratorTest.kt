@@ -1,6 +1,7 @@
 package com.materialxray.core.xray
 
 import com.materialxray.model.Protocol
+import com.materialxray.model.RoutingRuleCatalog
 import com.materialxray.model.ServerConfig
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -42,6 +43,7 @@ class ConfigGeneratorTest {
         val json = Json.parseToJsonElement(config).jsonObject
         val outbounds = json["outbounds"]!!.jsonArray
         for (ob in outbounds) {
+            if (ob.jsonObject["protocol"]?.jsonPrimitive?.content == "blackhole") continue
             val mark = ob.jsonObject["streamSettings"]?.jsonObject
                 ?.get("sockopt")?.jsonObject?.get("mark")?.jsonPrimitive?.int
             assertEquals("All outbounds must have fwmark", 255, mark)
@@ -54,6 +56,7 @@ class ConfigGeneratorTest {
         val json = Json.parseToJsonElement(config).jsonObject
         val outbounds = json["outbounds"]!!.jsonArray
         for (ob in outbounds) {
+            if (ob.jsonObject["protocol"]?.jsonPrimitive?.content == "blackhole") continue
             val domainStrategy = ob.jsonObject["streamSettings"]?.jsonObject
                 ?.get("sockopt")?.jsonObject?.get("domainStrategy")?.jsonPrimitive?.content
             assertEquals("All outbounds must resolve domains through xray DNS", "UseIP", domainStrategy)
@@ -91,5 +94,44 @@ class ConfigGeneratorTest {
         assertNotNull("Should have DNS port 53 routing rule", dnsRule)
         val inboundTags = dnsRule!!.jsonObject["inboundTag"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("tun-in"), inboundTags)
+    }
+
+    @Test
+    fun `includes enabled routing rules from catalog`() {
+        val routingRules = RoutingRuleCatalog.defaults()
+        val config = generator.generate(vlessReality, routingRules = routingRules)
+        val json = Json.parseToJsonElement(config).jsonObject
+        val rules = json["routing"]!!.jsonObject["rules"]!!.jsonArray
+
+        val adsRule = rules.firstOrNull {
+            it.jsonObject["outboundTag"]?.jsonPrimitive?.content == "block"
+        }
+        assertNotNull("Should include enabled block outbound rule", adsRule)
+        assertEquals(
+            "geosite:category-ads-all",
+            adsRule!!.jsonObject["domain"]!!.jsonArray.single().jsonPrimitive.content,
+        )
+    }
+
+    @Test
+    fun `splits OR routing rule into separate xray rules`() {
+        val routingRules = RoutingRuleCatalog.defaults()
+        val config = generator.generate(vlessReality, routingRules = routingRules)
+        val json = Json.parseToJsonElement(config).jsonObject
+        val rules = json["routing"]!!.jsonObject["rules"]!!.jsonArray
+
+        val ruDomainRule = rules.firstOrNull {
+            it.jsonObject["domain"]?.jsonArray?.any { domain ->
+                domain.jsonPrimitive.content == "domain:ru"
+            } == true
+        }
+        val ruIpRule = rules.firstOrNull {
+            it.jsonObject["ip"]?.jsonArray?.any { ip ->
+                ip.jsonPrimitive.content == "geoip:ru"
+            } == true
+        }
+
+        assertNotNull("RU direct OR rule should emit a domain-based rule", ruDomainRule)
+        assertNotNull("RU direct OR rule should emit an IP-based rule", ruIpRule)
     }
 }

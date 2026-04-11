@@ -1,25 +1,57 @@
 package com.materialxray.ui.navigation
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.materialxray.ui.apps.AppsScreen
 import com.materialxray.ui.home.HomeScreen
 import com.materialxray.ui.logs.LogsScreen
+import com.materialxray.ui.routing.RoutingScreen
 import com.materialxray.ui.settings.SettingsScreen
 
 @Composable
 fun MainNavigation() {
+    val viewModel: MainNavigationViewModel = hiltViewModel()
     val navController = rememberNavController()
+    val lifecycleOwner = LocalLifecycleOwner.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val currentRoute = currentDestination?.route
+    var previousRoute by remember { mutableStateOf<String?>(currentRoute) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                viewModel.onAppBackgrounded()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (previousRoute == Screen.Routing.route && currentRoute != Screen.Routing.route) {
+            viewModel.onLeavingRoutingTab()
+        }
+        previousRoute = currentRoute
+    }
 
     Scaffold(
         bottomBar = {
@@ -48,7 +80,7 @@ fun MainNavigation() {
         ) {
             composable(Screen.Home.route) { HomeScreen() }
             composable(Screen.Logs.route) { LogsScreen() }
-            composable(Screen.Apps.route) { AppsScreen() }
+            composable(Screen.Routing.route) { RoutingScreen() }
             composable(Screen.Settings.route) { SettingsScreen() }
         }
     }

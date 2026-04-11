@@ -4,12 +4,51 @@ on:
   push:
     branches:
       - "**"
-    tags:
-      - "v*"
 
 jobs:
+  release-state:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      version_tag: ${{ steps.version.outputs.version_tag }}
+      should_release: ${{ steps.release_check.outputs.should_release }}
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Read app version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_name="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          if [ -z "$version_name" ]; then
+            echo "Failed to read versionName from app/build.gradle.kts" >&2
+            exit 1
+          fi
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_tag=v$version_name" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version already has a release
+        id: release_check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_TAG: ${{ steps.version.outputs.version_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Release already exists for $VERSION_TAG"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Release does not exist yet for $VERSION_TAG"
+          fi
+
   debug-build:
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,7 +83,10 @@ jobs:
           if-no-files-found: error
 
   release-build:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs:
+      - release-state
+      - debug-build
+    if: ${{ needs.release-state.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -97,9 +139,23 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
         run: ./gradlew --stacktrace app:assembleRelease
 
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: app/build/outputs/apk/release/app-release.apk
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+          name: MaterialXray-release-${{ needs.release-state.outputs.version_tag }}
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_TAG: ${{ needs.release-state.outputs.version_tag }}
+        run: |
+          if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
+            echo "Release already exists for $VERSION_TAG, skipping publish."
+            exit 0
+          fi
+          gh release create "$VERSION_TAG" app/build/outputs/apk/release/app-release.apk \
+            --target "$GITHUB_SHA" \
+            --title "$VERSION_TAG" \
+            --generate-notes

@@ -15,19 +15,41 @@ class TunManager(private val shell: RootShell) {
         val error: String? = null,
     )
 
-    suspend fun configureTun(tunName: String): Boolean {
+    data class TunSetupResult(
+        val success: Boolean,
+        val processExited: Boolean = false,
+        val error: String? = null,
+    )
+
+    suspend fun configureTun(
+        tunName: String,
+        isProcessAlive: suspend () -> Boolean = { true },
+    ): TunSetupResult {
         var attempts = 0
         while (attempts < 30) {
             val result = shell.execute("ip link show $tunName 2>/dev/null")
             if (result.isSuccess && result.output.contains(tunName)) break
+            if (!isProcessAlive()) {
+                return TunSetupResult(success = false, processExited = true)
+            }
             delay(200)
             attempts++
         }
-        if (attempts >= 30) return false
+        if (attempts >= 30) {
+            return if (isProcessAlive()) {
+                TunSetupResult(success = false, error = "TUN interface $tunName did not come up within timeout")
+            } else {
+                TunSetupResult(success = false, processExited = true)
+            }
+        }
 
         shell.execute("ip addr add 10.0.0.1/30 dev $tunName 2>/dev/null")
         val upResult = shell.execute("ip link set $tunName up")
-        return upResult.isSuccess
+        return if (upResult.isSuccess) {
+            TunSetupResult(success = true)
+        } else {
+            TunSetupResult(success = false, error = upResult.toCommandError("ip link set $tunName up"))
+        }
     }
 
     suspend fun detectPhysicalRoute(tunName: String): PhysicalRoute? {
@@ -165,6 +187,15 @@ class TunManager(private val shell: RootShell) {
                 "$command (exit=$exitCode): $details"
             },
         )
+    }
+
+    private fun RootShell.Result.toCommandError(command: String): String {
+        val details = listOf(output.trim(), error.trim()).filter { it.isNotEmpty() }.joinToString(" | ")
+        return if (details.isEmpty()) {
+            "$command (exit=$exitCode)"
+        } else {
+            "$command (exit=$exitCode): $details"
+        }
     }
 
     private fun String.referencesLookupTable(routeTable: Int): Boolean {

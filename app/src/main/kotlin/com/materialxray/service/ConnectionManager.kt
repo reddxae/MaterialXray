@@ -1,6 +1,7 @@
 package com.materialxray.service
 
 import android.content.Context
+import android.os.SystemClock
 import com.materialxray.core.root.RootShell
 import com.materialxray.core.root.RootShell.NetworkNamespace
 import com.materialxray.core.xray.*
@@ -8,7 +9,6 @@ import com.materialxray.data.db.dao.AppBypassDao
 import com.materialxray.model.ConnectionState
 import com.materialxray.model.RoutingRule
 import com.materialxray.model.ServerConfig
-import kotlinx.coroutines.delay
 import java.io.FileOutputStream
 
 class ConnectionManager(
@@ -122,22 +122,12 @@ class ConnectionManager(
 
             log.append(LogSource.APP, "Starting xray process...")
             val binDir = context.filesDir.resolve("bin").absolutePath
-            shell.execute("cd $binDir && ${xrayBinary.binaryPath} run -c ${xrayBinary.configPath()} > $logFile 2>&1 &")
-
-            // Give xray a moment to start (or crash)
-            delay(800)
-
-            // Get the PID
-            val pidResult = shell.execute(
-                "pgrep -f '${xrayBinary.binaryPath} run -c ${xrayBinary.configPath()}' | head -n 1"
-            )
-            val pid = pidResult.output.trim().toIntOrNull() ?: -1
+            val pid = timedStep("xray process launch") {
+                startXrayProcess(binDir)
+            }
 
             if (pid <= 0) {
-                // xray is not running — it must have crashed
-                val crashLog = shell.execute("tail -n 50 $logFile 2>/dev/null").output.trim()
-                val reason = crashLog.lines().lastOrNull { it.isNotBlank() } ?: "xray exited immediately"
-                fail("xray crashed: $reason")
+                fail("Could not determine xray process ID after launch")
                 return
             }
 
@@ -150,16 +140,16 @@ class ConnectionManager(
             ))
 
             log.append(LogSource.APP, "Waiting for TUN interface '$tunName'...")
-            if (!tunManager.configureTun(tunName)) {
-                logNamespaceDiagnostics(stage = "tun-timeout", tunName = tunName, xrayPid = pid)
-                // Check if xray died while we waited
-                val pidCheck = shell.execute("pgrep -f '${xrayBinary.binaryPath} run -c ${xrayBinary.configPath()}'")
-                if (pidCheck.output.isBlank()) {
-                    val crashLog = shell.execute("tail -n 80 $logFile 2>/dev/null").output.trim()
-                    val reason = crashLog.lines().lastOrNull { it.isNotBlank() } ?: "xray process not found"
-                    fail("xray crashed: $reason")
+            val tunSetup = timedStep("TUN setup") {
+                tunManager.configureTun(tunName) { isProcessAlive(pid) }
+            }
+            if (!tunSetup.success) {
+                val diagnosticsStage = if (tunSetup.processExited) "tun-exit" else "tun-failure"
+                logNamespaceDiagnostics(stage = diagnosticsStage, tunName = tunName, xrayPid = pid)
+                if (tunSetup.processExited) {
+                    fail("xray crashed: ${readCrashReason()}")
                 } else {
-                    fail("TUN interface $tunName did not come up within timeout")
+                    fail(tunSetup.error ?: "TUN interface $tunName did not come up within timeout")
                 }
                 return
             }
@@ -228,6 +218,37 @@ class ConnectionManager(
         shell.execute("rm -f $logFile")
         FileOutputStream(context.filesDir.resolve("xray.log"), false).use { }
     }
+
+    private suspend fun startXrayProcess(binDir: String): Int {
+        val command = buildString {
+            append("cd ${shellQuote(binDir)} && ")
+            append("${shellQuote(xrayBinary.binaryPath)} run -c ${shellQuote(xrayBinary.configPath())}")
+            append(" > ${shellQuote(logFile)} 2>&1 & printf '%s' \$!")
+        }
+        val result = shell.execute(command)
+        return result.output.trim().toIntOrNull() ?: -1
+    }
+
+    private suspend fun isProcessAlive(pid: Int): Boolean {
+        if (pid <= 0) return false
+        return shell.execute("kill -0 $pid 2>/dev/null").isSuccess
+    }
+
+    private suspend fun readCrashReason(lines: Int = 80): String {
+        val crashLog = shell.execute("tail -n $lines ${shellQuote(logFile)} 2>/dev/null").output.trim()
+        return crashLog.lines().lastOrNull { it.isNotBlank() } ?: "xray process exited"
+    }
+
+    private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
+        val startedAt = SystemClock.elapsedRealtime()
+        return try {
+            block()
+        } finally {
+            log.append(LogSource.APP, "$label took ${SystemClock.elapsedRealtime() - startedAt} ms")
+        }
+    }
+
+    private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
 
     private suspend fun logNamespaceDiagnostics(
         stage: String,

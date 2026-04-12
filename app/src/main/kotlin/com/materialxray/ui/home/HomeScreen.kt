@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,9 +47,9 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     val isConnected = connectionState is ConnectionState.Connected
     val isTransitioning = connectionState is ConnectionState.Connecting ||
-        connectionState is ConnectionState.ApplyingRoutingChanges ||
-        connectionState is ConnectionState.UpdatingRoutingData ||
-        connectionState is ConnectionState.Disconnecting
+            connectionState is ConnectionState.ApplyingRoutingChanges ||
+            connectionState is ConnectionState.UpdatingRoutingData ||
+            connectionState is ConnectionState.Disconnecting
 
     val buttonColor by animateColorAsState(
         targetValue = when {
@@ -485,9 +486,9 @@ private fun ServerRow(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            RadioButton(selected = isSelected, onClick = onClick)
+            CompactSelectionDot(isSelected = isSelected)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = server.entity.name,
@@ -515,6 +516,33 @@ private fun ServerRow(
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun CompactSelectionDot(isSelected: Boolean) {
+    Surface(
+        modifier = Modifier.size(18.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            width = 2.dp,
+            color = if (isSelected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline
+            },
+        ),
+    ) {
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(4.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
         }
     }
 }

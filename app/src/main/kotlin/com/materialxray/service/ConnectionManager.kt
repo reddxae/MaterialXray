@@ -110,12 +110,22 @@ class ConnectionManager(
             log.append(
                 LogSource.APP,
                 "Physical bypass route: dev=${physicalRoute.dev}" +
-                    (physicalRoute.gateway?.let { " via=$it" } ?: "") +
-                    (physicalRoute.table?.let { " table=$it" } ?: ""),
+                        (physicalRoute.gateway?.let { " via=$it" } ?: "") +
+                        (physicalRoute.table?.let { " table=$it" } ?: ""),
             )
 
-            val resolvedServer = timedStep("Server address resolution") {
-                serverAddressResolver.resolve(server)
+            val resolvedServer = if (server.rawConfigJson.isNotBlank()) {
+                log.append(LogSource.APP, "Skipping endpoint pre-resolution for raw JSON subscription config")
+                ServerAddressResolver.Result(
+                    server = server,
+                    attempted = false,
+                    selectedAddress = null,
+                    candidates = emptyList(),
+                )
+            } else {
+                timedStep("Server address resolution") {
+                    serverAddressResolver.resolve(server)
+                }
             }
             val xrayServer = resolvedServer.server
             if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
@@ -155,10 +165,12 @@ class ConnectionManager(
             log.append(LogSource.APP, "xray running with PID $pid")
             logNamespaceDiagnostics(stage = "xray-start", tunName = tunName, xrayPid = pid)
 
-            stateFile.write(XrayState(
-                xrayPid = pid, tunName = tunName,
-                fwmark = fwmark, routeMark = routeMark, routeTable = routeTable, bypassTable = bypassTable,
-            ))
+            stateFile.write(
+                XrayState(
+                    xrayPid = pid, tunName = tunName,
+                    fwmark = fwmark, routeMark = routeMark, routeTable = routeTable, bypassTable = bypassTable,
+                )
+            )
 
             log.append(LogSource.APP, "Waiting for TUN interface '$tunName'...")
             val tunSetup = timedStep("TUN setup") {
@@ -190,11 +202,13 @@ class ConnectionManager(
             }
             log.append(LogSource.APP, "IP routing applied")
 
-            stateFile.write(XrayState(
-                xrayPid = pid, tunName = tunName,
-                nftTableCreated = false, ipRulesApplied = true,
-                fwmark = fwmark, routeMark = routeMark, routeTable = routeTable, bypassTable = bypassTable,
-            ))
+            stateFile.write(
+                XrayState(
+                    xrayPid = pid, tunName = tunName,
+                    nftTableCreated = false, ipRulesApplied = true,
+                    fwmark = fwmark, routeMark = routeMark, routeTable = routeTable, bypassTable = bypassTable,
+                )
+            )
 
             log.append(LogSource.APP, "Connected to ${server.name}")
             log.append(
@@ -301,7 +315,9 @@ class ConnectionManager(
             } else {
                 log.append(
                     LogSource.APP,
-                    "Could not update device idle whitelist for $packageName: ${result.error.ifBlank { result.output }.ifBlank { "unknown error" }}",
+                    "Could not update device idle whitelist for $packageName: ${
+                        result.error.ifBlank { result.output }.ifBlank { "unknown error" }
+                    }",
                 )
             }
         }
@@ -314,7 +330,9 @@ class ConnectionManager(
                 val details = netPolicyResult.error.ifBlank { netPolicyResult.output }.trim()
                 log.append(
                     LogSource.APP,
-                    "Background-data allowlist update skipped for uid=$packageUid${details.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""}",
+                    "Background-data allowlist update skipped for uid=$packageUid${
+                        details.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""
+                    }",
                 )
             }
         }

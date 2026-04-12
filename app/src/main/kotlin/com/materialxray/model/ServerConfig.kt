@@ -13,6 +13,7 @@ data class ServerConfig(
     val security: Security = Security(),
     val extra: Map<String, String> = emptyMap(),
     val rawUri: String = "",
+    val rawConfigJson: String = "",
 ) {
     @Serializable
     data class Transport(

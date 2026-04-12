@@ -21,10 +21,14 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "materialxray.db")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
 
-    @Provides fun provideServerDao(db: AppDatabase): ServerDao = db.serverDao()
-    @Provides fun provideSubscriptionDao(db: AppDatabase): SubscriptionDao = db.subscriptionDao()
-    @Provides fun provideAppBypassDao(db: AppDatabase): AppBypassDao = db.appBypassDao()
+    @Provides
+    fun provideServerDao(db: AppDatabase): ServerDao = db.serverDao()
+    @Provides
+    fun provideSubscriptionDao(db: AppDatabase): SubscriptionDao = db.subscriptionDao()
+    @Provides
+    fun provideAppBypassDao(db: AppDatabase): AppBypassDao = db.appBypassDao()
 }

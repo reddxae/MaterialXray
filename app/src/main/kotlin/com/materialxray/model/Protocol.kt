@@ -7,7 +7,8 @@ enum class Protocol(val displayName: String, val scheme: String) {
     VLESS("VLESS", "vless"),
     VMESS("VMess", "vmess"),
     TROJAN("Trojan", "trojan"),
-    SHADOWSOCKS("Shadowsocks", "ss");
+    SHADOWSOCKS("Shadowsocks", "ss"),
+    RAW("Raw JSON", "raw");
 
     companion object {
         fun fromScheme(scheme: String): Protocol? =

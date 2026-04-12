@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,6 +34,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.materialxray.data.db.entity.ServerEntity
 import com.materialxray.data.db.entity.SubscriptionEntity
 import com.materialxray.model.ConnectionState
+import java.time.Duration
+import java.time.Instant
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -370,6 +374,7 @@ private fun SubscriptionCard(
                 onTestAll = onTestAll,
                 onDelete = onDelete,
             )
+            SubscriptionMetadataSection(subscription = subscription)
 
             if (servers.isEmpty()) {
                 Text(
@@ -401,6 +406,82 @@ private fun SubscriptionCard(
 }
 
 @Composable
+private fun SubscriptionMetadataSection(subscription: SubscriptionEntity) {
+    val announcement = remember(subscription.announce) {
+        subscription.announce?.trim().orEmpty()
+    }
+    val traffic = remember(
+        subscription.subscriptionUploadBytes,
+        subscription.subscriptionDownloadBytes,
+        subscription.subscriptionTotalBytes,
+    ) {
+        buildSubscriptionTrafficUiState(subscription)
+    }
+    val expiryText = remember(subscription.subscriptionExpireAt) {
+        subscription.subscriptionExpireAt?.let(::formatSubscriptionExpiryRelative)
+    }
+    val updateIntervalText = remember(subscription.profileUpdateIntervalHours) {
+        subscription.profileUpdateIntervalHours?.let { interval ->
+            if (interval == 1) "Auto update every hour" else "Auto update every $interval hours"
+        }
+    }
+
+    val hasMetadata = announcement.isNotEmpty() ||
+            traffic != null ||
+            !expiryText.isNullOrBlank() ||
+            !updateIntervalText.isNullOrBlank()
+
+    if (!hasMetadata) return
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (announcement.isNotEmpty()) {
+            Text(
+                text = announcement,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        traffic?.let { trafficState ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = trafficState.summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                trafficState.progress?.let { progress ->
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+
+        if (!expiryText.isNullOrBlank()) {
+            Text(
+                text = expiryText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (!updateIntervalText.isNullOrBlank()) {
+            Text(
+                text = updateIntervalText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun SubscriptionHeader(
     subscription: SubscriptionEntity,
     serverCount: Int,
@@ -409,10 +490,14 @@ private fun SubscriptionHeader(
     onDelete: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val webPageUrl = subscription.profileWebPageUrl?.trim().orEmpty()
+    val supportUrl = subscription.supportUrl?.trim().orEmpty()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, top = 14.dp, end = 8.dp, bottom = 10.dp),
+            .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -443,6 +528,24 @@ private fun SubscriptionHeader(
                 Icon(Icons.Default.MoreVert, contentDescription = "Subscription menu")
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                if (webPageUrl.isNotEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Web Page") },
+                        onClick = {
+                            showMenu = false
+                            uriHandler.openUri(webPageUrl)
+                        },
+                    )
+                }
+                if (supportUrl.isNotEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Support") },
+                        onClick = {
+                            showMenu = false
+                            uriHandler.openUri(supportUrl)
+                        },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Delete") },
                     onClick = {
@@ -545,6 +648,92 @@ private fun CompactSelectionDot(isSelected: Boolean) {
             )
         }
     }
+}
+
+private data class SubscriptionTrafficUiState(
+    val summary: String,
+    val progress: Float? = null,
+)
+
+private fun buildSubscriptionTrafficUiState(subscription: SubscriptionEntity): SubscriptionTrafficUiState? {
+    val upload = subscription.subscriptionUploadBytes
+    val download = subscription.subscriptionDownloadBytes
+    val total = subscription.subscriptionTotalBytes
+
+    if (upload == null && download == null && total == null) return null
+
+    val used = listOfNotNull(upload, download).sum()
+    val details = buildList {
+        upload?.let { add("↑ ${formatByteCount(it)}") }
+        download?.let { add("↓ ${formatByteCount(it)}") }
+    }.joinToString("  ")
+
+    return when {
+        total == null -> {
+            val summary = if (details.isNotEmpty()) {
+                "Unlimited traffic • $details"
+            } else {
+                "Unlimited traffic"
+            }
+            SubscriptionTrafficUiState(summary = summary)
+        }
+
+        total > 0 -> {
+            val remaining = (total - used).coerceAtLeast(0)
+            val summary = buildString {
+                append("${formatByteCount(used)} used of ${formatByteCount(total)}")
+                append(" • ${formatByteCount(remaining)} left")
+                if (details.isNotEmpty()) append(" • $details")
+            }
+            SubscriptionTrafficUiState(
+                summary = summary,
+                progress = (used.toDouble() / total.toDouble()).coerceIn(0.0, 1.0).toFloat(),
+            )
+        }
+
+        else -> {
+            val summary = if (details.isNotEmpty()) {
+                "No traffic quota • $details"
+            } else {
+                "No traffic quota"
+            }
+            SubscriptionTrafficUiState(summary = summary)
+        }
+    }
+}
+
+private fun formatSubscriptionExpiryRelative(epochSeconds: Long): String {
+    val now = Instant.now()
+    val expiresAt = Instant.ofEpochSecond(epochSeconds)
+    if (!expiresAt.isAfter(now)) return "Expired"
+
+    val remaining = Duration.between(now, expiresAt)
+    val days = remaining.toDays()
+    if (days >= 1) {
+        return if (days == 1L) "Expires in 1 day" else "Expires in $days days"
+    }
+
+    val hours = remaining.toHours().coerceAtLeast(1)
+    return if (hours == 1L) "Expires in 1 hour" else "Expires in $hours hours"
+}
+
+private fun formatByteCount(bytes: Long): String {
+    val units = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+
+    while (value >= 1024.0 && unitIndex < units.lastIndex) {
+        value /= 1024.0
+        unitIndex++
+    }
+
+    val formatted = if (unitIndex == 0) {
+        bytes.toString()
+    } else {
+        String.format(Locale.US, "%.1f", value)
+    }
+
+    return "$formatted ${units[unitIndex]}"
 }
 
 @Composable

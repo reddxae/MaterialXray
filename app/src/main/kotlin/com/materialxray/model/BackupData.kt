@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class BackupData(
-    val version: Int = 1,
+    val version: Int = 2,
     val subscriptions: List<BackupSubscription>,
     val servers: List<BackupServer> = emptyList(),
     val bypassedApps: List<String>,
@@ -14,6 +14,7 @@ data class BackupData(
     data class BackupSubscription(
         val name: String,
         val url: String,
+        val metadata: SubscriptionMetadata? = null,
     )
 
     @Serializable

@@ -13,6 +13,8 @@ import com.materialxray.data.repository.SettingsRepository
 import com.materialxray.model.BackupData
 import com.materialxray.model.ConnectionState
 import com.materialxray.model.XrayLogLevel
+import com.materialxray.model.toSubscriptionMetadata
+import com.materialxray.model.withSubscriptionMetadata
 import com.materialxray.service.ConnectionStateHolder
 import com.materialxray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,7 +40,8 @@ class SettingsViewModel @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
-    val dnsServers = settingsRepo.dnsServers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1.1.1.1,8.8.8.8")
+    val dnsServers =
+        settingsRepo.dnsServers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1.1.1.1,8.8.8.8")
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
         viewModelScope,
@@ -66,6 +69,7 @@ class SettingsViewModel @Inject constructor(
             XrayService.reload(context)
         }
     }
+
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }
     fun setGeositeUrl(url: String) = viewModelScope.launch { settingsRepo.setGeositeUrl(url) }
 
@@ -77,7 +81,13 @@ class SettingsViewModel @Inject constructor(
                 val settings = settingsRepo.getAllAsMap()
 
                 val backup = BackupData(
-                    subscriptions = subs.map { BackupData.BackupSubscription(it.name, it.url) },
+                    subscriptions = subs.map { sub ->
+                        BackupData.BackupSubscription(
+                            name = sub.name,
+                            url = sub.url,
+                            metadata = sub.toSubscriptionMetadata(),
+                        )
+                    },
                     bypassedApps = bypassed,
                     settings = settings,
                 )
@@ -102,7 +112,12 @@ class SettingsViewModel @Inject constructor(
                 appBypassDao.deleteAll()
 
                 backup.subscriptions.forEach { sub ->
-                    subscriptionDao.insert(SubscriptionEntity(name = sub.name, url = sub.url))
+                    subscriptionDao.insert(
+                        SubscriptionEntity(
+                            name = sub.name,
+                            url = sub.url,
+                        ).withSubscriptionMetadata(sub.metadata)
+                    )
                 }
                 backup.bypassedApps.forEach { pkg ->
                     appBypassDao.upsert(AppBypassEntity(packageName = pkg, uid = 0, excluded = true))

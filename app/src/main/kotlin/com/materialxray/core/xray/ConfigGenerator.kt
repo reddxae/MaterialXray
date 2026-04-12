@@ -19,6 +19,18 @@ class ConfigGenerator {
         routingRules: List<RoutingRule> = emptyList(),
         physicalInterface: String? = null,
     ): String {
+        if (server.rawConfigJson.isNotBlank()) {
+            return injectTunIntoRawConfig(
+                rawJson = server.rawConfigJson,
+                tunName = tunName,
+                fwmark = fwmark,
+                dnsServers = dnsServers,
+                logLevel = logLevel,
+                routingRules = routingRules,
+                physicalInterface = physicalInterface,
+            )
+        }
+
         val config = buildJsonObject {
             put("log", buildJsonObject {
                 put("access", "none")
@@ -37,19 +49,83 @@ class ConfigGenerator {
         return json.encodeToString(JsonObject.serializer(), config)
     }
 
-    fun injectTunIntoRawConfig(rawJson: String, tunName: String = "xray0", fwmark: Int = 255): String {
+    fun injectTunIntoRawConfig(
+        rawJson: String,
+        tunName: String = "xray0",
+        fwmark: Int = 255,
+        dnsServers: String = "1.1.1.1,8.8.8.8",
+        logLevel: XrayLogLevel = XrayLogLevel.default,
+        routingRules: List<RoutingRule> = emptyList(),
+        physicalInterface: String? = null,
+    ): String {
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
+
         val existingInbounds = original["inbounds"]?.jsonArray?.toMutableList() ?: mutableListOf()
-        existingInbounds.add(0, buildTunInbound(tunName))
+        val hasTunInbound = existingInbounds.any { inbound ->
+            val inboundObject = inbound as? JsonObject ?: return@any false
+            inboundObject["protocol"]?.jsonPrimitive?.contentOrNull?.equals("tun", ignoreCase = true) == true
+        }
+        if (!hasTunInbound) {
+            existingInbounds.add(0, buildTunInbound(tunName))
+        }
         original["inbounds"] = JsonArray(existingInbounds)
-        val outbounds = original["outbounds"]?.jsonArray?.map { ob ->
-            val obj = ob.jsonObject.toMutableMap()
-            val stream = obj["streamSettings"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
-            stream["sockopt"] = buildSockopt(fwmark, physicalInterface = null)
+
+        val existingOutbounds = original["outbounds"]
+            ?.jsonArray
+            ?.mapNotNull { it as? JsonObject }
+            ?.toMutableList()
+            ?: mutableListOf()
+
+        val hasProxyTag = existingOutbounds.any { outbound ->
+            outbound["tag"]?.jsonPrimitive?.contentOrNull.equals("proxy", ignoreCase = true)
+        }
+        val firstProxyCandidateIndex = if (hasProxyTag) {
+            -1
+        } else {
+            existingOutbounds.indexOfFirst { outbound ->
+                outbound["protocol"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.lowercase() !in setOf("freedom", "dns", "blackhole")
+            }
+        }
+
+        val normalizedOutbounds = existingOutbounds.mapIndexed { index, outbound ->
+            val obj = outbound.toMutableMap()
+            val stream = (obj["streamSettings"] as? JsonObject)?.toMutableMap() ?: mutableMapOf()
+            stream["sockopt"] = buildSockopt(fwmark, physicalInterface)
             obj["streamSettings"] = JsonObject(stream)
+
+            if (index == firstProxyCandidateIndex) {
+                obj["tag"] = JsonPrimitive("proxy")
+            }
+
             JsonObject(obj)
-        } ?: emptyList()
-        original["outbounds"] = JsonArray(outbounds)
+        }.toMutableList()
+
+        fun upsertOutbound(tag: String, outbound: JsonObject) {
+            val existingIndex = normalizedOutbounds.indexOfFirst { candidate ->
+                candidate["tag"]?.jsonPrimitive?.contentOrNull.equals(tag, ignoreCase = true)
+            }
+            if (existingIndex >= 0) {
+                normalizedOutbounds[existingIndex] = outbound
+            } else {
+                normalizedOutbounds.add(outbound)
+            }
+        }
+
+        upsertOutbound("direct", buildDirectOutbound(fwmark, physicalInterface))
+        upsertOutbound("dns-out", buildDnsOutbound(fwmark, physicalInterface))
+        upsertOutbound("block", buildBlockOutbound())
+
+        original["outbounds"] = JsonArray(normalizedOutbounds)
+        original["log"] = buildJsonObject {
+            put("access", "none")
+            put("loglevel", logLevel.value)
+        }
+        original["dns"] = buildDns(dnsServers)
+        original["routing"] = buildRouting(routingRules)
+
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))
     }
 
@@ -95,6 +171,7 @@ class ConfigGenerator {
                 })
             })
         }
+
         Protocol.VMESS -> buildJsonObject {
             put("vnext", buildJsonArray {
                 add(buildJsonObject {
@@ -110,6 +187,7 @@ class ConfigGenerator {
                 })
             })
         }
+
         Protocol.TROJAN -> buildJsonObject {
             put("servers", buildJsonArray {
                 add(buildJsonObject {
@@ -119,6 +197,7 @@ class ConfigGenerator {
                 })
             })
         }
+
         Protocol.SHADOWSOCKS -> buildJsonObject {
             put("servers", buildJsonArray {
                 add(buildJsonObject {
@@ -129,6 +208,8 @@ class ConfigGenerator {
                 })
             })
         }
+
+        Protocol.RAW -> error("Raw JSON configs must be handled before outbound generation")
     }
 
     private fun buildStreamSettings(server: ServerConfig, fwmark: Int, physicalInterface: String?) = buildJsonObject {
@@ -140,8 +221,11 @@ class ConfigGenerator {
             "tls" -> put("tlsSettings", buildJsonObject {
                 if (server.security.sni.isNotEmpty()) put("serverName", server.security.sni)
                 if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
-                if (server.security.alpn.isNotEmpty()) put("alpn", buildJsonArray { server.security.alpn.forEach { add(it) } })
+                if (server.security.alpn.isNotEmpty()) put(
+                    "alpn",
+                    buildJsonArray { server.security.alpn.forEach { add(it) } })
             })
+
             "reality" -> put("realitySettings", buildJsonObject {
                 if (server.security.sni.isNotEmpty()) put("serverName", server.security.sni)
                 if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
@@ -153,16 +237,21 @@ class ConfigGenerator {
         when (server.transport.type) {
             "ws" -> put("wsSettings", buildJsonObject {
                 if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
-                if (server.transport.host.isNotEmpty()) put("headers", buildJsonObject { put("Host", server.transport.host) })
+                if (server.transport.host.isNotEmpty()) put(
+                    "headers",
+                    buildJsonObject { put("Host", server.transport.host) })
             })
+
             "grpc" -> put("grpcSettings", buildJsonObject {
                 if (server.transport.serviceName.isNotEmpty()) put("serviceName", server.transport.serviceName)
             })
+
             "xhttp" -> put("xhttpSettings", buildJsonObject {
                 if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
                 if (server.transport.host.isNotEmpty()) put("host", server.transport.host)
                 if (server.transport.mode.isNotEmpty()) put("mode", server.transport.mode)
             })
+
             "httpupgrade" -> put("httpupgradeSettings", buildJsonObject {
                 if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
                 if (server.transport.host.isNotEmpty()) put("host", server.transport.host)

@@ -147,8 +147,9 @@ class XrayService : Service() {
         val fwmark = settingsRepo.fwmark.first()
         val routeTable = settingsRepo.routeTable.first()
         val dns = settingsRepo.dnsServers.first()
+        val logLevel = settingsRepo.xrayLogLevel.first()
         val routingRules = settingsRepo.routingRules.first()
-        connectionManager.connect(config, tunName, fwmark, routeTable, dns, routingRules, transitionState)
+        connectionManager.connect(config, tunName, fwmark, routeTable, dns, logLevel, routingRules, transitionState)
     }
 
     private suspend fun reloadActiveConnection() {

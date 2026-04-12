@@ -3,6 +3,7 @@ package com.materialxray.core.xray
 import com.materialxray.model.Protocol
 import com.materialxray.model.RoutingRuleCatalog
 import com.materialxray.model.ServerConfig
+import com.materialxray.model.XrayLogLevel
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -78,6 +79,23 @@ class ConfigGeneratorTest {
                 ?.get("sockopt")?.jsonObject?.get("domainStrategy")?.jsonPrimitive?.content
             assertEquals("All outbounds must resolve domains through xray DNS", "UseIP", domainStrategy)
         }
+    }
+
+    @Test
+    fun `uses error as the default xray log level`() {
+        val config = generator.generate(vlessReality)
+        val json = Json.parseToJsonElement(config).jsonObject
+
+        assertEquals("none", json["log"]!!.jsonObject["access"]!!.jsonPrimitive.content)
+        assertEquals("error", json["log"]!!.jsonObject["loglevel"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `uses the configured xray log level`() {
+        val config = generator.generate(vlessReality, logLevel = XrayLogLevel.Debug)
+        val json = Json.parseToJsonElement(config).jsonObject
+
+        assertEquals("debug", json["log"]!!.jsonObject["loglevel"]!!.jsonPrimitive.content)
     }
 
     @Test

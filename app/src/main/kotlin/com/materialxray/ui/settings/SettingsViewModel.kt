@@ -11,6 +11,10 @@ import com.materialxray.data.db.entity.AppBypassEntity
 import com.materialxray.data.db.entity.SubscriptionEntity
 import com.materialxray.data.repository.SettingsRepository
 import com.materialxray.model.BackupData
+import com.materialxray.model.ConnectionState
+import com.materialxray.model.XrayLogLevel
+import com.materialxray.service.ConnectionStateHolder
+import com.materialxray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +32,7 @@ class SettingsViewModel @Inject constructor(
     private val subscriptionDao: SubscriptionDao,
     private val serverDao: ServerDao,
     private val appBypassDao: AppBypassDao,
+    private val connectionStateHolder: ConnectionStateHolder,
 ) : ViewModel() {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
@@ -35,6 +40,11 @@ class SettingsViewModel @Inject constructor(
     val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
     val dnsServers = settingsRepo.dnsServers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1.1.1.1,8.8.8.8")
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        XrayLogLevel.default,
+    )
     val geoipUrl = settingsRepo.geoipUrl.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -49,6 +59,13 @@ class SettingsViewModel @Inject constructor(
     fun setTunName(name: String) = viewModelScope.launch { settingsRepo.setTunName(name) }
     fun setDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setDnsServers(servers) }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
+    fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {
+        if (level == xrayLogLevel.value) return@launch
+        settingsRepo.setXrayLogLevel(level)
+        if (connectionStateHolder.state.value is ConnectionState.Connected) {
+            XrayService.reload(context)
+        }
+    }
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }
     fun setGeositeUrl(url: String) = viewModelScope.launch { settingsRepo.setGeositeUrl(url) }
 

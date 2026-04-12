@@ -4,6 +4,7 @@ import com.materialxray.model.Protocol
 import com.materialxray.model.RoutingRule
 import com.materialxray.model.RoutingRuleOperator
 import com.materialxray.model.ServerConfig
+import com.materialxray.model.XrayLogLevel
 import kotlinx.serialization.json.*
 
 class ConfigGenerator {
@@ -14,11 +15,15 @@ class ConfigGenerator {
         tunName: String = "xray0",
         fwmark: Int = 255,
         dnsServers: String = "1.1.1.1,8.8.8.8",
+        logLevel: XrayLogLevel = XrayLogLevel.default,
         routingRules: List<RoutingRule> = emptyList(),
         physicalInterface: String? = null,
     ): String {
         val config = buildJsonObject {
-            put("log", buildJsonObject { put("loglevel", "info") })
+            put("log", buildJsonObject {
+                put("access", "none")
+                put("loglevel", logLevel.value)
+            })
             put("dns", buildDns(dnsServers))
             put("inbounds", buildJsonArray { add(buildTunInbound(tunName)) })
             put("outbounds", buildJsonArray {

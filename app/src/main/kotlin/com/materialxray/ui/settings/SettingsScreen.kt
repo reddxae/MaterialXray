@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.materialxray.model.XrayLogLevel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -18,9 +19,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val tunName by viewModel.tunName.collectAsStateWithLifecycle()
     val dnsServers by viewModel.dnsServers.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
+    val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
     val scrollState = rememberScrollState()
+    var logLevelExpanded by remember { mutableStateOf(false) }
 
     var editingTunName by remember(tunName) { mutableStateOf(tunName) }
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
@@ -78,6 +81,37 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
             if (hasDnsChanges) {
                 TextButton(onClick = { viewModel.setDnsServers(editingDns) }) { Text("Save") }
+            }
+
+            ExposedDropdownMenuBox(
+                expanded = logLevelExpanded,
+                onExpandedChange = { logLevelExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value = xrayLogLevel.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Xray Log Level") },
+                    supportingText = { Text("Default: Error") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = logLevelExpanded) },
+                    modifier = Modifier
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(
+                    expanded = logLevelExpanded,
+                    onDismissRequest = { logLevelExpanded = false },
+                ) {
+                    XrayLogLevel.entries.forEach { level ->
+                        DropdownMenuItem(
+                            text = { Text(level.label) },
+                            onClick = {
+                                logLevelExpanded = false
+                                viewModel.setXrayLogLevel(level)
+                            },
+                        )
+                    }
+                }
             }
 
             OutlinedTextField(

@@ -11,6 +11,7 @@ import com.materialxray.data.db.dao.AppBypassDao
 import com.materialxray.model.ConnectionState
 import com.materialxray.model.RoutingRule
 import com.materialxray.model.ServerConfig
+import com.materialxray.model.XrayLogLevel
 import java.io.FileOutputStream
 
 class ConnectionManager(
@@ -36,6 +37,7 @@ class ConnectionManager(
         fwmark: Int,
         routeTable: Int,
         dnsServers: String,
+        logLevel: XrayLogLevel,
         routingRules: List<RoutingRule>,
         transitionState: ConnectionState = ConnectionState.Connecting,
     ) {
@@ -132,6 +134,7 @@ class ConnectionManager(
                 tunName,
                 fwmark,
                 dnsServers,
+                logLevel,
                 routingRules,
                 physicalInterface = physicalRoute.dev,
             )

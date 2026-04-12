@@ -6,6 +6,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.materialxray.model.RoutingRule
 import com.materialxray.model.RoutingRuleCatalog
+import com.materialxray.model.XrayLogLevel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -33,6 +34,7 @@ class SettingsRepository @Inject constructor(
         val LAST_SERVER_ID = longPreferencesKey("last_server_id")
         val GEOIP_URL = stringPreferencesKey("geoip_url")
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
+        val XRAY_LOG_LEVEL = stringPreferencesKey("xray_log_level")
         val ROUTING_RULES = stringPreferencesKey("routing_rules")
         val ROUTING_RULES_VERSION = intPreferencesKey("routing_rules_version")
         val ROUTING_RULE_STATES = stringPreferencesKey("routing_rule_states")
@@ -51,6 +53,9 @@ class SettingsRepository @Inject constructor(
     val routeTable: Flow<Int> = store.data.map { it[ROUTE_TABLE] ?: 100 }
     val autoConnect: Flow<Boolean> = store.data.map { it[AUTO_CONNECT] ?: false }
     val lastServerId: Flow<Long> = store.data.map { it[LAST_SERVER_ID] ?: -1L }
+    val xrayLogLevel: Flow<XrayLogLevel> = store.data.map { prefs ->
+        XrayLogLevel.fromValue(prefs[XRAY_LOG_LEVEL])
+    }
     val geoipUrl: Flow<String> = store.data.map { prefs ->
         prefs[GEOIP_URL]
             ?: prefs[LEGACY_GEO_DATA_BASE_URL]?.let { legacyBaseUrl -> appendLegacyFileName(legacyBaseUrl, "geoip.dat") }
@@ -75,6 +80,9 @@ class SettingsRepository @Inject constructor(
     suspend fun setRouteTable(table: Int) = store.edit { it[ROUTE_TABLE] = table }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
     suspend fun setLastServerId(id: Long) = store.edit { it[LAST_SERVER_ID] = id }
+    suspend fun setXrayLogLevel(level: XrayLogLevel) = store.edit { prefs ->
+        prefs[XRAY_LOG_LEVEL] = level.value
+    }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
         val trimmedUrl = url.trim()
@@ -117,6 +125,7 @@ class SettingsRepository @Inject constructor(
             map["route_table"]?.let { prefs[ROUTE_TABLE] = it.toIntOrNull() ?: 100 }
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
             map["last_server_id"]?.let { prefs[LAST_SERVER_ID] = it.toLongOrNull() ?: -1L }
+            prefs[XRAY_LOG_LEVEL] = XrayLogLevel.fromValue(map["xray_log_level"]).value
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }

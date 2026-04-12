@@ -7,6 +7,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 data class LogEntry(
+    val id: Long,
     val timestamp: Long = System.currentTimeMillis(),
     val source: LogSource,
     val message: String,
@@ -19,6 +20,8 @@ class LogBuffer @Inject constructor() {
     private val maxSize = 2000
     private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
     val entries: StateFlow<List<LogEntry>> = _entries
+    private val buffer = ArrayDeque<LogEntry>(maxSize)
+    private var nextId = 0L
 
     @Synchronized
     fun append(source: LogSource, message: String) {
@@ -28,17 +31,22 @@ class LogBuffer @Inject constructor() {
             LogSource.XRAY -> Log.d("MXray.xray", message)
         }
 
-        val current = _entries.value.toMutableList()
-        current.add(LogEntry(source = source, message = message))
-        if (current.size > maxSize) {
-            _entries.value = current.drop(current.size - maxSize)
-        } else {
-            _entries.value = current
+        if (buffer.size == maxSize) {
+            buffer.removeFirst()
         }
+        buffer.addLast(
+            LogEntry(
+                id = nextId++,
+                source = source,
+                message = message,
+            )
+        )
+        _entries.value = buffer.toList()
     }
 
     @Synchronized
     fun clear() {
+        buffer.clear()
         _entries.value = emptyList()
     }
 

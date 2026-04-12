@@ -17,7 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.materialxray.service.LogEntry
 import com.materialxray.service.LogSource
 import java.text.SimpleDateFormat
@@ -28,7 +29,7 @@ private enum class LogFilter(val label: String) { ALL("All"), APP("App"), XRAY("
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
-    val allEntries by viewModel.entries.collectAsState()
+    val allEntries by viewModel.entries.collectAsStateWithLifecycle()
     var filter by remember { mutableStateOf(LogFilter.ALL) }
 
     val entries = remember(allEntries, filter) {
@@ -89,7 +90,7 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
             ) {
                 items(
                     items = entries,
-                    key = { "${it.timestamp}-${it.hashCode()}" },
+                    key = { it.id },
                     contentType = { it.source },
                 ) { entry ->
                     LogEntryRow(entry = entry, onCopy = {
@@ -107,10 +108,6 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
 private fun LogEntryRow(entry: LogEntry, onCopy: () -> Unit) {
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.US) }
     val time = remember(entry.timestamp) { timeFormat.format(Date(entry.timestamp)) }
-    val sourceColor = when (entry.source) {
-        LogSource.APP -> MaterialTheme.colorScheme.primary
-        LogSource.XRAY -> MaterialTheme.colorScheme.tertiary
-    }
     val isError = entry.message.contains("error", ignoreCase = true) ||
         entry.message.contains("fail", ignoreCase = true)
     val messageColor = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface

@@ -64,8 +64,10 @@ class HomeViewModel @Inject constructor(
         list.find { it.id == id }?.let { runCatching { serverRepo.parseConfig(it) }.getOrNull() }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _isRefreshing = MutableStateFlow(false)
-    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+    private val refreshOperations = MutableStateFlow(0)
+    val isRefreshing: StateFlow<Boolean> = refreshOperations
+        .map { it > 0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun connect() {
         val server = selectedServer.value ?: return
@@ -102,17 +104,17 @@ class HomeViewModel @Inject constructor(
 
     fun refreshAll() {
         viewModelScope.launch {
-            _isRefreshing.value = true
-            runCatching { subscriptionRepo.refreshAll() }
-            _isRefreshing.value = false
+            withRefreshTracking {
+                runCatching { subscriptionRepo.refreshAll() }
+            }
         }
     }
 
     fun refreshSubscription(sub: SubscriptionEntity) {
         viewModelScope.launch {
-            _isRefreshing.value = true
-            runCatching { subscriptionRepo.refresh(sub.id, sub.url) }
-            _isRefreshing.value = false
+            withRefreshTracking {
+                runCatching { subscriptionRepo.refresh(sub.id, sub.url) }
+            }
         }
     }
 
@@ -164,4 +166,13 @@ class HomeViewModel @Inject constructor(
         Socket().use { it.connect(InetSocketAddress(address, port), 3000) }
         (System.currentTimeMillis() - start).toInt()
     }.getOrElse { -1 }
+
+    private suspend fun withRefreshTracking(block: suspend () -> Unit) {
+        refreshOperations.update { it + 1 }
+        try {
+            block()
+        } finally {
+            refreshOperations.update { current -> (current - 1).coerceAtLeast(0) }
+        }
+    }
 }

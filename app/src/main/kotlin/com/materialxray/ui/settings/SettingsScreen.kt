@@ -9,16 +9,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
-    val tunName by viewModel.tunName.collectAsState()
-    val dnsServers by viewModel.dnsServers.collectAsState()
-    val autoConnect by viewModel.autoConnect.collectAsState()
-    val geoipUrl by viewModel.geoipUrl.collectAsState()
-    val geositeUrl by viewModel.geositeUrl.collectAsState()
+    val tunName by viewModel.tunName.collectAsStateWithLifecycle()
+    val dnsServers by viewModel.dnsServers.collectAsStateWithLifecycle()
+    val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
+    val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
+    val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
+    val scrollState = rememberScrollState()
 
     var editingTunName by remember(tunName) { mutableStateOf(tunName) }
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
@@ -48,7 +50,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

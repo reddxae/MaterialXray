@@ -33,11 +33,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -57,7 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.materialxray.model.RoutingRule
 import com.materialxray.model.RoutingRuleOperator
 import com.materialxray.ui.apps.AppBypassContent
@@ -113,7 +114,7 @@ private val matchModeOptions = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
-    val rules by viewModel.rules.collectAsState()
+    val rules by viewModel.rules.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var previousTab by remember { mutableIntStateOf(selectedTab) }
     var selectedRuleIds by remember { mutableStateOf(emptySet<String>()) }
@@ -183,7 +184,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            TabRow(selectedTabIndex = selectedTab) {
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
                 RoutingTab.entries.forEachIndexed { index, tab ->
                     Tab(
                         selected = selectedTab == index,

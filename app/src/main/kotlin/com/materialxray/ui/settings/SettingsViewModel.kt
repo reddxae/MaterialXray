@@ -13,8 +13,10 @@ import com.materialxray.data.repository.SettingsRepository
 import com.materialxray.model.BackupData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -52,38 +54,44 @@ class SettingsViewModel @Inject constructor(
 
     fun exportBackup(uri: Uri) {
         viewModelScope.launch {
-            val subs = subscriptionDao.getAll()
-            val bypassed = appBypassDao.getExcluded().map { it.packageName }
-            val settings = settingsRepo.getAllAsMap()
+            withContext(Dispatchers.IO) {
+                val subs = subscriptionDao.getAll()
+                val bypassed = appBypassDao.getExcluded().map { it.packageName }
+                val settings = settingsRepo.getAllAsMap()
 
-            val backup = BackupData(
-                subscriptions = subs.map { BackupData.BackupSubscription(it.name, it.url) },
-                bypassedApps = bypassed,
-                settings = settings,
-            )
+                val backup = BackupData(
+                    subscriptions = subs.map { BackupData.BackupSubscription(it.name, it.url) },
+                    bypassedApps = bypassed,
+                    settings = settings,
+                )
 
-            context.contentResolver.openOutputStream(uri)?.use { stream ->
-                stream.write(json.encodeToString(backup).toByteArray())
+                context.contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(json.encodeToString(backup).toByteArray())
+                }
             }
         }
     }
 
     fun importBackup(uri: Uri) {
         viewModelScope.launch {
-            val text = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() } ?: return@launch
-            val backup = runCatching { json.decodeFromString<BackupData>(text) }.getOrNull() ?: return@launch
+            withContext(Dispatchers.IO) {
+                val text = context.contentResolver.openInputStream(uri)
+                    ?.use { it.bufferedReader().readText() }
+                    ?: return@withContext
+                val backup = runCatching { json.decodeFromString<BackupData>(text) }.getOrNull() ?: return@withContext
 
-            subscriptionDao.deleteAll()
-            serverDao.deleteAll()
-            appBypassDao.deleteAll()
+                subscriptionDao.deleteAll()
+                serverDao.deleteAll()
+                appBypassDao.deleteAll()
 
-            backup.subscriptions.forEach { sub ->
-                subscriptionDao.insert(SubscriptionEntity(name = sub.name, url = sub.url))
+                backup.subscriptions.forEach { sub ->
+                    subscriptionDao.insert(SubscriptionEntity(name = sub.name, url = sub.url))
+                }
+                backup.bypassedApps.forEach { pkg ->
+                    appBypassDao.upsert(AppBypassEntity(packageName = pkg, uid = 0, excluded = true))
+                }
+                settingsRepo.restoreFromMap(backup.settings)
             }
-            backup.bypassedApps.forEach { pkg ->
-                appBypassDao.upsert(AppBypassEntity(packageName = pkg, uid = 0, excluded = true))
-            }
-            settingsRepo.restoreFromMap(backup.settings)
         }
     }
 }

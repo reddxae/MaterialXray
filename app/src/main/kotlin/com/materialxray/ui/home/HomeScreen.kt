@@ -20,7 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.materialxray.data.db.entity.ServerEntity
 import com.materialxray.data.db.entity.SubscriptionEntity
 import com.materialxray.model.ConnectionState
@@ -28,12 +29,12 @@ import com.materialxray.model.ConnectionState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
-    val connectionState by viewModel.connectionState.collectAsState()
-    val selectedServer by viewModel.selectedServer.collectAsState()
-    val selectedServerId by viewModel.selectedServerId.collectAsState()
-    val subscriptions by viewModel.subscriptions.collectAsState()
-    val serversBySubscription by viewModel.serversBySubscription.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
+    val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
+    val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+    val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
 
     val isConnected = connectionState is ConnectionState.Connected
     val isTransitioning = connectionState is ConnectionState.Connecting ||
@@ -51,6 +52,12 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     )
 
     var showAddDialog by remember { mutableStateOf(false) }
+    val selectedServerName = remember(selectedServer) { selectedServer?.name ?: "No server selected" }
+    val selectedServerDetail = remember(selectedServer) {
+        selectedServer?.let {
+            "${it.protocol.displayName.uppercase()} | ${it.transport.type.uppercase()} | ${it.security.type.uppercase()}"
+        } ?: "Select a server below"
+    }
 
     Scaffold(
         topBar = {
@@ -71,10 +78,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             item {
                 ConnectionPanel(
                     connectionState = connectionState,
-                    selectedServerName = selectedServer?.name ?: "No server selected",
-                    selectedServerDetail = selectedServer?.let {
-                        "${it.protocol.displayName.uppercase()} | ${it.transport.type.uppercase()} | ${it.security.type.uppercase()}"
-                    } ?: "Select a server below",
+                    selectedServerName = selectedServerName,
+                    selectedServerDetail = selectedServerDetail,
                     buttonColor = buttonColor,
                     isConnected = isConnected,
                     isTransitioning = isTransitioning,
@@ -103,21 +108,23 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     EmptySubscriptionsCard(onAddSubscription = { showAddDialog = true })
                 }
             } else {
-                subscriptions.forEach { subscription ->
-                    item(key = "sub_${subscription.id}") {
-                        SubscriptionCard(
-                            subscription = subscription,
-                            servers = serversBySubscription[subscription.id].orEmpty(),
-                            selectedServerId = selectedServerId,
-                            onDelete = { viewModel.deleteSubscription(subscription) },
-                            onRefresh = { viewModel.refreshSubscription(subscription) },
-                            onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
-                            onServerSelected = { viewModel.selectServer(it) },
-                            onTestLatency = { viewModel.testLatency(it) },
-                        )
-                    }
+                items(
+                    items = subscriptions,
+                    key = { it.id },
+                    contentType = { "subscription" },
+                ) { subscription ->
+                    SubscriptionCard(
+                        subscription = subscription,
+                        servers = serversBySubscription[subscription.id].orEmpty(),
+                        selectedServerId = selectedServerId,
+                        onDelete = { viewModel.deleteSubscription(subscription) },
+                        onRefresh = { viewModel.refreshSubscription(subscription) },
+                        onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
+                        onServerSelected = { viewModel.selectServer(it) },
+                        onTestLatency = { viewModel.testLatency(it) },
+                    )
                 }
-                item {
+                item(contentType = "addSubscription") {
                     OutlinedButton(
                         onClick = { showAddDialog = true },
                         modifier = Modifier.fillMaxWidth(),

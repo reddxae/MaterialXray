@@ -40,6 +40,7 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
     private val json = Json { ignoreUnknownKeys = true }
     private val endpointSummaryCache = mutableMapOf<String, String>()
+    private val activeConfigFile = context.filesDir.resolve("config.json")
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
 
@@ -68,6 +69,8 @@ class HomeViewModel @Inject constructor(
     val isRefreshing: StateFlow<Boolean> = refreshOperations
         .map { it > 0 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    private val _runningConfig = MutableStateFlow<String?>(null)
+    val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
 
     fun connect() {
         val server = selectedServer.value ?: return
@@ -77,6 +80,21 @@ class HomeViewModel @Inject constructor(
 
     fun disconnect() {
         XrayService.disconnect(context)
+    }
+
+    fun showRunningConfig() {
+        viewModelScope.launch {
+            _runningConfig.value = withContext(Dispatchers.IO) {
+                runCatching { activeConfigFile.takeIf { it.isFile }?.readText() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "No active Xray config file was found."
+            }
+        }
+    }
+
+    fun dismissRunningConfig() {
+        _runningConfig.value = null
     }
 
     fun selectServer(serverId: Long) {

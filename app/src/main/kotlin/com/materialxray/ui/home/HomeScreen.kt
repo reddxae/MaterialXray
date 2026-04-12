@@ -1,5 +1,7 @@
 package com.materialxray.ui.home
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -7,7 +9,11 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -16,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,6 +42,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val runningConfig by viewModel.runningConfig.collectAsStateWithLifecycle()
 
     val isConnected = connectionState is ConnectionState.Connected
     val isTransitioning = connectionState is ConnectionState.Connecting ||
@@ -58,6 +66,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             "${it.protocol.displayName.uppercase()} | ${it.transport.type.uppercase()} | ${it.security.type.uppercase()}"
         } ?: "Select a server below"
     }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -88,6 +97,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                         if (isConnected) viewModel.disconnect()
                         else if (!isTransitioning) viewModel.connect()
                     },
+                    onViewConfig = { viewModel.showRunningConfig() },
                 )
             }
 
@@ -145,6 +155,17 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             },
         )
     }
+
+    if (runningConfig != null) {
+        RawConfigDialog(
+            config = runningConfig.orEmpty(),
+            onDismiss = viewModel::dismissRunningConfig,
+            onCopy = {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                clipboard?.setPrimaryClip(ClipData.newPlainText("Xray config", runningConfig.orEmpty()))
+            },
+        )
+    }
 }
 
 @Composable
@@ -157,7 +178,20 @@ private fun ConnectionPanel(
     isTransitioning: Boolean,
     canStart: Boolean,
     onClick: () -> Unit,
+    onViewConfig: () -> Unit,
 ) {
+    val buttonEnabled = (canStart || isConnected) && !isTransitioning
+    val containerColor = if (buttonEnabled) {
+        buttonColor.copy(alpha = 0.15f)
+    } else {
+        buttonColor.copy(alpha = 0.10f)
+    }
+    val contentColor = if (buttonEnabled) {
+        buttonColor
+    } else {
+        buttonColor.copy(alpha = 0.75f)
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -199,18 +233,22 @@ private fun ConnectionPanel(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        FilledTonalButton(
-            onClick = onClick,
-            enabled = (canStart || isConnected) && !isTransitioning,
-            modifier = Modifier.size(124.dp),
+        Surface(
+            color = containerColor,
+            contentColor = contentColor,
             shape = CircleShape,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = buttonColor.copy(alpha = 0.15f),
-                contentColor = buttonColor,
-                disabledContainerColor = buttonColor.copy(alpha = 0.10f),
-                disabledContentColor = buttonColor.copy(alpha = 0.75f),
-            ),
-            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier
+                .size(124.dp)
+                .clip(CircleShape)
+                .combinedClickable(
+                    enabled = buttonEnabled,
+                    onClick = onClick,
+                    onLongClick = {
+                        if (isConnected) {
+                            onViewConfig()
+                        }
+                    },
+                ),
         ) {
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 if (isTransitioning) {
@@ -224,11 +262,54 @@ private fun ConnectionPanel(
                         text = if (isConnected) "Stop" else "Start",
                         style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
+                        color = contentColor,
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RawConfigDialog(
+    config: String,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    val scrollState = rememberScrollState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onCopy) {
+                Text("Copy")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        },
+        title = { Text("Active Xray Config") },
+        text = {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = config,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 160.dp, max = 420.dp)
+                            .verticalScroll(scrollState)
+                            .padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+    )
 }
 
 @Composable

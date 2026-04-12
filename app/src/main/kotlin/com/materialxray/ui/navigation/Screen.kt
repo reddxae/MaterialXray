@@ -13,7 +13,7 @@ enum class Screen(
     val icon: ImageVector,
 ) {
     Home("home", "Home", Icons.Default.Home),
-    Logs("logs", "Logs", Icons.AutoMirrored.Filled.Article),
     Routing("routing", "Routing", Icons.Default.Apps),
+    Logs("logs", "Logs", Icons.AutoMirrored.Filled.Article),
     Settings("settings", "Settings", Icons.Default.Settings),
 }

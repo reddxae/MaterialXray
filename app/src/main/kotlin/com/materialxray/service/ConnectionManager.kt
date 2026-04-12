@@ -1,6 +1,8 @@
 package com.materialxray.service
 
 import android.content.Context
+import android.os.Build
+import android.os.PowerManager
 import android.os.SystemClock
 import com.materialxray.core.root.RootShell
 import com.materialxray.core.root.RootShell.NetworkNamespace
@@ -62,6 +64,7 @@ class ConnectionManager(
                 LogSource.APP,
                 "Root access granted (namespace=${shell.defaultNetworkNamespace().name.lowercase()})",
             )
+            ensureNativeRuntimeExemptions()
             logNamespaceDiagnostics(stage = "shell")
 
             prepareLogFile()
@@ -250,14 +253,91 @@ class ConnectionManager(
         return result.output.trim().toIntOrNull() ?: -1
     }
 
-    private suspend fun isProcessAlive(pid: Int): Boolean {
+    suspend fun isProcessAlive(pid: Int): Boolean {
         if (pid <= 0) return false
         return shell.execute("kill -0 $pid 2>/dev/null").isSuccess
+    }
+
+    suspend fun killProcess(pid: Int, signal: Int = 15): Boolean {
+        if (pid <= 0) return false
+        return shell.execute("kill -$signal $pid 2>/dev/null").isSuccess
+    }
+
+    suspend fun readProcessResidentMemoryMb(pid: Int): Long? {
+        val rssKb = readProcessResidentMemoryKb(pid) ?: return null
+        return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
     }
 
     private suspend fun readCrashReason(lines: Int = 80): String {
         val crashLog = shell.execute("tail -n $lines ${shellQuote(logFile)} 2>/dev/null").output.trim()
         return crashLog.lines().lastOrNull { it.isNotBlank() } ?: "xray process exited"
+    }
+
+    private suspend fun ensureNativeRuntimeExemptions() {
+        val packageName = context.packageName
+        val packageUid = context.applicationInfo.uid
+        val powerManager = context.getSystemService(PowerManager::class.java)
+
+        val wasIgnoringBatteryOptimizations =
+            powerManager?.isIgnoringBatteryOptimizations(packageName) == true
+        if (wasIgnoringBatteryOptimizations) {
+            log.append(LogSource.APP, "Battery optimizations already disabled for $packageName")
+        } else {
+            val result = shell.execute("cmd deviceidle whitelist +${shellQuote(packageName)}")
+            if (result.isSuccess) {
+                val nowIgnoringBatteryOptimizations =
+                    powerManager?.isIgnoringBatteryOptimizations(packageName) == true
+                log.append(
+                    LogSource.APP,
+                    if (nowIgnoringBatteryOptimizations) {
+                        "Added $packageName to the device idle whitelist"
+                    } else {
+                        "Requested device idle whitelist for $packageName"
+                    },
+                )
+            } else {
+                log.append(
+                    LogSource.APP,
+                    "Could not update device idle whitelist for $packageName: ${result.error.ifBlank { result.output }.ifBlank { "unknown error" }}",
+                )
+            }
+        }
+
+        if (packageUid > 0) {
+            val netPolicyResult = shell.execute("cmd netpolicy add restrict-background-whitelist $packageUid")
+            if (netPolicyResult.isSuccess) {
+                log.append(LogSource.APP, "Added uid=$packageUid to the background-data allowlist")
+            } else if (netPolicyResult.exitCode != 0) {
+                val details = netPolicyResult.error.ifBlank { netPolicyResult.output }.trim()
+                log.append(
+                    LogSource.APP,
+                    "Background-data allowlist update skipped for uid=$packageUid${details.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""}",
+                )
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val lowPowerStandbyExempt = powerManager?.isExemptFromLowPowerStandby() == true
+            log.append(
+                LogSource.APP,
+                if (lowPowerStandbyExempt) {
+                    "Low Power Standby exemption is active for $packageName"
+                } else {
+                    "Low Power Standby exemption is not active for $packageName"
+                },
+            )
+        }
+    }
+
+    private suspend fun readProcessResidentMemoryKb(pid: Int): Long? {
+        if (pid <= 0) return null
+
+        val statusResult = shell.execute("awk '/^VmRSS:/ { print \$2 }' /proc/$pid/status 2>/dev/null")
+        statusResult.output.trim().toLongOrNull()?.let { return it }
+
+        val statmResult = shell.execute("awk '{ print \$2 }' /proc/$pid/statm 2>/dev/null")
+        val rssPages = statmResult.output.trim().toLongOrNull() ?: return null
+        return rssPages * DEFAULT_MEMORY_PAGE_KB
     }
 
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
@@ -340,5 +420,10 @@ class ConnectionManager(
         if (!result.isSuccess) {
             log.append(LogSource.APP, "$label: exit=${result.exitCode}")
         }
+    }
+
+    companion object {
+        private const val DEFAULT_MEMORY_PAGE_KB = 4L
+        private const val KILOBYTES_PER_MEGABYTE = 1024L
     }
 }

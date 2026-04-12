@@ -26,18 +26,23 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
 
+        val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            CleanupManager(context, rootShell).ensureCleanState()
+            try {
+                CleanupManager(context, rootShell).ensureCleanState()
 
-            val autoConnect = settingsRepo.autoConnect.first()
-            if (!autoConnect) return@launch
+                val autoConnect = settingsRepo.autoConnect.first()
+                if (!autoConnect) return@launch
 
-            val lastServerId = settingsRepo.lastServerId.first()
-            if (lastServerId < 0) return@launch
+                val lastServerId = settingsRepo.lastServerId.first()
+                if (lastServerId < 0) return@launch
 
-            val serverEntity = serverDao.getById(lastServerId) ?: return@launch
-            val config = Json.decodeFromString<ServerConfig>(serverEntity.configJson)
-            XrayService.connect(context, config)
+                val serverEntity = serverDao.getById(lastServerId) ?: return@launch
+                val config = Json.decodeFromString<ServerConfig>(serverEntity.configJson)
+                XrayService.connect(context, config)
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 }

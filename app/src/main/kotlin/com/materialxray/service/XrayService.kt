@@ -26,6 +26,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -44,6 +46,10 @@ class XrayService : Service() {
     private var activeConfig: ServerConfig? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var networkReconnectJob: Job? = null
+    private var processWatchdogJob: Job? = null
+    private var processWatchdogPid: Int? = null
+    private var processRecoveryJob: Job? = null
+    private val connectionCommandMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -62,7 +68,10 @@ class XrayService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("Starting...", showDisconnectAction = false))
 
         scope.launch {
-            connectionStateHolder.state.drop(1).collect { updateNotification() }
+            connectionStateHolder.state.drop(1).collect { state ->
+                handleStateSideEffects(state)
+                updateNotification()
+            }
         }
 
         registerNetworkCallback()
@@ -72,7 +81,7 @@ class XrayService : Service() {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 val configJson = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
-                scope.launch {
+                launchConnectionCommand {
                     val config = Json.decodeFromString<ServerConfig>(configJson)
                     activeConfig = config
                     networkReconnectJob?.cancel()
@@ -81,16 +90,17 @@ class XrayService : Service() {
                 }
             }
             ACTION_DISCONNECT -> {
-                scope.launch {
+                launchConnectionCommand {
                     activeConfig = null
                     networkReconnectJob?.cancel()
                     stopLogTail()
+                    stopProcessWatchdog()
                     connectionManager.disconnect()
                     stopSelf()
                 }
             }
             ACTION_RELOAD -> {
-                scope.launch { reloadActiveConnection() }
+                launchConnectionCommand { reloadActiveConnection() }
             }
         }
         return START_STICKY
@@ -100,9 +110,13 @@ class XrayService : Service() {
         unregisterNetworkCallback()
         activeConfig = null
         networkReconnectJob?.cancel()
+        processRecoveryJob?.cancel()
+        stopProcessWatchdog()
         stopLogTail()
-        runBlocking { connectionManager.disconnect() }
         scope.cancel()
+        runBlocking {
+            connectionManager.disconnect(updateState = false)
+        }
         rootShell.close()
         super.onDestroy()
     }
@@ -112,6 +126,14 @@ class XrayService : Service() {
     private fun startLogTail() = xrayLogStreamer.start(scope)
 
     private fun stopLogTail() = xrayLogStreamer.stop()
+
+    private fun launchConnectionCommand(block: suspend () -> Unit) {
+        scope.launch {
+            connectionCommandMutex.withLock {
+                block()
+            }
+        }
+    }
 
     private suspend fun connectWithCurrentSettings(config: ServerConfig) {
         connectWithCurrentSettings(config, ConnectionState.Connecting)
@@ -138,6 +160,77 @@ class XrayService : Service() {
         updateNotification()
         connectionManager.disconnect(updateState = false)
         connectWithCurrentSettings(config, ConnectionState.ApplyingRoutingChanges)
+    }
+
+    private fun handleStateSideEffects(state: ConnectionState) {
+        when (state) {
+            is ConnectionState.Connected -> startProcessWatchdog(state)
+            else -> stopProcessWatchdog()
+        }
+    }
+
+    private fun startProcessWatchdog(state: ConnectionState.Connected) {
+        if (processWatchdogPid == state.corePid && processWatchdogJob?.isActive == true) return
+
+        stopProcessWatchdog()
+        processWatchdogPid = state.corePid
+        processWatchdogJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(PROCESS_WATCHDOG_INTERVAL_MS)
+
+                val currentState = connectionStateHolder.state.value as? ConnectionState.Connected ?: break
+                val pid = currentState.corePid
+                if (!connectionManager.isProcessAlive(pid)) {
+                    recoverNativeProcess(
+                        reason = "xray process $pid exited unexpectedly; reconnecting...",
+                    )
+                    break
+                }
+
+                val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid) ?: continue
+                if (residentMemoryMb > MAX_XRAY_PROCESS_MEMORY_MB) {
+                    recoverNativeProcess(
+                        reason = "xray process $pid exceeded ${MAX_XRAY_PROCESS_MEMORY_MB} MiB RSS (${residentMemoryMb} MiB); restarting...",
+                        pidToKill = pid,
+                    )
+                    break
+                }
+            }
+        }
+    }
+
+    private fun stopProcessWatchdog() {
+        processWatchdogJob?.cancel()
+        processWatchdogJob = null
+        processWatchdogPid = null
+    }
+
+    private fun recoverNativeProcess(
+        reason: String,
+        pidToKill: Int? = null,
+    ) {
+        if (processRecoveryJob?.isActive == true) return
+
+        processRecoveryJob = scope.launch {
+            connectionCommandMutex.withLock {
+                val config = activeConfig ?: return@withLock
+
+                networkReconnectJob?.cancel()
+                stopLogTail()
+                stopProcessWatchdog()
+                logBuffer.append(LogSource.APP, reason)
+
+                if (pidToKill != null) {
+                    connectionManager.killProcess(pidToKill, signal = 9)
+                }
+
+                connectionStateHolder.update(ConnectionState.Connecting)
+                updateNotification("Recovering native core...")
+                connectionManager.disconnect(updateState = false)
+                delay(PROCESS_RESTART_DELAY_MS)
+                connectWithCurrentSettings(config)
+            }
+        }
     }
 
     private fun registerNetworkCallback() {
@@ -204,10 +297,12 @@ class XrayService : Service() {
                 LogSource.APP,
                 "Network changed ($reason): ${latestState.physicalInterface} -> $currentInterface, reconnecting...",
             )
-            updateNotification("${latestState.serverName} | Native: ${latestState.tunName} -> $currentInterface")
-            stopLogTail()
-            connectionManager.disconnect()
-            connectWithCurrentSettings(latestConfig)
+            connectionCommandMutex.withLock {
+                updateNotification("${latestState.serverName} | Native: ${latestState.tunName} -> $currentInterface")
+                stopLogTail()
+                connectionManager.disconnect()
+                connectWithCurrentSettings(latestConfig)
+            }
         }
     }
 
@@ -270,6 +365,9 @@ class XrayService : Service() {
         const val ACTION_RELOAD = "com.materialxray.RELOAD"
         const val EXTRA_SERVER_CONFIG = "server_config"
         private const val NETWORK_RECONNECT_DELAY_MS = 2_000L
+        private const val PROCESS_RESTART_DELAY_MS = 2_000L
+        private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
+        private const val MAX_XRAY_PROCESS_MEMORY_MB = 512L
 
         fun connect(context: Context, serverConfig: ServerConfig) {
             val intent = Intent(context, XrayService::class.java).apply {

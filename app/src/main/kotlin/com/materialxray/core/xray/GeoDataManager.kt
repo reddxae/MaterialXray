@@ -3,6 +3,8 @@ package com.materialxray.core.xray
 import android.content.Context
 import com.materialxray.data.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -44,8 +46,12 @@ class GeoDataManager @Inject constructor(
         val state = resolveState()
 
         if (state.needsDownload) {
-            download(state.geoipUrl, state.geoipFile)
-            download(state.geositeUrl, state.geositeFile)
+            coroutineScope {
+                val geoipDownload = async { download(state.geoipUrl, state.geoipFile) }
+                val geositeDownload = async { download(state.geositeUrl, state.geositeFile) }
+                geoipDownload.await()
+                geositeDownload.await()
+            }
             geoipSourceFile.writeText(state.geoipUrl)
             geositeSourceFile.writeText(state.geositeUrl)
         }

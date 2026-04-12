@@ -4,6 +4,8 @@ import android.net.DnsResolver
 import android.net.InetAddresses
 import android.os.CancellationSignal
 import com.materialxray.model.ServerConfig
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -30,10 +32,11 @@ class ServerAddressResolver {
             return@withContext Result(server, attempted = false, selectedAddress = null, candidates = emptyList())
         }
 
-        val candidates = (
-            (withTimeoutOrNull(RESOLVE_TIMEOUT_MS) { resolveWithAndroidDns(host) } ?: emptyList()) +
-                resolveWithOkHttpDns(host)
-            ).distinct()
+        val candidates = coroutineScope {
+            val androidDns = async { withTimeoutOrNull(RESOLVE_TIMEOUT_MS) { resolveWithAndroidDns(host) } ?: emptyList() }
+            val okHttpDns = async { resolveWithOkHttpDns(host) }
+            (androidDns.await() + okHttpDns.await()).distinct()
+        }
         if (candidates.isEmpty()) {
             return@withContext Result(server, attempted = true, selectedAddress = null, candidates = emptyList())
         }

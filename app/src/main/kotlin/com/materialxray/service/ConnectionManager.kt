@@ -38,6 +38,7 @@ class ConnectionManager(
         transitionState: ConnectionState = ConnectionState.Connecting,
     ) {
         stateHolder.update(transitionState)
+        val connectStartedAt = SystemClock.elapsedRealtime()
         val routeMark = routeTable
         val bypassTable = routeTable + 1
         log.clear()
@@ -45,10 +46,15 @@ class ConnectionManager(
 
         try {
             log.append(LogSource.APP, "Cleaning up previous state...")
-            cleanupManager.ensureCleanState()
+            timedStep("Cleanup") {
+                cleanupManager.ensureCleanState()
+            }
 
             log.append(LogSource.APP, "Requesting root access...")
-            if (!shell.open()) {
+            val rootGranted = timedStep("Root shell setup") {
+                shell.open()
+            }
+            if (!rootGranted) {
                 fail("Root access denied")
                 return
             }
@@ -62,7 +68,10 @@ class ConnectionManager(
             onXrayLogReady()
 
             log.append(LogSource.APP, "Extracting xray binary...")
-            if (!xrayBinary.ensureExtracted()) {
+            val xrayReady = timedStep("xray binary extraction") {
+                xrayBinary.ensureExtracted()
+            }
+            if (!xrayReady) {
                 fail("xray binary not found — check assets")
                 return
             }
@@ -73,7 +82,9 @@ class ConnectionManager(
                 stateHolder.update(ConnectionState.UpdatingRoutingData)
                 log.append(LogSource.APP, "Updating routing data...")
             }
-            val geoDataStatus = geoDataManager.ensureReady()
+            val geoDataStatus = timedStep("Routing data setup") {
+                geoDataManager.ensureReady()
+            }
             stateHolder.update(transitionState)
             if (geoDataStatus.downloaded) {
                 log.append(
@@ -84,7 +95,9 @@ class ConnectionManager(
                 log.append(LogSource.APP, "Routing data already up to date")
             }
 
-            val physicalRoute = tunManager.detectPhysicalRoute(tunName)
+            val physicalRoute = timedStep("Physical route detection") {
+                tunManager.detectPhysicalRoute(tunName)
+            }
             if (physicalRoute == null) {
                 fail("Could not detect physical network route for Xray bypass")
                 return
@@ -96,7 +109,9 @@ class ConnectionManager(
                     (physicalRoute.table?.let { " table=$it" } ?: ""),
             )
 
-            val resolvedServer = serverAddressResolver.resolve(server)
+            val resolvedServer = timedStep("Server address resolution") {
+                serverAddressResolver.resolve(server)
+            }
             val xrayServer = resolvedServer.server
             if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
                 fail("Could not resolve ${server.address} before starting xray")
@@ -160,7 +175,9 @@ class ConnectionManager(
                 LogSource.APP,
                 "Applying IP routing (tunTable=$routeTable, bypassTable=$bypassTable, fwmark=$fwmark, ${bypassUids.size} apps bypassed)...",
             )
-            val routingResult = tunManager.applyRouting(tunName, fwmark, routeTable, bypassTable, physicalRoute, bypassUids)
+            val routingResult = timedStep("IP routing setup") {
+                tunManager.applyRouting(tunName, fwmark, routeTable, bypassTable, physicalRoute, bypassUids)
+            }
             if (!routingResult.success) {
                 fail("Failed to apply IP routing: ${routingResult.error ?: "unknown error"}")
                 return
@@ -174,6 +191,10 @@ class ConnectionManager(
             ))
 
             log.append(LogSource.APP, "Connected to ${server.name}")
+            log.append(
+                LogSource.APP,
+                "Connection setup finished in ${SystemClock.elapsedRealtime() - connectStartedAt} ms",
+            )
             stateHolder.update(
                 ConnectionState.Connected(
                     serverName = server.name,

@@ -16,6 +16,7 @@ class ConfigGenerator {
         val tunName: String,
         val outboundTag: String,
         val server: ServerConfig,
+        val applyRoutingRules: Boolean = false,
     )
 
     fun generate(
@@ -64,7 +65,7 @@ class ConfigGenerator {
                     directOutbound = buildDirectOutbound(fwmark, physicalInterface),
                     dnsOutbound = buildDnsOutbound(fwmark, physicalInterface),
                     blockOutbound = buildBlockOutbound(),
-                    appProxyOutbounds = appProxyRoutes.map { route ->
+                    appProxyOutbounds = appProxyRoutes.filterNot { it.applyRoutingRules }.map { route ->
                         buildProxyOutbound(route.server, fwmark, physicalInterface, tag = route.outboundTag)
                     },
                 ).forEach { add(it) }
@@ -146,7 +147,7 @@ class ConfigGenerator {
         val directOutbound = buildDirectOutbound(fwmark, physicalInterface)
         val dnsOutbound = buildDnsOutbound(fwmark, physicalInterface)
         val blockOutbound = buildBlockOutbound()
-        val appProxyOutbounds = appProxyRoutes.map { route ->
+        val appProxyOutbounds = appProxyRoutes.filterNot { it.applyRoutingRules }.map { route ->
             buildProxyOutbound(route.server, fwmark, physicalInterface, route.outboundTag)
         }
 
@@ -155,7 +156,7 @@ class ConfigGenerator {
             add("direct")
             add("dns-out")
             add("block")
-            appProxyRoutes.forEach { add(it.outboundTag) }
+            appProxyRoutes.filterNot { it.applyRoutingRules }.forEach { add(it.outboundTag) }
         }
         val unmanagedOutbounds = normalizedOutbounds.filterNot { outbound ->
             outbound["tag"]?.jsonPrimitive?.contentOrNull?.let { it in managedTags } == true
@@ -416,7 +417,7 @@ class ConfigGenerator {
                 put("port", "53")
                 put("outboundTag", "dns-out")
             })
-            appProxyRoutes.forEach { route ->
+            appProxyRoutes.filterNot { it.applyRoutingRules }.forEach { route ->
                 add(buildJsonObject {
                     put("type", "field")
                     put("inboundTag", buildJsonArray { add(route.inboundTag) })
@@ -441,6 +442,13 @@ class ConfigGenerator {
                 } else {
                     add(rule.toXrayRule())
                 }
+            }
+            appProxyRoutes.filter { it.applyRoutingRules }.forEach { route ->
+                add(buildJsonObject {
+                    put("type", "field")
+                    put("inboundTag", buildJsonArray { add(route.inboundTag) })
+                    put("outboundTag", route.outboundTag)
+                })
             }
         })
     }

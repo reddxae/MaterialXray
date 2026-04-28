@@ -258,4 +258,41 @@ class ConfigGeneratorTest {
         }.jsonObject
         assertEquals("app-in-42", appRoute["inboundTag"]!!.jsonArray.single().jsonPrimitive.content)
     }
+
+    @Test
+    fun `routes default selected app traffic through user rules before proxy fallback`() {
+        val appServer = vlessReality.copy(name = "Default selected", address = "5.6.7.8")
+        val config = generator.generate(
+            vlessReality,
+            defaultOutbound = XrayOutbound.Direct,
+            routingRules = RoutingRuleCatalog.defaults(),
+            appProxyRoutes = listOf(
+                ConfigGenerator.AppProxyRoute(
+                    inboundTag = "app-in-default-selected",
+                    tunName = "xray0a1",
+                    outboundTag = "proxy",
+                    server = appServer,
+                    applyRoutingRules = true,
+                )
+            ),
+        )
+        val json = Json.parseToJsonElement(config).jsonObject
+        val rules = json["routing"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+
+        assertNull(
+            "Default selected app route should reuse the main proxy outbound instead of adding a duplicate app outbound",
+            json["outbounds"]!!.jsonArray.firstOrNull {
+                it.jsonObject["tag"]?.jsonPrimitive?.content == "app-proxy-default-selected"
+            },
+        )
+        val ruRuleIndex = rules.indexOfFirst {
+            it["domain"]?.jsonArray?.any { domain -> domain.jsonPrimitive.content == "domain:ru" } == true
+        }
+        val fallbackIndex = rules.indexOfFirst {
+            it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "app-in-default-selected" &&
+                it["outboundTag"]?.jsonPrimitive?.content == "proxy"
+        }
+
+        assertTrue("User routing rules should be emitted before default selected proxy fallback", ruRuleIndex in 0 until fallbackIndex)
+    }
 }

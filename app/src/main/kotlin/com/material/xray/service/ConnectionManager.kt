@@ -498,6 +498,7 @@ class ConnectionManager(
                         tunName = routeTunName,
                         outboundTag = DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG,
                         server = activeServer,
+                        applyRoutingRules = true,
                     )
                 }
             }
@@ -730,6 +731,6 @@ class ConnectionManager(
         private const val MAX_APP_PROXY_ROUTES = 64
         private const val DEFAULT_SELECTED_CONFIG_ROUTE_ID = Long.MIN_VALUE
         private const val DEFAULT_SELECTED_CONFIG_INBOUND_TAG = "app-in-default-selected"
-        private const val DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG = "app-proxy-default-selected"
+        private const val DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG = "proxy"
     }
 }

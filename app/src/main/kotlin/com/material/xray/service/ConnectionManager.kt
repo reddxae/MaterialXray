@@ -154,7 +154,12 @@ class ConnectionManager(
                 )
             }
 
-            val appRoutingPlan = buildAppRoutingPlan(tunName, routeTable, includeProxyRoutes = true)
+            val appRoutingPlan = buildAppRoutingPlan(
+                baseTunName = tunName,
+                baseRouteTable = routeTable,
+                includeProxyRoutes = true,
+                defaultProxyServer = xrayServer,
+            )
             if (appRoutingPlan.proxyRoutes.isNotEmpty() || appRoutingPlan.directUids.isNotEmpty()) {
                 log.append(
                     LogSource.APP,
@@ -429,8 +434,14 @@ class ConnectionManager(
         baseTunName: String,
         baseRouteTable: Int,
         includeProxyRoutes: Boolean,
+        defaultProxyServer: ServerConfig? = null,
     ): AppRoutingPlan {
         val directUids = appBypassDao.getExcluded()
+            .map { it.uid }
+            .filter { it > 0 }
+            .toSet()
+
+        val defaultProxyUids = appBypassDao.getDefaultProxyAssignments()
             .map { it.uid }
             .filter { it > 0 }
             .toSet()
@@ -440,7 +451,7 @@ class ConnectionManager(
             .groupBy { requireNotNull(it.serverId) }
             .toSortedMap()
 
-        if (proxyAssignments.isEmpty()) {
+        if (defaultProxyUids.isEmpty() && proxyAssignments.isEmpty()) {
             return AppRoutingPlan(
                 directUids = directUids,
                 proxyRoutes = emptyList(),
@@ -449,7 +460,8 @@ class ConnectionManager(
             )
         }
 
-        if (proxyAssignments.size > MAX_APP_PROXY_ROUTES) {
+        val routeGroupCount = proxyAssignments.size + if (defaultProxyUids.isNotEmpty()) 1 else 0
+        if (routeGroupCount > MAX_APP_PROXY_ROUTES) {
             log.append(
                 LogSource.APP,
                 "Only the first $MAX_APP_PROXY_ROUTES app proxy server groups can be active at once; extra groups are ignored",
@@ -460,21 +472,44 @@ class ConnectionManager(
         val tunRoutes = mutableListOf<TunManager.AppTunRoute>()
         val proxyServerIds = mutableListOf<Long>()
 
-        proxyAssignments.entries.take(MAX_APP_PROXY_ROUTES).forEachIndexed { index, (serverId, assignments) ->
-            val routeIndex = index + 1
+        fun addTunRoute(routeKey: Long, uids: Set<Int>): String {
+            val routeIndex = tunRoutes.size + 1
             val routeTunName = TunManager.appTunName(baseTunName, routeIndex)
-            val uids = assignments.map { it.uid }.filter { it > 0 }.toSet()
-            if (uids.isEmpty()) return@forEachIndexed
-
-            proxyServerIds += serverId
+            proxyServerIds += routeKey
             tunRoutes += TunManager.AppTunRoute(
                 tunName = routeTunName,
                 routeTable = TunManager.appRouteTable(baseRouteTable, routeIndex),
                 uids = uids,
             )
+            return routeTunName
+        }
+
+        if (defaultProxyUids.isNotEmpty()) {
+            val routeTunName = addTunRoute(DEFAULT_SELECTED_CONFIG_ROUTE_ID, defaultProxyUids)
+            if (includeProxyRoutes) {
+                val activeServer = defaultProxyServer
+                if (activeServer == null) {
+                    log.append(LogSource.APP, "Skipping default selected config app route: active server is not ready")
+                    proxyServerIds.removeLast()
+                    tunRoutes.removeLast()
+                } else {
+                    proxyRoutes += ConfigGenerator.AppProxyRoute(
+                        inboundTag = DEFAULT_SELECTED_CONFIG_INBOUND_TAG,
+                        tunName = routeTunName,
+                        outboundTag = DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG,
+                        server = activeServer,
+                    )
+                }
+            }
+        }
+
+        proxyAssignments.entries.take(MAX_APP_PROXY_ROUTES - tunRoutes.size).forEach { (serverId, assignments) ->
+            val uids = assignments.map { it.uid }.filter { it > 0 }.toSet()
+            if (uids.isEmpty()) return@forEach
+            val routeTunName = addTunRoute(serverId, uids)
 
             if (!includeProxyRoutes) {
-                return@forEachIndexed
+                return@forEach
             }
 
             val serverEntity = serverRepository.getById(serverId)
@@ -482,7 +517,7 @@ class ConnectionManager(
                 log.append(LogSource.APP, "Skipping app route for missing server id=$serverId")
                 proxyServerIds.removeLast()
                 tunRoutes.removeLast()
-                return@forEachIndexed
+                return@forEach
             }
 
             val parsedServerResult = runCatching { serverRepository.parseConfig(serverEntity) }
@@ -493,7 +528,7 @@ class ConnectionManager(
                 )
                 proxyServerIds.removeLast()
                 tunRoutes.removeLast()
-                return@forEachIndexed
+                return@forEach
             }
             val parsedServer = parsedServerResult.getOrThrow()
 
@@ -693,5 +728,8 @@ class ConnectionManager(
         private const val DEFAULT_MEMORY_PAGE_KB = 4L
         private const val KILOBYTES_PER_MEGABYTE = 1024L
         private const val MAX_APP_PROXY_ROUTES = 64
+        private const val DEFAULT_SELECTED_CONFIG_ROUTE_ID = Long.MIN_VALUE
+        private const val DEFAULT_SELECTED_CONFIG_INBOUND_TAG = "app-in-default-selected"
+        private const val DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG = "app-proxy-default-selected"
     }
 }

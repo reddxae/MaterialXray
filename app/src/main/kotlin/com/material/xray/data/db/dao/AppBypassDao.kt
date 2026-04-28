@@ -15,6 +15,9 @@ interface AppBypassDao {
     @Query("SELECT * FROM app_bypass WHERE excluded = 0 AND serverId IS NOT NULL")
     suspend fun getProxyAssignments(): List<AppBypassEntity>
 
+    @Query("SELECT * FROM app_bypass WHERE excluded = 0 AND serverId IS NULL")
+    suspend fun getDefaultProxyAssignments(): List<AppBypassEntity>
+
     @Upsert
     suspend fun upsert(entity: AppBypassEntity)
 

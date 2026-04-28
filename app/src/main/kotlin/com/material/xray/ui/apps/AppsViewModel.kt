@@ -34,6 +34,7 @@ data class AppItem(
 )
 
 enum class AppRouteKind {
+    INHERIT,
     DEFAULT,
     DIRECT,
     SERVER,
@@ -72,12 +73,17 @@ class AppsViewModel @Inject constructor(
     val routeOptions: StateFlow<List<AppRouteOption>> = serverRepository.observeAll()
         .map { servers ->
             buildList {
+                add(INHERIT_ROUTE_OPTION)
                 add(DEFAULT_ROUTE_OPTION)
                 add(DIRECT_ROUTE_OPTION)
                 servers.forEach { server -> add(server.toRouteOption()) }
             }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf(DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION))
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            listOf(INHERIT_ROUTE_OPTION, DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION),
+        )
 
     val apps: StateFlow<List<AppItem>> = combine(
         _installedApps,
@@ -148,7 +154,16 @@ class AppsViewModel @Inject constructor(
     fun setAppRoute(app: AppItem, option: AppRouteOption) {
         viewModelScope.launch {
             when (option.kind) {
-                AppRouteKind.DEFAULT -> appBypassDao.delete(app.packageName)
+                AppRouteKind.INHERIT -> appBypassDao.delete(app.packageName)
+                AppRouteKind.DEFAULT -> appBypassDao.upsert(
+                    AppBypassEntity(
+                        packageName = app.packageName,
+                        uid = app.uid,
+                        excluded = false,
+                        serverId = null,
+                        manual = true,
+                    )
+                )
                 AppRouteKind.DIRECT -> appBypassDao.upsert(
                     AppBypassEntity(
                         packageName = app.packageName,
@@ -200,7 +215,17 @@ class AppsViewModel @Inject constructor(
 
     fun resetAllToDefault() {
         viewModelScope.launch {
-            appBypassDao.deleteAll()
+            _installedApps.value.forEach {
+                appBypassDao.upsert(
+                    AppBypassEntity(
+                        packageName = it.packageName,
+                        uid = it.uid,
+                        excluded = false,
+                        serverId = null,
+                        manual = false,
+                    )
+                )
+            }
             routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
         }
     }
@@ -209,7 +234,7 @@ class AppsViewModel @Inject constructor(
         assignment: AppBypassEntity?,
         serverOptionsById: Map<Long, AppRouteOption>,
     ): AppRouteOption {
-        if (assignment == null) return DEFAULT_ROUTE_OPTION
+        if (assignment == null) return INHERIT_ROUTE_OPTION
         if (assignment.excluded) return DIRECT_ROUTE_OPTION
         val serverId = assignment.serverId ?: return DEFAULT_ROUTE_OPTION
         return serverOptionsById[serverId] ?: AppRouteOption(
@@ -236,9 +261,16 @@ class AppsViewModel @Inject constructor(
     }
 
     companion object {
+        private const val INHERIT_ROUTE_KEY = "inherit"
         private const val DEFAULT_ROUTE_KEY = "default"
         private const val DIRECT_ROUTE_KEY = "direct"
 
+        val INHERIT_ROUTE_OPTION = AppRouteOption(
+            key = INHERIT_ROUTE_KEY,
+            title = "Default outbound",
+            description = "Use the default outbound selected in Settings.",
+            kind = AppRouteKind.INHERIT,
+        )
         val DEFAULT_ROUTE_OPTION = AppRouteOption(
             key = DEFAULT_ROUTE_KEY,
             title = "Default selected config",

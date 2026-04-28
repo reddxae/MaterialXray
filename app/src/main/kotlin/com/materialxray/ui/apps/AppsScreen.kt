@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -26,6 +27,9 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     val apps by viewModel.apps.collectAsStateWithLifecycle()
     val routeOptions by viewModel.routeOptions.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val density = LocalDensity.current
+    val iconSize = 40.dp
+    val iconPixelSize = remember(density) { with(density) { iconSize.roundToPx() } }
     var editingApp by remember { mutableStateOf<AppItem?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -73,14 +77,14 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                         }
                     },
                     leadingContent = {
-                        val iconBitmap = remember(app.packageName, app.icon) {
-                            app.icon?.toBitmap(40, 40)?.asImageBitmap()
+                        val iconBitmap = remember(app.packageName, app.icon, iconPixelSize) {
+                            app.icon?.toBitmap(iconPixelSize, iconPixelSize)?.asImageBitmap()
                         }
                         iconBitmap?.let { bitmap ->
                             Image(
                                 bitmap = bitmap,
                                 contentDescription = null,
-                                modifier = Modifier.size(40.dp),
+                                modifier = Modifier.size(iconSize),
                             )
                         }
                     },

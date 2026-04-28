@@ -26,6 +26,7 @@ data class AppItem(
     val uid: Int,
     val icon: Drawable?,
     val routeKey: String,
+    val routeKind: AppRouteKind,
     val routeTitle: String,
     val routeDescription: String,
 )
@@ -85,6 +86,7 @@ class AppsViewModel @Inject constructor(
                 val option = app.resolveRouteOption(assignmentByPackage[app.packageName], serverOptionsById)
                 app.copy(
                     routeKey = option.key,
+                    routeKind = option.kind,
                     routeTitle = option.title,
                     routeDescription = option.description,
                 )
@@ -93,7 +95,7 @@ class AppsViewModel @Inject constructor(
                 query.isEmpty() || it.name.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
             }
             .sortedWith(
-                compareBy<AppItem> { it.routeKey == DEFAULT_ROUTE_OPTION.key }
+                compareBy<AppItem> { it.routeKind == AppRouteKind.DEFAULT }
                     .thenBy { it.name.lowercase() }
                     .thenBy { it.packageName },
             )
@@ -114,6 +116,7 @@ class AppsViewModel @Inject constructor(
                             uid = info.uid,
                             icon = runCatching { info.loadIcon(pm) }.getOrNull(),
                             routeKey = DEFAULT_ROUTE_OPTION.key,
+                            routeKind = DEFAULT_ROUTE_OPTION.kind,
                             routeTitle = DEFAULT_ROUTE_OPTION.title,
                             routeDescription = DEFAULT_ROUTE_OPTION.description,
                         )

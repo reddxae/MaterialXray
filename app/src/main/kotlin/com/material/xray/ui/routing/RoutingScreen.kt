@@ -61,6 +61,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleOperator
+import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 
 private enum class RoutingTab(val title: String) {
@@ -71,18 +72,6 @@ private enum class RoutingTab(val title: String) {
 private data class EditableRoutingRule(
     val rule: RoutingRule,
     val isNew: Boolean,
-)
-
-private data class OutboundOption(
-    val value: String,
-    val label: String,
-    val description: String,
-)
-
-private val outboundOptions = listOf(
-    OutboundOption("proxy", "Proxy", "Send matching traffic through the selected proxy server."),
-    OutboundOption("direct", "Direct", "Bypass the proxy and connect directly."),
-    OutboundOption("block", "Block", "Drop matching traffic with a blackhole outbound."),
 )
 
 private val protocolOptions = listOf(
@@ -332,7 +321,7 @@ private fun EditRoutingRuleDialog(
     var selectedOutbound by remember(rule.id) { mutableStateOf(rule.outboundTag) }
     var selectedOperator by remember(rule.id) { mutableStateOf(rule.operator) }
     var selectedProtocols by remember(rule.id) { mutableStateOf(rule.protocols.toSet()) }
-    val outboundOption = remember(selectedOutbound) { outboundOptions.first { it.value == selectedOutbound } }
+    val outboundOption = remember(selectedOutbound) { XrayOutbound.fromTag(selectedOutbound) }
     val matchModeOption = remember(selectedOperator) { matchModeOptions.first { it.value == selectedOperator } }
 
     AlertDialog(
@@ -384,7 +373,7 @@ private fun EditRoutingRuleDialog(
                     description = outboundOption.description,
                     expanded = outboundExpanded,
                     onExpandedChange = { outboundExpanded = it },
-                    options = outboundOptions.map { Triple(it.value, it.label, it.description) },
+                    options = XrayOutbound.entries.map { Triple(it.tag, it.label, it.description) },
                     onSelected = { selectedOutbound = it },
                 )
 

@@ -13,6 +13,7 @@ import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.BackupData
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.XrayLogLevel
+import com.material.xray.model.XrayOutbound
 import com.material.xray.model.toSubscriptionMetadata
 import com.material.xray.model.withSubscriptionMetadata
 import com.material.xray.service.ConnectionStateHolder
@@ -48,6 +49,11 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         XrayLogLevel.default,
     )
+    val defaultOutbound = settingsRepo.defaultOutbound.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        XrayOutbound.default,
+    )
     val geoipUrl = settingsRepo.geoipUrl.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -65,6 +71,13 @@ class SettingsViewModel @Inject constructor(
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {
         if (level == xrayLogLevel.value) return@launch
         settingsRepo.setXrayLogLevel(level)
+        if (connectionStateHolder.state.value is ConnectionState.Connected) {
+            XrayService.reload(context)
+        }
+    }
+    fun setDefaultOutbound(outbound: XrayOutbound) = viewModelScope.launch {
+        if (outbound == defaultOutbound.value) return@launch
+        settingsRepo.setDefaultOutbound(outbound)
         if (connectionStateHolder.state.value is ConnectionState.Connected) {
             XrayService.reload(context)
         }

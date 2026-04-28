@@ -76,12 +76,6 @@ object RoutingRuleCatalog {
             outboundTag = "direct",
             domains = listOf("geosite:private"),
         ),
-        RoutingRule(
-            id = "default-proxy",
-            name = "Default Proxy",
-            outboundTag = "proxy",
-            port = "0-65535",
-        ),
     )
 
     fun mergeWithDefaults(savedRules: List<RoutingRule>): List<RoutingRule> {
@@ -91,18 +85,10 @@ object RoutingRuleCatalog {
             } else {
                 rule
             }
-        }
+        }.filterNot { rule -> rule.id == "default-proxy" }
         val existingIds = normalizedRules.mapTo(mutableSetOf()) { it.id }
         val missingDefaultRules = defaults().filterNot { it.id in existingIds }
         if (missingDefaultRules.isEmpty()) return normalizedRules
-
-        val defaultProxyIndex = normalizedRules.indexOfFirst { it.id == "default-proxy" }
-        return if (defaultProxyIndex == -1) {
-            normalizedRules + missingDefaultRules
-        } else {
-            normalizedRules.take(defaultProxyIndex) +
-                missingDefaultRules +
-                normalizedRules.drop(defaultProxyIndex)
-        }
+        return normalizedRules + missingDefaultRules
     }
 }

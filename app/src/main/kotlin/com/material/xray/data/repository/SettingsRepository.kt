@@ -6,6 +6,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
+import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayLogLevel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -35,6 +36,7 @@ class SettingsRepository @Inject constructor(
         val GEOIP_URL = stringPreferencesKey("geoip_url")
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
         val XRAY_LOG_LEVEL = stringPreferencesKey("xray_log_level")
+        val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
         val ROUTING_RULES = stringPreferencesKey("routing_rules")
         val ROUTING_RULES_VERSION = intPreferencesKey("routing_rules_version")
         val ROUTING_RULE_STATES = stringPreferencesKey("routing_rule_states")
@@ -55,6 +57,9 @@ class SettingsRepository @Inject constructor(
     val lastServerId: Flow<Long> = store.data.map { it[LAST_SERVER_ID] ?: -1L }
     val xrayLogLevel: Flow<XrayLogLevel> = store.data.map { prefs ->
         XrayLogLevel.fromValue(prefs[XRAY_LOG_LEVEL])
+    }
+    val defaultOutbound: Flow<XrayOutbound> = store.data.map { prefs ->
+        XrayOutbound.fromTag(prefs[DEFAULT_OUTBOUND])
     }
     val geoipUrl: Flow<String> = store.data.map { prefs ->
         prefs[GEOIP_URL]
@@ -82,6 +87,9 @@ class SettingsRepository @Inject constructor(
     suspend fun setLastServerId(id: Long) = store.edit { it[LAST_SERVER_ID] = id }
     suspend fun setXrayLogLevel(level: XrayLogLevel) = store.edit { prefs ->
         prefs[XRAY_LOG_LEVEL] = level.value
+    }
+    suspend fun setDefaultOutbound(outbound: XrayOutbound) = store.edit { prefs ->
+        prefs[DEFAULT_OUTBOUND] = outbound.tag
     }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
@@ -126,6 +134,7 @@ class SettingsRepository @Inject constructor(
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
             map["last_server_id"]?.let { prefs[LAST_SERVER_ID] = it.toLongOrNull() ?: -1L }
             prefs[XRAY_LOG_LEVEL] = XrayLogLevel.fromValue(map["xray_log_level"]).value
+            prefs[DEFAULT_OUTBOUND] = XrayOutbound.fromTag(map["default_outbound"]).tag
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }

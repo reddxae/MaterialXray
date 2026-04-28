@@ -5,6 +5,7 @@ import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
+import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.*
 
 class ConfigGenerator {
@@ -23,6 +24,7 @@ class ConfigGenerator {
         fwmark: Int = 255,
         dnsServers: String = "1.1.1.1,8.8.8.8",
         logLevel: XrayLogLevel = XrayLogLevel.default,
+        defaultOutbound: XrayOutbound = XrayOutbound.default,
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
@@ -34,6 +36,7 @@ class ConfigGenerator {
                 fwmark = fwmark,
                 dnsServers = dnsServers,
                 logLevel = logLevel,
+                defaultOutbound = defaultOutbound,
                 routingRules = routingRules,
                 appProxyRoutes = appProxyRoutes,
                 physicalInterface = physicalInterface,
@@ -53,13 +56,16 @@ class ConfigGenerator {
                 }
             })
             put("outbounds", buildJsonArray {
-                add(buildProxyOutbound(server, fwmark, physicalInterface, tag = "proxy"))
-                appProxyRoutes.forEach { route ->
-                    add(buildProxyOutbound(route.server, fwmark, physicalInterface, tag = route.outboundTag))
-                }
-                add(buildDirectOutbound(fwmark, physicalInterface))
-                add(buildDnsOutbound(fwmark, physicalInterface))
-                add(buildBlockOutbound())
+                buildCoreOutbounds(
+                    defaultOutbound = defaultOutbound,
+                    proxyOutbound = buildProxyOutbound(server, fwmark, physicalInterface, tag = "proxy"),
+                    directOutbound = buildDirectOutbound(fwmark, physicalInterface),
+                    dnsOutbound = buildDnsOutbound(fwmark, physicalInterface),
+                    blockOutbound = buildBlockOutbound(),
+                    appProxyOutbounds = appProxyRoutes.map { route ->
+                        buildProxyOutbound(route.server, fwmark, physicalInterface, tag = route.outboundTag)
+                    },
+                ).forEach { add(it) }
             })
             put("routing", buildRouting(routingRules, appProxyRoutes))
         }
@@ -72,6 +78,7 @@ class ConfigGenerator {
         fwmark: Int = 255,
         dnsServers: String = "1.1.1.1,8.8.8.8",
         logLevel: XrayLogLevel = XrayLogLevel.default,
+        defaultOutbound: XrayOutbound = XrayOutbound.default,
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
@@ -141,14 +148,36 @@ class ConfigGenerator {
             }
         }
 
-        appProxyRoutes.forEach { route ->
-            upsertOutbound(route.outboundTag, buildProxyOutbound(route.server, fwmark, physicalInterface, route.outboundTag))
+        val proxyOutbound = normalizedOutbounds.firstOrNull { outbound ->
+            outbound["tag"]?.jsonPrimitive?.contentOrNull.equals("proxy", ignoreCase = true)
+        } ?: error("Raw JSON config has no proxy outbound")
+        val directOutbound = buildDirectOutbound(fwmark, physicalInterface)
+        val dnsOutbound = buildDnsOutbound(fwmark, physicalInterface)
+        val blockOutbound = buildBlockOutbound()
+        val appProxyOutbounds = appProxyRoutes.map { route ->
+            buildProxyOutbound(route.server, fwmark, physicalInterface, route.outboundTag)
         }
-        upsertOutbound("direct", buildDirectOutbound(fwmark, physicalInterface))
-        upsertOutbound("dns-out", buildDnsOutbound(fwmark, physicalInterface))
-        upsertOutbound("block", buildBlockOutbound())
 
-        original["outbounds"] = JsonArray(normalizedOutbounds)
+        val managedTags = buildSet {
+            add("proxy")
+            add("direct")
+            add("dns-out")
+            add("block")
+            appProxyRoutes.forEach { add(it.outboundTag) }
+        }
+        val unmanagedOutbounds = normalizedOutbounds.filterNot { outbound ->
+            outbound["tag"]?.jsonPrimitive?.contentOrNull?.let { it in managedTags } == true
+        }
+        original["outbounds"] = JsonArray(
+            buildCoreOutbounds(
+                defaultOutbound = defaultOutbound,
+                proxyOutbound = proxyOutbound,
+                directOutbound = directOutbound,
+                dnsOutbound = dnsOutbound,
+                blockOutbound = blockOutbound,
+                appProxyOutbounds = appProxyOutbounds,
+            ) + unmanagedOutbounds
+        )
         original["log"] = buildJsonObject {
             put("access", "none")
             put("loglevel", logLevel.value)
@@ -340,6 +369,29 @@ class ConfigGenerator {
     private fun buildBlockOutbound() = buildJsonObject {
         put("tag", "block")
         put("protocol", "blackhole")
+    }
+
+    private fun buildCoreOutbounds(
+        defaultOutbound: XrayOutbound,
+        proxyOutbound: JsonObject,
+        directOutbound: JsonObject,
+        dnsOutbound: JsonObject,
+        blockOutbound: JsonObject,
+        appProxyOutbounds: List<JsonObject>,
+    ): List<JsonObject> {
+        val coreOutbounds = mapOf(
+            XrayOutbound.Proxy to proxyOutbound,
+            XrayOutbound.Direct to directOutbound,
+            XrayOutbound.Block to blockOutbound,
+        )
+        return buildList {
+            add(coreOutbounds.getValue(defaultOutbound))
+            appProxyOutbounds.forEach(::add)
+            XrayOutbound.entries
+                .filterNot { it == defaultOutbound }
+                .forEach { add(coreOutbounds.getValue(it)) }
+            add(dnsOutbound)
+        }
     }
 
     private fun buildSockopt(fwmark: Int, physicalInterface: String?) = buildJsonObject {

@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.model.XrayLogLevel
+import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.components.ScrolledTopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -24,10 +25,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val dnsServers by viewModel.dnsServers.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
+    val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    var defaultOutboundExpanded by remember { mutableStateOf(false) }
     var logLevelExpanded by remember { mutableStateOf(false) }
     val appVersion = remember(context) {
         runCatching {
@@ -87,6 +90,46 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
             if (hasTunNameChanges) {
                 TextButton(onClick = { viewModel.setTunName(editingTunName) }) { Text("Save") }
+            }
+
+            ExposedDropdownMenuBox(
+                expanded = defaultOutboundExpanded,
+                onExpandedChange = { defaultOutboundExpanded = it },
+            ) {
+                OutlinedTextField(
+                    value = defaultOutbound.label,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Default Outbound") },
+                    supportingText = { Text(defaultOutbound.description) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = defaultOutboundExpanded) },
+                    modifier = Modifier
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(
+                    expanded = defaultOutboundExpanded,
+                    onDismissRequest = { defaultOutboundExpanded = false },
+                ) {
+                    XrayOutbound.entries.forEach { outbound ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(outbound.label)
+                                    Text(
+                                        outbound.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                            onClick = {
+                                defaultOutboundExpanded = false
+                                viewModel.setDefaultOutbound(outbound)
+                            },
+                        )
+                    }
+                }
             }
 
             OutlinedTextField(

@@ -4,6 +4,7 @@ import com.material.xray.model.Protocol
 import com.material.xray.model.RoutingRuleCatalog
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
+import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -99,6 +100,25 @@ class ConfigGeneratorTest {
     }
 
     @Test
+    fun `uses proxy as default outbound`() {
+        val config = generator.generate(vlessReality)
+        val json = Json.parseToJsonElement(config).jsonObject
+        val firstOutbound = json["outbounds"]!!.jsonArray.first().jsonObject
+
+        assertEquals("proxy", firstOutbound["tag"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `puts configured default outbound first`() {
+        val config = generator.generate(vlessReality, defaultOutbound = XrayOutbound.Direct)
+        val json = Json.parseToJsonElement(config).jsonObject
+        val outboundTags = json["outbounds"]!!.jsonArray.map { it.jsonObject["tag"]?.jsonPrimitive?.content }
+
+        assertEquals("direct", outboundTags.first())
+        assertTrue("Proxy outbound must remain available for routing rules", "proxy" in outboundTags)
+    }
+
+    @Test
     fun `generates VLESS REALITY outbound correctly`() {
         val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255)
         val json = Json.parseToJsonElement(config).jsonObject
@@ -153,10 +173,15 @@ class ConfigGeneratorTest {
                 domain.jsonPrimitive.content == "geosite:category-ads-all"
             } == true
         }
+        val defaultProxyRule = rules.firstOrNull {
+            it.jsonObject["outboundTag"]?.jsonPrimitive?.content == "proxy" &&
+                it.jsonObject["port"]?.jsonPrimitive?.content == "0-65535"
+        }
 
         assertNotNull("Should include enabled LAN IP direct rule", lanIpRule)
         assertNotNull("Should include enabled LAN domain direct rule", lanDomainRule)
         assertNull("Block Ads should be disabled by default", adsRule)
+        assertNull("Default Proxy preset should not be emitted", defaultProxyRule)
     }
 
     @Test

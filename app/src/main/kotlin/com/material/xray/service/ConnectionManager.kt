@@ -13,6 +13,7 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
+import com.material.xray.model.XrayOutbound
 import java.io.FileOutputStream
 
 class ConnectionManager(
@@ -47,6 +48,7 @@ class ConnectionManager(
         routeTable: Int,
         dnsServers: String,
         logLevel: XrayLogLevel,
+        defaultOutbound: XrayOutbound,
         routingRules: List<RoutingRule>,
         transitionState: ConnectionState = ConnectionState.Connecting,
         cleanStateFirst: Boolean = true,
@@ -167,6 +169,7 @@ class ConnectionManager(
                 fwmark,
                 dnsServers,
                 logLevel,
+                defaultOutbound,
                 routingRules,
                 appProxyRoutes = appRoutingPlan.proxyRoutes,
                 physicalInterface = physicalRoute.dev,

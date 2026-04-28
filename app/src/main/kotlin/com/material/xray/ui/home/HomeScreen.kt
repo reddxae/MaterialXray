@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.model.ConnectionState
+import com.material.xray.ui.components.ScrolledTopAppBar
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
@@ -78,14 +79,9 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     Scaffold(
         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("Material Xray") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
+            ScrolledTopAppBar(
+                title = "Material Xray",
                 scrollBehavior = topAppBarScrollBehavior,
-                windowInsets = WindowInsets(0.dp),
             )
         },
     ) { padding ->

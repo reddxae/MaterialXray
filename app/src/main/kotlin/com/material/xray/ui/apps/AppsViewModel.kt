@@ -61,6 +61,9 @@ class AppsViewModel @Inject constructor(
     private val _showSystemApps = MutableStateFlow(false)
     val showSystemApps: StateFlow<Boolean> = _showSystemApps
 
+    private val _isLoadingApps = MutableStateFlow(true)
+    val isLoadingApps: StateFlow<Boolean> = _isLoadingApps
+
     private val bypassedApps = appBypassDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -114,27 +117,31 @@ class AppsViewModel @Inject constructor(
 
     private fun loadApps() {
         viewModelScope.launch {
-            val apps = withContext(Dispatchers.IO) {
-                val pm = context.packageManager
-                pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                    .filterNot { it.packageName == context.packageName }
-                    .map { info ->
-                        AppItem(
-                            packageName = info.packageName,
-                            name = info.loadLabel(pm).toString(),
-                            uid = info.uid,
-                            icon = runCatching { info.loadIcon(pm) }.getOrNull(),
-                            systemApp = info.flags and ApplicationInfo.FLAG_SYSTEM != 0,
-                            routeKey = DEFAULT_ROUTE_OPTION.key,
-                            routeKind = DEFAULT_ROUTE_OPTION.kind,
-                            manuallyRouted = false,
-                            routeTitle = DEFAULT_ROUTE_OPTION.title,
-                            routeDescription = DEFAULT_ROUTE_OPTION.description,
-                        )
-                    }
-                    .sortedBy { it.name.lowercase() }
-            }
+            _isLoadingApps.value = true
+            val apps = runCatching {
+                withContext(Dispatchers.IO) {
+                    val pm = context.packageManager
+                    pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                        .filterNot { it.packageName == context.packageName }
+                        .map { info ->
+                            AppItem(
+                                packageName = info.packageName,
+                                name = info.loadLabel(pm).toString(),
+                                uid = info.uid,
+                                icon = runCatching { info.loadIcon(pm) }.getOrNull(),
+                                systemApp = info.flags and ApplicationInfo.FLAG_SYSTEM != 0,
+                                routeKey = DEFAULT_ROUTE_OPTION.key,
+                                routeKind = DEFAULT_ROUTE_OPTION.kind,
+                                manuallyRouted = false,
+                                routeTitle = DEFAULT_ROUTE_OPTION.title,
+                                routeDescription = DEFAULT_ROUTE_OPTION.description,
+                            )
+                        }
+                        .sortedBy { it.name.lowercase() }
+                }
+            }.getOrDefault(emptyList())
             _installedApps.value = apps
+            _isLoadingApps.value = false
         }
     }
 

@@ -36,6 +36,7 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     val routeOptions by viewModel.routeOptions.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val showSystemApps by viewModel.showSystemApps.collectAsStateWithLifecycle()
+    val isLoadingApps by viewModel.isLoadingApps.collectAsStateWithLifecycle()
     val density = LocalDensity.current
     val iconSize = 40.dp
     val iconPixelSize = remember(density) { with(density) { iconSize.roundToPx() } }
@@ -89,6 +90,16 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                 }
             },
         )
+
+        if (isLoadingApps) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+            return@Column
+        }
 
         OutlinedTextField(
             value = searchQuery,

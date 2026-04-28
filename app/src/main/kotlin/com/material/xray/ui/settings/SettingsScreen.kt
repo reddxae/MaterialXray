@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.model.XrayLogLevel
+import com.material.xray.ui.components.ScrolledTopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,14 +61,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     Scaffold(
         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
+            ScrolledTopAppBar(
+                title = "Settings",
                 scrollBehavior = topAppBarScrollBehavior,
-                windowInsets = WindowInsets(0.dp),
             )
         },
     ) { padding ->

@@ -85,6 +85,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
                 scrollBehavior = topAppBarScrollBehavior,
+                windowInsets = WindowInsets(0.dp),
             )
         },
     ) { padding ->

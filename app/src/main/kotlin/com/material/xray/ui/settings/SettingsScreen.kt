@@ -67,6 +67,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
                 scrollBehavior = topAppBarScrollBehavior,
+                windowInsets = WindowInsets(0.dp),
             )
         },
     ) { padding ->

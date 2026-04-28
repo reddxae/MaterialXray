@@ -66,7 +66,7 @@ import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 
 private enum class RoutingTab(val title: String) {
-    Rules("Routing"),
+    Rules("Rules"),
     Apps("Apps"),
 }
 

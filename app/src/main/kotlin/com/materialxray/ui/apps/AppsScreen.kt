@@ -174,8 +174,6 @@ private fun AppRoutePickerDialog(
                                 Text(
                                     text = option.title,
                                     fontWeight = if (option.key == app.routeKey) FontWeight.SemiBold else FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             },
                             supportingContent = {

@@ -156,8 +156,14 @@ private fun BulkAppRouteConfirmationDialog(
         BulkAppRouteAction.ProxyAllApps -> "Proxy all apps?"
     }
     val description = when (action) {
-        BulkAppRouteAction.ClearProxiedApps -> buildBulkActionDescription("Not proxied")
-        BulkAppRouteAction.ProxyAllApps -> buildBulkActionDescription("default selected config")
+        BulkAppRouteAction.ClearProxiedApps -> buildBulkActionDescription(
+            prefix = "All manual app routing settings will be ",
+            emphasized = "reset to \"Not proxied\"",
+        )
+        BulkAppRouteAction.ProxyAllApps -> buildBulkActionDescription(
+            prefix = "All manual app routing settings will be ",
+            emphasized = "reset to the default selected config",
+        )
     }
 
     AlertDialog(
@@ -177,12 +183,13 @@ private fun BulkAppRouteConfirmationDialog(
     )
 }
 
-private fun buildBulkActionDescription(value: String) = buildAnnotatedString {
-    append("Manual settings for all apps will be overridden to ")
+private fun buildBulkActionDescription(
+    prefix: String,
+    emphasized: String,
+) = buildAnnotatedString {
+    append(prefix)
     pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-    append("\"")
-    append(value)
-    append("\"")
+    append(emphasized)
     pop()
     append(".")
 }

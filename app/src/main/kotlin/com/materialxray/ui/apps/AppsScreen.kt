@@ -154,7 +154,7 @@ private fun BulkAppRouteConfirmationDialog(
         BulkAppRouteAction.ProxyAllApps -> "Proxy all apps?"
     }
     val description = when (action) {
-        BulkAppRouteAction.ClearProxiedApps -> "Manual settings for all apps will be overridden to \"Not proxied\""
+        BulkAppRouteAction.ClearProxiedApps -> "Manual settings for all apps will be overridden to \"Not proxied\"."
         BulkAppRouteAction.ProxyAllApps -> "Manual settings for all apps will be overridden to default selected config."
     }
 

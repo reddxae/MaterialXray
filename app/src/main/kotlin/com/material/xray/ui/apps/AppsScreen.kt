@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -149,13 +150,14 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                            modifier = Modifier.widthIn(max = 176.dp),
+                            modifier = Modifier.width(176.dp),
                         ) {
                             Text(
                                 text = app.routeTitle,
                                 style = MaterialTheme.typography.labelLarge,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.End,
                                 modifier = Modifier.weight(1f),
                             )
                             Icon(

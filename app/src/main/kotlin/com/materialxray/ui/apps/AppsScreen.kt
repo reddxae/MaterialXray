@@ -90,8 +90,13 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                                 style = MaterialTheme.typography.labelLarge,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
                             )
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
                         }
                     },
                     modifier = Modifier.clickable { editingApp = app },

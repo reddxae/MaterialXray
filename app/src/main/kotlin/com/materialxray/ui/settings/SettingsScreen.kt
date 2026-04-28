@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,8 +23,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
     var logLevelExpanded by remember { mutableStateOf(false) }
+    val appVersion = remember(context) {
+        runCatching {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+        }.getOrDefault("unknown")
+    }
 
     var editingTunName by remember(tunName) { mutableStateOf(tunName) }
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
@@ -161,7 +169,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
             HorizontalDivider()
             Text("About", style = MaterialTheme.typography.titleMedium)
-            Text("MaterialXray v1.0.0", style = MaterialTheme.typography.bodyMedium)
+            Text("MaterialXray v$appVersion", style = MaterialTheme.typography.bodyMedium)
             Text("xray-core v26.3.27", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

@@ -1,19 +1,24 @@
 package com.materialxray.ui.apps
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -169,31 +174,72 @@ private fun AppRoutePickerDialog(
                         key = { it.key },
                         contentType = { "routeOption" },
                     ) { option ->
-                        ListItem(
-                            headlineContent = {
-                                Text(
-                                    text = option.title,
-                                    fontWeight = if (option.key == app.routeKey) FontWeight.SemiBold else FontWeight.Normal,
-                                )
-                            },
-                            supportingContent = {
-                                Text(
-                                    text = option.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
-                            leadingContent = {
-                                RadioButton(
-                                    selected = option.key == app.routeKey,
-                                    onClick = null,
-                                )
-                            },
-                            modifier = Modifier.clickable { onSelected(option) },
+                        RouteOptionRow(
+                            option = option,
+                            selected = option.key == app.routeKey,
+                            onSelected = { onSelected(option) },
                         )
                     }
                 }
             }
         },
     )
+}
+
+@Composable
+private fun RouteOptionRow(
+    option: AppRouteOption,
+    selected: Boolean,
+    onSelected: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .selectable(
+                selected = selected,
+                onClick = onSelected,
+                role = Role.RadioButton,
+            )
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RouteOptionIndicator(selected = selected)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = option.title,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            )
+            Text(
+                text = option.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RouteOptionIndicator(selected: Boolean) {
+    val primary = MaterialTheme.colorScheme.primary
+    val outline = MaterialTheme.colorScheme.outline
+
+    Canvas(modifier = Modifier.size(20.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        drawCircle(
+            color = if (selected) primary else outline,
+            radius = size.minDimension / 2 - strokeWidth / 2,
+            style = Stroke(width = strokeWidth),
+        )
+        if (selected) {
+            drawCircle(
+                color = primary,
+                radius = size.minDimension * 0.28f,
+            )
+        }
+    }
 }

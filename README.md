@@ -13,6 +13,7 @@ The current app mode is native/root mode. A rootless `VpnService` mode is planne
 - Per-app bypass list.
 - Foreground Xray service with live app and Xray logs.
 - Root-managed Xray TUN interface.
+- Per-app routing with custom proxy server selection.
 - Policy routing for captured app traffic.
 - Xray outbound binding to the active physical interface.
 - Network-change retargeting for Wi-Fi and cellular switches.
@@ -20,7 +21,7 @@ The current app mode is native/root mode. A rootless `VpnService` mode is planne
 
 ## Requirements
 
-- Android 12 or newer.
+- Android 8 or newer (actually tested on Android 14+). 
 - Root access with `su`.
 - Android SDK and a JDK compatible with the Gradle wrapper.
 - A connected Android device or emulator for install/debug flows.

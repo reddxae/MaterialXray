@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
@@ -53,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,6 +73,7 @@ import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
+import kotlinx.coroutines.launch
 
 private enum class RoutingTab(val title: String) {
     Rules("Rules"),
@@ -111,11 +115,13 @@ private val matchModeOptions = listOf(
 @Composable
 fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
     val rules by viewModel.rules.collectAsStateWithLifecycle()
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var previousTab by remember { mutableIntStateOf(selectedTab) }
+    val pagerState = rememberPagerState(pageCount = { RoutingTab.entries.size })
+    val coroutineScope = rememberCoroutineScope()
+    var previousTab by remember { mutableIntStateOf(pagerState.currentPage) }
     var selectedRuleIds by remember { mutableStateOf(emptySet<String>()) }
     var editingRule by remember { mutableStateOf<EditableRoutingRule?>(null) }
     val selectionMode by remember { derivedStateOf { selectedRuleIds.isNotEmpty() } }
+    val selectedTab = pagerState.currentPage
 
     LaunchedEffect(selectedTab) {
         if (previousTab != selectedTab) {
@@ -133,7 +139,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                 title = {
                     Text(
                         when {
-                            selectedTab == RoutingTab.Rules.ordinal && selectionMode ->
+                            pagerState.currentPage == RoutingTab.Rules.ordinal && selectionMode ->
                                 "${selectedRuleIds.size} selected"
                             else -> "Routing"
                         }
@@ -141,7 +147,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                 },
                 windowInsets = TopAppBarDefaults.windowInsets,
                 actions = {
-                    if (selectedTab == RoutingTab.Rules.ordinal) {
+                    if (pagerState.currentPage == RoutingTab.Rules.ordinal) {
                         if (selectionMode) {
                             IconButton(onClick = { selectedRuleIds = emptySet() }) {
                                 Icon(Icons.Default.Close, contentDescription = "Clear selection")
@@ -184,30 +190,39 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                 RoutingTab.entries.forEachIndexed { index, tab ->
                     Tab(
                         selected = selectedTab == index,
-                        onClick = { selectedTab = index },
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
                         text = { Text(tab.title) },
                     )
                 }
             }
 
-            when (RoutingTab.entries[selectedTab]) {
-                RoutingTab.Rules -> RoutingRulesTab(
-                    rules = rules,
-                    selectionMode = selectionMode,
-                    selectedRuleIds = selectedRuleIds,
-                    onRuleToggled = { rule, enabled -> viewModel.updateRule(rule.copy(enabled = enabled)) },
-                    onRuleClick = { rule ->
-                        if (selectionMode) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                when (RoutingTab.entries[page]) {
+                    RoutingTab.Rules -> RoutingRulesTab(
+                        rules = rules,
+                        selectionMode = selectionMode,
+                        selectedRuleIds = selectedRuleIds,
+                        onRuleToggled = { rule, enabled -> viewModel.updateRule(rule.copy(enabled = enabled)) },
+                        onRuleClick = { rule ->
+                            if (selectionMode) {
+                                selectedRuleIds = selectedRuleIds.toggle(rule.id)
+                            } else {
+                                editingRule = EditableRoutingRule(rule = rule, isNew = false)
+                            }
+                        },
+                        onRuleLongClick = { rule ->
                             selectedRuleIds = selectedRuleIds.toggle(rule.id)
-                        } else {
-                            editingRule = EditableRoutingRule(rule = rule, isNew = false)
-                        }
-                    },
-                    onRuleLongClick = { rule ->
-                        selectedRuleIds = selectedRuleIds.toggle(rule.id)
-                    },
-                )
-                RoutingTab.Apps -> AppBypassContent()
+                        },
+                    )
+                    RoutingTab.Apps -> AppBypassContent()
+                }
             }
         }
     }

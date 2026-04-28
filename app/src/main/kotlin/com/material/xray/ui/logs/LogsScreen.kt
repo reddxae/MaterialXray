@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -21,6 +23,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.service.LogEntry
 import com.material.xray.service.LogSource
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -30,24 +33,10 @@ private enum class LogFilter(val label: String) { ALL("All"), APP("App"), XRAY("
 @Composable
 fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
     val allEntries by viewModel.entries.collectAsStateWithLifecycle()
-    var filter by remember { mutableStateOf(LogFilter.ALL) }
-
-    val entries = remember(allEntries, filter) {
-        when (filter) {
-            LogFilter.ALL -> allEntries
-            LogFilter.APP -> allEntries.filter { it.source == LogSource.APP }
-            LogFilter.XRAY -> allEntries.filter { it.source == LogSource.XRAY }
-        }
-    }
-
-    val listState = rememberLazyListState()
+    val pagerState = rememberPagerState(pageCount = { LogFilter.entries.size })
+    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-
-    LaunchedEffect(entries.size) {
-        if (entries.isNotEmpty()) {
-            listState.scrollToItem(entries.size - 1)
-        }
-    }
+    val filter = LogFilter.entries[pagerState.currentPage]
 
     Scaffold(
         topBar = {
@@ -77,30 +66,68 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
                 LogFilter.entries.forEachIndexed { index, f ->
                     SegmentedButton(
                         selected = filter == f,
-                        onClick = { filter = f },
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
                         shape = SegmentedButtonDefaults.itemShape(index, LogFilter.entries.size),
                     ) { Text(f.label) }
                 }
             }
 
-            LazyColumn(
-                state = listState,
+            HorizontalPager(
+                state = pagerState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                items(
-                    items = entries,
-                    key = { it.id },
-                    contentType = { it.source },
-                ) { entry ->
-                    LogEntryRow(entry = entry, onCopy = {
+            ) { page ->
+                val pageFilter = LogFilter.entries[page]
+                val entries = remember(allEntries, pageFilter) {
+                    allEntries.filterBy(pageFilter)
+                }
+                LogEntriesList(
+                    entries = entries,
+                    onCopy = { entry ->
                         viewModel.copyEntry(entry)
                         Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                    })
-                }
+                    },
+                )
             }
         }
     }
+}
+
+@Composable
+private fun LogEntriesList(
+    entries: List<LogEntry>,
+    onCopy: (LogEntry) -> Unit,
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(entries.size) {
+        if (entries.isNotEmpty()) {
+            listState.scrollToItem(entries.size - 1)
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        items(
+            items = entries,
+            key = { it.id },
+            contentType = { it.source },
+        ) { entry ->
+            LogEntryRow(entry = entry, onCopy = { onCopy(entry) })
+        }
+    }
+}
+
+private fun List<LogEntry>.filterBy(filter: LogFilter): List<LogEntry> = when (filter) {
+    LogFilter.ALL -> this
+    LogFilter.APP -> filter { it.source == LogSource.APP }
+    LogFilter.XRAY -> filter { it.source == LogSource.XRAY }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

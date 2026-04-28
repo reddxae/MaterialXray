@@ -156,6 +156,7 @@ class XrayService : Service() {
         val dns = settingsRepo.dnsServers.first()
         val logLevel = settingsRepo.xrayLogLevel.first()
         val defaultOutbound = settingsRepo.defaultOutbound.first()
+        val bypassLan = settingsRepo.bypassLan.first()
         val routingRules = settingsRepo.routingRules.first()
         connectionManager.connect(
             server = config,
@@ -165,6 +166,7 @@ class XrayService : Service() {
             dnsServers = dns,
             logLevel = logLevel,
             defaultOutbound = defaultOutbound,
+            bypassLan = bypassLan,
             routingRules = routingRules,
             transitionState = transitionState,
             cleanStateFirst = cleanStateFirst,

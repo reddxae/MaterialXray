@@ -24,6 +24,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val tunName by viewModel.tunName.collectAsStateWithLifecycle()
     val dnsServers by viewModel.dnsServers.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
+    val bypassLan by viewModel.bypassLan.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
@@ -201,6 +202,24 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
             if (hasGeositeUrlChanges) {
                 TextButton(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) { Text("Save") }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Bypass LAN", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Route private IPs and LAN domains directly",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = bypassLan, onCheckedChange = { viewModel.setBypassLan(it) })
             }
 
             HorizontalDivider()

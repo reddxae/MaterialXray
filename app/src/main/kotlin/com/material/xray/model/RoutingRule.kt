@@ -64,18 +64,6 @@ object RoutingRuleCatalog {
             domains = listOf("geosite:category-ads-all"),
             enabled = false,
         ),
-        RoutingRule(
-            id = "lan-ip-direct",
-            name = "Route LAN IP through direct",
-            outboundTag = "direct",
-            ips = listOf("geoip:private"),
-        ),
-        RoutingRule(
-            id = "lan-domain-direct",
-            name = "Route LAN domain through direct",
-            outboundTag = "direct",
-            domains = listOf("geosite:private"),
-        ),
     )
 
     fun mergeWithDefaults(savedRules: List<RoutingRule>): List<RoutingRule> {
@@ -85,7 +73,11 @@ object RoutingRuleCatalog {
             } else {
                 rule
             }
-        }.filterNot { rule -> rule.id == "default-proxy" }
+        }.filterNot { rule ->
+            rule.id == "default-proxy" ||
+                rule.id == "lan-ip-direct" ||
+                rule.id == "lan-domain-direct"
+        }
         val existingIds = normalizedRules.mapTo(mutableSetOf()) { it.id }
         val missingDefaultRules = defaults().filterNot { it.id in existingIds }
         if (missingDefaultRules.isEmpty()) return normalizedRules

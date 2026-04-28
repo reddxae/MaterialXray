@@ -25,6 +25,7 @@ class ConfigGenerator {
         dnsServers: String = "1.1.1.1,8.8.8.8",
         logLevel: XrayLogLevel = XrayLogLevel.default,
         defaultOutbound: XrayOutbound = XrayOutbound.default,
+        bypassLan: Boolean = true,
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
@@ -37,6 +38,7 @@ class ConfigGenerator {
                 dnsServers = dnsServers,
                 logLevel = logLevel,
                 defaultOutbound = defaultOutbound,
+                bypassLan = bypassLan,
                 routingRules = routingRules,
                 appProxyRoutes = appProxyRoutes,
                 physicalInterface = physicalInterface,
@@ -67,7 +69,7 @@ class ConfigGenerator {
                     },
                 ).forEach { add(it) }
             })
-            put("routing", buildRouting(routingRules, appProxyRoutes))
+            put("routing", buildRouting(routingRules, appProxyRoutes, bypassLan))
         }
         return json.encodeToString(JsonObject.serializer(), config)
     }
@@ -79,6 +81,7 @@ class ConfigGenerator {
         dnsServers: String = "1.1.1.1,8.8.8.8",
         logLevel: XrayLogLevel = XrayLogLevel.default,
         defaultOutbound: XrayOutbound = XrayOutbound.default,
+        bypassLan: Boolean = true,
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
@@ -137,17 +140,6 @@ class ConfigGenerator {
             JsonObject(obj)
         }.toMutableList()
 
-        fun upsertOutbound(tag: String, outbound: JsonObject) {
-            val existingIndex = normalizedOutbounds.indexOfFirst { candidate ->
-                candidate["tag"]?.jsonPrimitive?.contentOrNull.equals(tag, ignoreCase = true)
-            }
-            if (existingIndex >= 0) {
-                normalizedOutbounds[existingIndex] = outbound
-            } else {
-                normalizedOutbounds.add(outbound)
-            }
-        }
-
         val proxyOutbound = normalizedOutbounds.firstOrNull { outbound ->
             outbound["tag"]?.jsonPrimitive?.contentOrNull.equals("proxy", ignoreCase = true)
         } ?: error("Raw JSON config has no proxy outbound")
@@ -183,7 +175,7 @@ class ConfigGenerator {
             put("loglevel", logLevel.value)
         }
         original["dns"] = buildDns(dnsServers)
-        original["routing"] = buildRouting(routingRules, appProxyRoutes)
+        original["routing"] = buildRouting(routingRules, appProxyRoutes, bypassLan)
 
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))
     }
@@ -411,6 +403,7 @@ class ConfigGenerator {
     private fun buildRouting(
         routingRules: List<RoutingRule>,
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
+        bypassLan: Boolean = true,
     ) = buildJsonObject {
         put("domainStrategy", "IPOnDemand")
         put("rules", buildJsonArray {
@@ -428,6 +421,18 @@ class ConfigGenerator {
                     put("type", "field")
                     put("inboundTag", buildJsonArray { add(route.inboundTag) })
                     put("outboundTag", route.outboundTag)
+                })
+            }
+            if (bypassLan) {
+                add(buildJsonObject {
+                    put("type", "field")
+                    put("ip", buildJsonArray { add("geoip:private") })
+                    put("outboundTag", "direct")
+                })
+                add(buildJsonObject {
+                    put("type", "field")
+                    put("domain", buildJsonArray { add("geosite:private") })
+                    put("outboundTag", "direct")
                 })
             }
             routingRules.filter { it.enabled }.forEach { rule ->

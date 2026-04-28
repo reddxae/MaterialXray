@@ -32,6 +32,7 @@ class SettingsRepository @Inject constructor(
         val FWMARK = intPreferencesKey("fwmark")
         val ROUTE_TABLE = intPreferencesKey("route_table")
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
+        val BYPASS_LAN = booleanPreferencesKey("bypass_lan")
         val LAST_SERVER_ID = longPreferencesKey("last_server_id")
         val GEOIP_URL = stringPreferencesKey("geoip_url")
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
@@ -54,6 +55,7 @@ class SettingsRepository @Inject constructor(
     val fwmark: Flow<Int> = store.data.map { it[FWMARK] ?: 255 }
     val routeTable: Flow<Int> = store.data.map { it[ROUTE_TABLE] ?: 100 }
     val autoConnect: Flow<Boolean> = store.data.map { it[AUTO_CONNECT] ?: false }
+    val bypassLan: Flow<Boolean> = store.data.map { it[BYPASS_LAN] ?: true }
     val lastServerId: Flow<Long> = store.data.map { it[LAST_SERVER_ID] ?: -1L }
     val xrayLogLevel: Flow<XrayLogLevel> = store.data.map { prefs ->
         XrayLogLevel.fromValue(prefs[XRAY_LOG_LEVEL])
@@ -84,6 +86,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setFwmark(mark: Int) = store.edit { it[FWMARK] = mark }
     suspend fun setRouteTable(table: Int) = store.edit { it[ROUTE_TABLE] = table }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
+    suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
     suspend fun setLastServerId(id: Long) = store.edit { it[LAST_SERVER_ID] = id }
     suspend fun setXrayLogLevel(level: XrayLogLevel) = store.edit { prefs ->
         prefs[XRAY_LOG_LEVEL] = level.value
@@ -132,6 +135,7 @@ class SettingsRepository @Inject constructor(
             map["fwmark"]?.let { prefs[FWMARK] = it.toIntOrNull() ?: 255 }
             map["route_table"]?.let { prefs[ROUTE_TABLE] = it.toIntOrNull() ?: 100 }
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
+            prefs[BYPASS_LAN] = map["bypass_lan"]?.toBooleanStrictOrNull() ?: true
             map["last_server_id"]?.let { prefs[LAST_SERVER_ID] = it.toLongOrNull() ?: -1L }
             prefs[XRAY_LOG_LEVEL] = XrayLogLevel.fromValue(map["xray_log_level"]).value
             prefs[DEFAULT_OUTBOUND] = XrayOutbound.fromTag(map["default_outbound"]).tag

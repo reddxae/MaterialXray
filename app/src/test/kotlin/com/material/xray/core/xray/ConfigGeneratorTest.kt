@@ -152,7 +152,7 @@ class ConfigGeneratorTest {
     }
 
     @Test
-    fun `includes enabled routing rules from catalog`() {
+    fun `includes enabled built in routing rules`() {
         val routingRules = RoutingRuleCatalog.defaults()
         val config = generator.generate(vlessReality, routingRules = routingRules)
         val json = Json.parseToJsonElement(config).jsonObject
@@ -182,6 +182,27 @@ class ConfigGeneratorTest {
         assertNotNull("Should include enabled LAN domain direct rule", lanDomainRule)
         assertNull("Block Ads should be disabled by default", adsRule)
         assertNull("Default Proxy preset should not be emitted", defaultProxyRule)
+    }
+
+    @Test
+    fun `omits lan direct rules when bypass lan is disabled`() {
+        val config = generator.generate(vlessReality, bypassLan = false)
+        val json = Json.parseToJsonElement(config).jsonObject
+        val rules = json["routing"]!!.jsonObject["rules"]!!.jsonArray
+
+        val lanIpRule = rules.firstOrNull {
+            it.jsonObject["ip"]?.jsonArray?.any { ip ->
+                ip.jsonPrimitive.content == "geoip:private"
+            } == true
+        }
+        val lanDomainRule = rules.firstOrNull {
+            it.jsonObject["domain"]?.jsonArray?.any { domain ->
+                domain.jsonPrimitive.content == "geosite:private"
+            } == true
+        }
+
+        assertNull("LAN IP direct rule should be disabled by setting", lanIpRule)
+        assertNull("LAN domain direct rule should be disabled by setting", lanDomainRule)
     }
 
     @Test

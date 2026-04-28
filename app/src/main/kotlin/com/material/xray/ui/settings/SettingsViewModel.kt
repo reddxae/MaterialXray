@@ -44,6 +44,7 @@ class SettingsViewModel @Inject constructor(
     val dnsServers =
         settingsRepo.dnsServers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1.1.1.1,8.8.8.8")
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val bypassLan = settingsRepo.bypassLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -68,6 +69,13 @@ class SettingsViewModel @Inject constructor(
     fun setTunName(name: String) = viewModelScope.launch { settingsRepo.setTunName(name) }
     fun setDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setDnsServers(servers) }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
+    fun setBypassLan(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == bypassLan.value) return@launch
+        settingsRepo.setBypassLan(enabled)
+        if (connectionStateHolder.state.value is ConnectionState.Connected) {
+            XrayService.reload(context)
+        }
+    }
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {
         if (level == xrayLogLevel.value) return@launch
         settingsRepo.setXrayLogLevel(level)

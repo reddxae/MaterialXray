@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -154,8 +156,8 @@ private fun BulkAppRouteConfirmationDialog(
         BulkAppRouteAction.ProxyAllApps -> "Proxy all apps?"
     }
     val description = when (action) {
-        BulkAppRouteAction.ClearProxiedApps -> "Manual settings for all apps will be overridden to \"Not proxied\"."
-        BulkAppRouteAction.ProxyAllApps -> "Manual settings for all apps will be overridden to default selected config."
+        BulkAppRouteAction.ClearProxiedApps -> buildBulkActionDescription("Not proxied")
+        BulkAppRouteAction.ProxyAllApps -> buildBulkActionDescription("default selected config")
     }
 
     AlertDialog(
@@ -173,6 +175,16 @@ private fun BulkAppRouteConfirmationDialog(
             }
         },
     )
+}
+
+private fun buildBulkActionDescription(value: String) = buildAnnotatedString {
+    append("Manual settings for all apps will be overridden to ")
+    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+    append("\"")
+    append(value)
+    append("\"")
+    pop()
+    append(".")
 }
 
 @Composable

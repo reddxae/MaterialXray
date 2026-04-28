@@ -91,6 +91,11 @@ class AppsViewModel @Inject constructor(
             .filter {
                 query.isEmpty() || it.name.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
             }
+            .sortedWith(
+                compareBy<AppItem> { it.routeKey == DEFAULT_ROUTE_OPTION.key }
+                    .thenBy { it.name.lowercase() }
+                    .thenBy { it.packageName },
+            )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init { loadApps() }

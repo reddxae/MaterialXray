@@ -40,6 +40,15 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     val density = LocalDensity.current
     val iconSize = 40.dp
     val iconPixelSize = remember(density) { with(density) { iconSize.roundToPx() } }
+    val visibleRouteOptions by remember(routeOptions) {
+        derivedStateOf {
+            if (routeOptions.count { it.kind == AppRouteKind.SERVER } == 1) {
+                routeOptions.filterNot { it.kind == AppRouteKind.SERVER }
+            } else {
+                routeOptions
+            }
+        }
+    }
     var editingApp by remember { mutableStateOf<AppItem?>(null) }
     var pendingBulkAction by remember { mutableStateOf<BulkAppRouteAction?>(null) }
     var appRoutingMenuExpanded by remember { mutableStateOf(false) }
@@ -163,7 +172,8 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     editingApp?.let { app ->
         AppRoutePickerDialog(
             app = app,
-            routeOptions = routeOptions,
+            routeOptions = visibleRouteOptions,
+            singleServerRouteHidden = visibleRouteOptions.size != routeOptions.size,
             onDismiss = { editingApp = null },
             onSelected = { option ->
                 viewModel.setAppRoute(app, option)
@@ -245,6 +255,7 @@ private fun buildBulkActionDescription(
 private fun AppRoutePickerDialog(
     app: AppItem,
     routeOptions: List<AppRouteOption>,
+    singleServerRouteHidden: Boolean,
     onDismiss: () -> Unit,
     onSelected: (AppRouteOption) -> Unit,
 ) {
@@ -294,7 +305,8 @@ private fun AppRoutePickerDialog(
                     ) { option ->
                         RouteOptionRow(
                             option = option,
-                            selected = option.key == app.routeKey,
+                            selected = option.key == app.routeKey ||
+                                (singleServerRouteHidden && app.routeKind == AppRouteKind.SERVER && option.kind == AppRouteKind.DEFAULT),
                             onSelected = { onSelected(option) },
                         )
                     }

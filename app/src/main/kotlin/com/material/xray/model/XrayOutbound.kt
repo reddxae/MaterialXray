@@ -8,7 +8,7 @@ enum class XrayOutbound(
     Proxy(
         tag = "proxy",
         label = "proxy",
-        description = "Send traffic through the selected proxy server.",
+        description = "Send traffic through the selected proxy server",
     ),
     Direct(
         tag = "direct",

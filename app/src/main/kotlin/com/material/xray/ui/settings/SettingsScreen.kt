@@ -154,7 +154,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Xray Log Level") },
-                    supportingText = { Text("Default: Error") },
+                    supportingText = { Text("Default: error") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = logLevelExpanded) },
                     modifier = Modifier
                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)

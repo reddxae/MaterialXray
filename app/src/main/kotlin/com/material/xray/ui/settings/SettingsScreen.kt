@@ -8,6 +8,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -37,6 +39,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
     var editingGeoipUrl by remember(geoipUrl) { mutableStateOf(geoipUrl) }
     var editingGeositeUrl by remember(geositeUrl) { mutableStateOf(geositeUrl) }
+    val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val hasTunNameChanges by remember(editingTunName, tunName) { derivedStateOf { editingTunName != tunName } }
     val hasDnsChanges by remember(editingDns, dnsServers) { derivedStateOf { editingDns != dnsServers } }
     val hasGeoipUrlChanges by remember(editingGeoipUrl, geoipUrl) {
@@ -55,7 +58,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     ) { uri -> uri?.let { viewModel.importBackup(it) } }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Settings") }) },
+        modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                ),
+                scrollBehavior = topAppBarScrollBehavior,
+            )
+        },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -153,11 +166,23 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             HorizontalDivider()
             Text("Startup", style = MaterialTheme.typography.titleMedium)
 
-            ListItem(
-                headlineContent = { Text("Auto-connect on boot") },
-                supportingContent = { Text("Reconnect to last server after device restart") },
-                trailingContent = { Switch(checked = autoConnect, onCheckedChange = { viewModel.setAutoConnect(it) }) },
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Auto-connect on boot", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Reconnect to last server after device restart",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = autoConnect, onCheckedChange = { viewModel.setAutoConnect(it) })
+            }
 
             HorizontalDivider()
             Text("Data", style = MaterialTheme.typography.titleMedium)

@@ -2,18 +2,21 @@ package com.material.xray.ui.routing
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -54,6 +57,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -324,6 +330,7 @@ private fun EditRoutingRuleDialog(
     var selectedProtocols by remember(rule.id) { mutableStateOf(rule.protocols.toSet()) }
     val outboundOption = remember(selectedOutbound) { XrayOutbound.fromTag(selectedOutbound) }
     val matchModeOption = remember(selectedOperator) { matchModeOptions.first { it.value == selectedOperator } }
+    val scrollState = rememberScrollState()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -353,118 +360,166 @@ private fun EditRoutingRuleDialog(
         },
         title = { Text("Edit Rule") },
         text = {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .sizeIn(maxHeight = 520.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .sizeIn(maxHeight = 520.dp),
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                DropdownSelector(
-                    label = "Outbound Tag",
-                    value = outboundOption.label,
-                    description = outboundOption.description,
-                    expanded = outboundExpanded,
-                    onExpandedChange = { outboundExpanded = it },
-                    options = XrayOutbound.entries.map { Triple(it.tag, it.label, it.description) },
-                    onSelected = { selectedOutbound = it },
-                )
-
-                DropdownSelector(
-                    label = "Match Mode",
-                    value = matchModeOption.label,
-                    description = matchModeOption.description,
-                    expanded = operatorExpanded,
-                    onExpandedChange = { operatorExpanded = it },
-                    options = matchModeOptions.map { Triple(it.value.name, it.label, it.description) },
-                    onSelected = { selectedOperator = RoutingRuleOperator.valueOf(it) },
-                )
-
-                OutlinedTextField(
-                    value = domains,
-                    onValueChange = { domains = it },
-                    label = { Text("Domains") },
-                    supportingText = { Text("Comma-separated. Example: domain:ru, geosite:category-ads-all") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = ips,
-                    onValueChange = { ips = it },
-                    label = { Text("IPs") },
-                    supportingText = { Text("Comma-separated. Example: geoip:ru, 1.2.3.0/24") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = { port = it },
-                    label = { Text("Port") },
-                    supportingText = { Text("Single port or range, e.g. 443 or 0-65535") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                Text("Protocols", style = MaterialTheme.typography.labelLarge)
-                protocolOptions.forEach { (protocol, description) ->
-                    val checked = protocol in selectedProtocols
-                    Surface(
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState)
+                        .padding(end = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                        color = if (checked) {
-                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerLow
-                        },
-                        border = BorderStroke(
-                            1.dp,
-                            if (checked) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant,
-                        ),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .toggleable(
-                                    value = checked,
-                                    onValueChange = { enabled ->
-                                        selectedProtocols = if (enabled) {
-                                            selectedProtocols + protocol
-                                        } else {
-                                            selectedProtocols - protocol
-                                        }
-                                    },
-                                )
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                    )
+
+                    DropdownSelector(
+                        label = "Outbound Tag",
+                        value = outboundOption.label,
+                        description = outboundOption.description,
+                        expanded = outboundExpanded,
+                        onExpandedChange = { outboundExpanded = it },
+                        options = XrayOutbound.entries.map { Triple(it.tag, it.label, it.description) },
+                        onSelected = { selectedOutbound = it },
+                    )
+
+                    DropdownSelector(
+                        label = "Match Mode",
+                        value = matchModeOption.label,
+                        description = matchModeOption.description,
+                        expanded = operatorExpanded,
+                        onExpandedChange = { operatorExpanded = it },
+                        options = matchModeOptions.map { Triple(it.value.name, it.label, it.description) },
+                        onSelected = { selectedOperator = RoutingRuleOperator.valueOf(it) },
+                    )
+
+                    OutlinedTextField(
+                        value = domains,
+                        onValueChange = { domains = it },
+                        label = { Text("Domains") },
+                        supportingText = { Text("Comma-separated. Example: domain:ru, geosite:category-ads-all") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = ips,
+                        onValueChange = { ips = it },
+                        label = { Text("IPs") },
+                        supportingText = { Text("Comma-separated. Example: geoip:ru, 1.2.3.0/24") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it },
+                        label = { Text("Port") },
+                        supportingText = { Text("Single port or range, e.g. 443 or 0-65535") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Text("Protocols", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "If nothing is selected, all traffic is matched.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    protocolOptions.forEach { (protocol, description) ->
+                        val checked = protocol in selectedProtocols
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            color = if (checked) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (checked) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant,
+                            ),
                         ) {
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = null,
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = protocol.uppercase(),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .toggleable(
+                                        value = checked,
+                                        onValueChange = { enabled ->
+                                            selectedProtocols = if (enabled) {
+                                                selectedProtocols + protocol
+                                            } else {
+                                                selectedProtocols - protocol
+                                            }
+                                        },
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = null,
                                 )
-                                Text(
-                                    text = description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = protocol.uppercase(),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
                 }
+                DialogScrollbar(
+                    scrollValue = scrollState.value,
+                    maxScrollValue = scrollState.maxValue,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(4.dp),
+                )
             }
         },
     )
+}
+
+@Composable
+private fun DialogScrollbar(
+    scrollValue: Int,
+    maxScrollValue: Int,
+    modifier: Modifier = Modifier,
+) {
+    val trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    val thumbColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.82f)
+
+    Canvas(modifier = modifier) {
+        val radius = size.width / 2f
+        drawRoundRect(
+            color = trackColor,
+            cornerRadius = CornerRadius(radius, radius),
+        )
+        if (maxScrollValue <= 0 || size.height <= 0f) return@Canvas
+
+        val contentHeight = size.height + maxScrollValue
+        val thumbHeight = (size.height * size.height / contentHeight).coerceAtLeast(32.dp.toPx())
+        val thumbOffset = (scrollValue / maxScrollValue.toFloat()) * (size.height - thumbHeight)
+        drawRoundRect(
+            color = thumbColor,
+            topLeft = Offset(0f, thumbOffset),
+            size = Size(size.width, thumbHeight),
+            cornerRadius = CornerRadius(radius, radius),
+        )
+    }
 }
 
 @Composable

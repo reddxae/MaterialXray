@@ -65,16 +65,7 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                 ListItem(
                     headlineContent = { Text(app.name) },
                     supportingContent = {
-                        Column {
-                            Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                            Text(
-                                text = app.routeDescription,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                        Text(app.packageName, style = MaterialTheme.typography.bodySmall)
                     },
                     leadingContent = {
                         val iconBitmap = remember(app.packageName, app.icon, iconPixelSize) {

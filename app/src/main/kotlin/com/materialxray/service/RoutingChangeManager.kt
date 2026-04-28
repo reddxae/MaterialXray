@@ -8,29 +8,44 @@ import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+enum class PendingRoutingChange {
+    APP_ROUTING,
+    XRAY_CONFIG,
+}
+
 @Singleton
 class RoutingChangeManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val connectionStateHolder: ConnectionStateHolder,
 ) {
+    private val _pendingChange = MutableStateFlow<PendingRoutingChange?>(null)
     private val _hasPendingChanges = MutableStateFlow(false)
     val hasPendingChanges: StateFlow<Boolean> = _hasPendingChanges
 
-    fun markPendingChanges() {
+    fun markPendingChanges(kind: PendingRoutingChange = PendingRoutingChange.XRAY_CONFIG) {
+        _pendingChange.value = when {
+            _pendingChange.value == PendingRoutingChange.XRAY_CONFIG -> PendingRoutingChange.XRAY_CONFIG
+            kind == PendingRoutingChange.XRAY_CONFIG -> PendingRoutingChange.XRAY_CONFIG
+            else -> PendingRoutingChange.APP_ROUTING
+        }
         _hasPendingChanges.value = true
     }
 
     fun clearPendingChanges() {
+        _pendingChange.value = null
         _hasPendingChanges.value = false
     }
 
     fun maybeReloadActiveConnection() {
-        if (!_hasPendingChanges.value) return
+        val pendingChange = _pendingChange.value ?: return
 
         when (connectionStateHolder.state.value) {
             is ConnectionState.Connected -> {
                 clearPendingChanges()
-                XrayService.reload(context)
+                when (pendingChange) {
+                    PendingRoutingChange.APP_ROUTING -> XrayService.reloadAppRouting(context)
+                    PendingRoutingChange.XRAY_CONFIG -> XrayService.reload(context)
+                }
             }
             ConnectionState.Disconnected,
             is ConnectionState.Error -> {

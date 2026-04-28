@@ -105,6 +105,9 @@ class XrayService : Service() {
             ACTION_RELOAD -> {
                 launchConnectionCommand { reloadActiveConnection() }
             }
+            ACTION_RELOAD_APP_ROUTING -> {
+                launchConnectionCommand { reloadAppRouting() }
+            }
         }
         return START_STICKY
     }
@@ -144,7 +147,8 @@ class XrayService : Service() {
 
     private suspend fun connectWithCurrentSettings(
         config: ServerConfig,
-        transitionState: ConnectionState,
+        transitionState: ConnectionState = ConnectionState.Connecting,
+        cleanStateFirst: Boolean = true,
     ) {
         val tunName = settingsRepo.tunName.first()
         val fwmark = settingsRepo.fwmark.first()
@@ -152,7 +156,17 @@ class XrayService : Service() {
         val dns = settingsRepo.dnsServers.first()
         val logLevel = settingsRepo.xrayLogLevel.first()
         val routingRules = settingsRepo.routingRules.first()
-        connectionManager.connect(config, tunName, fwmark, routeTable, dns, logLevel, routingRules, transitionState)
+        connectionManager.connect(
+            server = config,
+            tunName = tunName,
+            fwmark = fwmark,
+            routeTable = routeTable,
+            dnsServers = dns,
+            logLevel = logLevel,
+            routingRules = routingRules,
+            transitionState = transitionState,
+            cleanStateFirst = cleanStateFirst,
+        )
     }
 
     private suspend fun reloadActiveConnection() {
@@ -163,7 +177,37 @@ class XrayService : Service() {
         connectionStateHolder.update(ConnectionState.ApplyingRoutingChanges)
         updateNotification()
         connectionManager.disconnect(updateState = false)
-        connectWithCurrentSettings(config, ConnectionState.ApplyingRoutingChanges)
+        connectWithCurrentSettings(config, ConnectionState.ApplyingRoutingChanges, cleanStateFirst = false)
+    }
+
+    private suspend fun reloadAppRouting() {
+        val config = activeConfig ?: return
+        val connectedState = connectionStateHolder.state.value as? ConnectionState.Connected
+        if (connectedState == null) {
+            reloadActiveConnection()
+            return
+        }
+
+        networkReconnectJob?.cancel()
+        logBuffer.append(LogSource.APP, "Applying app routing changes...")
+        connectionStateHolder.update(ConnectionState.ApplyingRoutingChanges)
+        updateNotification()
+
+        val fastApplied = connectionManager.applyAppRoutingChanges(
+            connectedState = connectedState,
+            tunName = settingsRepo.tunName.first(),
+            fwmark = settingsRepo.fwmark.first(),
+            routeTable = settingsRepo.routeTable.first(),
+        )
+        if (fastApplied) {
+            connectionStateHolder.update(connectedState)
+            return
+        }
+
+        stopLogTail()
+        logBuffer.append(LogSource.APP, "Restarting Xray to apply app routing topology changes...")
+        connectionManager.disconnect(updateState = false)
+        connectWithCurrentSettings(config, ConnectionState.ApplyingRoutingChanges, cleanStateFirst = false)
     }
 
     private fun handleStateSideEffects(state: ConnectionState) {
@@ -232,7 +276,7 @@ class XrayService : Service() {
                 updateNotification("Recovering native core...")
                 connectionManager.disconnect(updateState = false)
                 delay(PROCESS_RESTART_DELAY_MS)
-                connectWithCurrentSettings(config)
+                connectWithCurrentSettings(config, cleanStateFirst = false)
             }
         }
     }
@@ -305,7 +349,7 @@ class XrayService : Service() {
                 updateNotification("${latestState.serverName} | Native: ${latestState.tunName} -> $currentInterface")
                 stopLogTail()
                 connectionManager.disconnect()
-                connectWithCurrentSettings(latestConfig)
+                connectWithCurrentSettings(latestConfig, cleanStateFirst = false)
             }
         }
     }
@@ -367,6 +411,7 @@ class XrayService : Service() {
         const val ACTION_CONNECT = "com.materialxray.CONNECT"
         const val ACTION_DISCONNECT = "com.materialxray.DISCONNECT"
         const val ACTION_RELOAD = "com.materialxray.RELOAD"
+        const val ACTION_RELOAD_APP_ROUTING = "com.materialxray.RELOAD_APP_ROUTING"
         const val EXTRA_SERVER_CONFIG = "server_config"
         private const val NETWORK_RECONNECT_DELAY_MS = 2_000L
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
@@ -390,6 +435,12 @@ class XrayService : Service() {
         fun reload(context: Context) {
             context.startService(
                 Intent(context, XrayService::class.java).setAction(ACTION_RELOAD)
+            )
+        }
+
+        fun reloadAppRouting(context: Context) {
+            context.startService(
+                Intent(context, XrayService::class.java).setAction(ACTION_RELOAD_APP_ROUTING)
             )
         }
     }

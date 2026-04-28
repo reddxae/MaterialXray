@@ -10,6 +10,7 @@ import com.materialxray.data.db.dao.AppBypassDao
 import com.materialxray.data.db.entity.AppBypassEntity
 import com.materialxray.data.db.entity.ServerEntity
 import com.materialxray.data.repository.ServerRepository
+import com.materialxray.service.PendingRoutingChange
 import com.materialxray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -147,7 +148,7 @@ class AppsViewModel @Inject constructor(
                     )
                 }
             }
-            routingChangeManager.markPendingChanges()
+            routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
         }
     }
 
@@ -165,14 +166,14 @@ class AppsViewModel @Inject constructor(
                     )
                 )
             }
-            routingChangeManager.markPendingChanges()
+            routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
         }
     }
 
     fun resetAllToDefault() {
         viewModelScope.launch {
             appBypassDao.deleteAll()
-            routingChangeManager.markPendingChanges()
+            routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
         }
     }
 

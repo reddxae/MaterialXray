@@ -29,7 +29,8 @@ class CleanupManager(
         val fwmark = state?.fwmark ?: 255
         val routeMark = state?.routeMark ?: 100
         val routeTable = state?.routeTable ?: 100
-        tunManager.removeRouting(fwmark, routeMark, routeTable, tunName)
+        val appRouteCount = state?.appProxyServerIds?.size?.takeIf { it > 0 } ?: 64
+        tunManager.removeRouting(fwmark, routeMark, routeTable, tunName, appRouteCount)
 
         // 4. Delete state file
         stateFile.delete()

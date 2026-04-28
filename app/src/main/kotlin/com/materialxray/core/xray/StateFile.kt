@@ -12,6 +12,7 @@ data class XrayState(
     val tunName: String = "xray0",
     val nftTableCreated: Boolean = false,
     val ipRulesApplied: Boolean = false,
+    val appProxyServerIds: List<Long> = emptyList(),
     val routeTable: Int = 100,
     val bypassTable: Int = 101,
     val fwmark: Int = 255,

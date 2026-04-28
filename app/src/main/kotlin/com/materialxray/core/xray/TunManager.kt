@@ -98,14 +98,14 @@ class TunManager(private val shell: RootShell) {
         physicalRoute: PhysicalRoute,
         bypassUids: Set<Int>,
         appTunRoutes: List<AppTunRoute> = emptyList(),
+        managedAppRouteCount: Int = appTunRoutes.size,
     ): RoutingResult {
+        val managedAppTables = appRouteTables(routeTable, managedAppRouteCount)
+            .plus(appTunRoutes.map { it.routeTable })
+            .distinct()
         shell.execute("ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null")
-        removeManagedRoutingTables(routeTable)
-        shell.execute("ip route flush table $bypassTable 2>/dev/null")
-        shell.execute("ip route flush table $routeTable 2>/dev/null")
-        appTunRoutes.forEach { route ->
-            shell.execute("ip route flush table ${route.routeTable} 2>/dev/null")
-        }
+        removeManagedRoutingTables(routeTable, managedAppTables)
+        flushRouteTables(listOf(bypassTable, routeTable) + managedAppTables)
 
         val bypassRoute = if (physicalRoute.gateway != null) {
             "ip route replace default via ${physicalRoute.gateway} dev ${physicalRoute.dev} table $bypassTable"
@@ -145,39 +145,47 @@ class TunManager(private val shell: RootShell) {
         return RoutingResult(success = true)
     }
 
-    suspend fun removeRouting(fwmark: Int, routeMark: Int, routeTable: Int, tunName: String) {
+    suspend fun removeRouting(
+        fwmark: Int,
+        routeMark: Int,
+        routeTable: Int,
+        tunName: String,
+        managedAppRouteCount: Int = MAX_APP_TUN_ROUTES,
+    ) {
         val bypassTable = routeTable + 1
-        shell.execute("ip rule del fwmark $fwmark table main prio 10 2>/dev/null")
-        shell.execute("ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null")
-        shell.execute("ip rule del fwmark $routeMark table $routeTable prio 20 2>/dev/null")
-        removeManagedRoutingTables(routeTable)
-        shell.execute("ip route flush table $bypassTable 2>/dev/null")
-        shell.execute("ip route flush table $routeTable 2>/dev/null")
-        appRouteTableRange(routeTable).forEach { table ->
-            shell.execute("ip route flush table $table 2>/dev/null")
+        shell.execute(
+            listOf(
+                "ip rule del fwmark $fwmark table main prio 10 2>/dev/null",
+                "ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null",
+                "ip rule del fwmark $routeMark table $routeTable prio 20 2>/dev/null",
+            ).joinToString("; ")
+        )
+        val appTables = appRouteTables(routeTable, managedAppRouteCount)
+        removeManagedRoutingTables(routeTable, appTables)
+        flushRouteTables(listOf(bypassTable, routeTable) + appTables)
+        val linkDeleteCommands = buildList {
+            add("ip link del $tunName 2>/dev/null")
+            for (index in 1..managedAppRouteCount.coerceIn(0, MAX_APP_TUN_ROUTES)) {
+                add("ip link del ${appTunName(tunName, index)} 2>/dev/null")
+            }
         }
-        shell.execute("ip link del $tunName 2>/dev/null")
-        for (index in 1..MAX_APP_TUN_ROUTES) {
-            shell.execute("ip link del ${appTunName(tunName, index)} 2>/dev/null")
-        }
+        shell.execute(linkDeleteCommands.joinToString("; "))
     }
 
     private suspend fun addUidRoutingRules(routeTable: Int, bypassUids: Set<Int>): RoutingResult {
         val excluded = bypassUids.filter { it in APP_UID_MIN..APP_UID_MAX }.toSortedSet()
+        val commands = mutableListOf<String>()
         var start = APP_UID_MIN
         for (uid in excluded) {
             if (start < uid) {
-                addUidRoutingRule(start, uid - 1, routeTable).also {
-                    if (!it.success) return it
-                }
+                commands += uidRoutingRuleCommand(start, uid - 1, routeTable)
             }
             start = uid + 1
         }
-        return if (start <= APP_UID_MAX) {
-            addUidRoutingRule(start, APP_UID_MAX, routeTable)
-        } else {
-            RoutingResult(success = true)
+        if (start <= APP_UID_MAX) {
+            commands += uidRoutingRuleCommand(start, APP_UID_MAX, routeTable)
         }
+        return executeRoutingCommands(commands)
     }
 
     private suspend fun addIncludedUidRoutingRules(
@@ -188,49 +196,59 @@ class TunManager(private val shell: RootShell) {
         val included = uids.filter { it in APP_UID_MIN..APP_UID_MAX }.toSortedSet()
         if (included.isEmpty()) return RoutingResult(success = true)
 
+        val commands = mutableListOf<String>()
         var start = included.first()
         var previous = start
         included.drop(1).forEach { uid ->
             if (uid == previous + 1) {
                 previous = uid
             } else {
-                addUidRoutingRule(start, previous, routeTable, priority).also {
-                    if (!it.success) return it
-                }
+                commands += uidRoutingRuleCommand(start, previous, routeTable, priority)
                 start = uid
                 previous = uid
             }
         }
-        return addUidRoutingRule(start, previous, routeTable, priority)
+        commands += uidRoutingRuleCommand(start, previous, routeTable, priority)
+        return executeRoutingCommands(commands)
     }
 
-    private suspend fun addUidRoutingRule(
+    private fun uidRoutingRuleCommand(
         start: Int,
         end: Int,
         routeTable: Int,
         priority: Int = DEFAULT_UID_RULE_PRIORITY,
-    ): RoutingResult {
-        val command = "ip rule add iif lo uidrange $start-$end table $routeTable prio $priority"
+    ): String = "ip rule add iif lo uidrange $start-$end table $routeTable prio $priority"
+
+    private suspend fun executeRoutingCommands(commands: List<String>): RoutingResult {
+        if (commands.isEmpty()) return RoutingResult(success = true)
+        val command = commands.joinToString(" && ")
         val result = shell.execute(command)
         return if (result.isSuccess) RoutingResult(success = true) else result.toRoutingError(command)
     }
 
-    private suspend fun removeManagedRoutingTables(routeTable: Int) {
-        removeRulesForTable(routeTable)
-        appRouteTableRange(routeTable).forEach { table -> removeRulesForTable(table) }
+    private suspend fun flushRouteTables(routeTables: List<Int>) {
+        if (routeTables.isEmpty()) return
+        val command = routeTables.distinct().joinToString("; ") { table ->
+            "ip route flush table $table 2>/dev/null"
+        }
+        shell.execute(command)
     }
 
-    private suspend fun removeRulesForTable(routeTable: Int) {
+    private suspend fun removeManagedRoutingTables(routeTable: Int, appRouteTables: List<Int>) {
+        val managedTables = (listOf(routeTable) + appRouteTables).toSet()
         val result = shell.execute("ip rule show")
-        result.output
+        val prefs = result.output
             .lineSequence()
-            .filter { line -> line.referencesLookupTable(routeTable) }
+            .filter { line -> line.referencesAnyLookupTable(managedTables) }
             .mapNotNull { line -> line.substringBefore(':').trim().takeIf { it.isNotEmpty() } }
-            .forEach { pref ->
-                while (shell.execute("ip rule del pref $pref 2>/dev/null").isSuccess) {
-                    // Multiple rules can share the same preference.
-                }
-            }
+            .distinct()
+            .toList()
+        if (prefs.isEmpty()) return
+
+        val command = prefs.joinToString("; ") { pref ->
+            "while ip rule del pref $pref 2>/dev/null; do :; done"
+        }
+        shell.execute(command)
     }
 
     private fun parseDefaultRoute(line: String): PhysicalRoute? {
@@ -268,10 +286,10 @@ class TunManager(private val shell: RootShell) {
         }
     }
 
-    private fun String.referencesLookupTable(routeTable: Int): Boolean {
+    private fun String.referencesAnyLookupTable(routeTables: Set<Int>): Boolean {
         val fields = trim().split(Regex("\\s+"))
         return fields.zipWithNext().any { (key, value) ->
-            key == "lookup" && value == routeTable.toString()
+            key == "lookup" && value.toIntOrNull() in routeTables
         }
     }
 
@@ -296,7 +314,7 @@ class TunManager(private val shell: RootShell) {
         fun appTunAddressCidr(index: Int): String =
             "10.0.${index.coerceIn(1, 254)}.1/30"
 
-        private fun appRouteTableRange(baseRouteTable: Int): IntRange =
-            appRouteTable(baseRouteTable, 1)..appRouteTable(baseRouteTable, MAX_APP_TUN_ROUTES)
+        private fun appRouteTables(baseRouteTable: Int, count: Int): List<Int> =
+            (1..count.coerceIn(0, MAX_APP_TUN_ROUTES)).map { appRouteTable(baseRouteTable, it) }
     }
 }

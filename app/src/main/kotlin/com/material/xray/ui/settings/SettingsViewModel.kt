@@ -107,6 +107,7 @@ class SettingsViewModel @Inject constructor(
                             name = sub.name,
                             url = sub.url,
                             autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
+                            descriptionHidden = sub.descriptionHidden,
                             metadata = sub.toSubscriptionMetadata(),
                         )
                     },
@@ -139,6 +140,7 @@ class SettingsViewModel @Inject constructor(
                             name = sub.name,
                             url = sub.url,
                             autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
+                            descriptionHidden = sub.descriptionHidden,
                         ).withSubscriptionMetadata(sub.metadata)
                     )
                 }

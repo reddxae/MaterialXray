@@ -13,7 +13,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 
 @Database(
     entities = [ServerEntity::class, SubscriptionEntity::class, AppBypassEntity::class],
-    version = 6,
+    version = 7,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun serverDao(): ServerDao
@@ -59,6 +59,12 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE app_bypass ADD COLUMN routeMode TEXT")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE subscriptions ADD COLUMN descriptionHidden INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

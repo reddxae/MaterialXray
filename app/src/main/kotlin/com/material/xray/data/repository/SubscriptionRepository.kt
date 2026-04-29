@@ -92,6 +92,10 @@ class SubscriptionRepository @Inject constructor(
         subscriptionDao.updateAutoUpdateInterval(subId, intervalHours.coerceAtLeast(0))
     }
 
+    suspend fun setDescriptionHidden(subId: Long, hidden: Boolean) {
+        subscriptionDao.updateDescriptionHidden(subId, hidden)
+    }
+
     suspend fun update(sub: SubscriptionEntity, name: String, url: String): RefreshResult? {
         val updated = sub.copy(
             name = name.trim().ifEmpty { nextFallbackName(excludingId = sub.id) },

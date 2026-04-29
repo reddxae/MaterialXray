@@ -185,6 +185,12 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun setSubscriptionDescriptionHidden(subId: Long, hidden: Boolean) {
+        viewModelScope.launch {
+            subscriptionRepo.setDescriptionHidden(subId, hidden)
+        }
+    }
+
     fun testLatency(server: ServerEntity) {
         viewModelScope.launch {
             val latency = withContext(Dispatchers.IO) { measureLatency(server.address, server.port) }

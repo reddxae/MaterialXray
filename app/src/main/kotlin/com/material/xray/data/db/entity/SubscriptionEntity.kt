@@ -21,4 +21,5 @@ data class SubscriptionEntity(
     val profileWebPageUrl: String? = null,
     val announce: String? = null,
     val supportUrl: String? = null,
+    val descriptionHidden: Boolean = false,
 )

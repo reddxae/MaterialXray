@@ -2,7 +2,12 @@ package com.material.xray.ui.home
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -149,6 +154,9 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                         onRefresh = { viewModel.refreshSubscription(subscription) },
                         onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
                         onAutoUpdateIntervalClick = { autoUpdateSubscription = subscription },
+                        onDescriptionHiddenChange = { hidden ->
+                            viewModel.setSubscriptionDescriptionHidden(subscription.id, hidden)
+                        },
                         onServerSelected = { viewModel.selectServer(it) },
                         onTestLatency = { viewModel.testLatency(it) },
                     )
@@ -397,6 +405,7 @@ private fun SubscriptionCard(
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
     onAutoUpdateIntervalClick: () -> Unit,
+    onDescriptionHiddenChange: (Boolean) -> Unit,
     onServerSelected: (Long) -> Unit,
     onTestLatency: (ServerEntity) -> Unit,
 ) {
@@ -412,6 +421,7 @@ private fun SubscriptionCard(
                 onTestAll = onTestAll,
                 onDelete = onDelete,
                 onEdit = onEdit,
+                onDescriptionHiddenChange = onDescriptionHiddenChange,
             )
             SubscriptionMetadataSection(
                 subscription = subscription,
@@ -482,7 +492,11 @@ private fun SubscriptionMetadataSection(
             .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (announcement.isNotEmpty()) {
+        AnimatedVisibility(
+            visible = announcement.isNotEmpty() && !subscription.descriptionHidden,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
+        ) {
             Text(
                 text = announcement,
                 style = MaterialTheme.typography.bodySmall,
@@ -547,11 +561,13 @@ private fun SubscriptionHeader(
     onTestAll: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
+    onDescriptionHiddenChange: (Boolean) -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val webPageUrl = subscription.profileWebPageUrl?.trim().orEmpty()
     val supportUrl = subscription.supportUrl?.trim().orEmpty()
+    val hasDescription = subscription.announce?.trim()?.isNotEmpty() == true
 
     Row(
         modifier = Modifier
@@ -612,6 +628,17 @@ private fun SubscriptionHeader(
                         onEdit()
                     },
                 )
+                if (hasDescription) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(if (subscription.descriptionHidden) "Show description" else "Hide description")
+                        },
+                        onClick = {
+                            showMenu = false
+                            onDescriptionHiddenChange(!subscription.descriptionHidden)
+                        },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Delete") },
                     onClick = {

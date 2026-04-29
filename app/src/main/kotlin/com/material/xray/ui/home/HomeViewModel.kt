@@ -126,7 +126,15 @@ class HomeViewModel @Inject constructor(
     fun updateSubscription(sub: SubscriptionEntity, name: String, url: String) {
         viewModelScope.launch {
             withRefreshTracking {
+                val selectedBeforeRefresh = selectedServerEntity()
                 runCatching { subscriptionRepo.update(sub, name, url) }
+                    .onSuccess { refreshResult ->
+                        syncSelectedServerAfterRefresh(
+                            selectedBeforeRefresh = selectedBeforeRefresh,
+                            refreshedSubscriptionId = sub.id,
+                            refreshResult = refreshResult,
+                        )
+                    }
             }
         }
     }
@@ -134,7 +142,19 @@ class HomeViewModel @Inject constructor(
     fun refreshAll() {
         viewModelScope.launch {
             withRefreshTracking {
+                val selectedBeforeRefresh = selectedServerEntity()
                 runCatching { subscriptionRepo.refreshAll() }
+                    .onSuccess { refreshResults ->
+                        selectedBeforeRefresh?.let { previousServer ->
+                            refreshResults[previousServer.subscriptionId]?.let { refreshResult ->
+                                syncSelectedServerAfterRefresh(
+                                    selectedBeforeRefresh = previousServer,
+                                    refreshedSubscriptionId = previousServer.subscriptionId,
+                                    refreshResult = refreshResult,
+                                )
+                            }
+                        }
+                    }
             }
         }
     }
@@ -142,7 +162,15 @@ class HomeViewModel @Inject constructor(
     fun refreshSubscription(sub: SubscriptionEntity) {
         viewModelScope.launch {
             withRefreshTracking {
+                val selectedBeforeRefresh = selectedServerEntity()
                 runCatching { subscriptionRepo.refresh(sub.id, sub.url) }
+                    .onSuccess { refreshResult ->
+                        syncSelectedServerAfterRefresh(
+                            selectedBeforeRefresh = selectedBeforeRefresh,
+                            refreshedSubscriptionId = sub.id,
+                            refreshResult = refreshResult,
+                        )
+                    }
             }
         }
     }
@@ -195,6 +223,28 @@ class HomeViewModel @Inject constructor(
         Socket().use { it.connect(InetSocketAddress(address, port), 3000) }
         (System.currentTimeMillis() - start).toInt()
     }.getOrElse { -1 }
+
+    private fun selectedServerEntity(): ServerEntity? {
+        val id = selectedServerId.value
+        return allServers.value.find { it.id == id }
+    }
+
+    private suspend fun syncSelectedServerAfterRefresh(
+        selectedBeforeRefresh: ServerEntity?,
+        refreshedSubscriptionId: Long,
+        refreshResult: SubscriptionRepository.RefreshResult?,
+    ) {
+        if (selectedBeforeRefresh?.subscriptionId != refreshedSubscriptionId) return
+
+        val replacementId = refreshResult
+            ?.serverIdByConfigJson
+            ?.get(selectedBeforeRefresh.configJson)
+            ?: -1L
+
+        if (replacementId != selectedServerId.value) {
+            settingsRepo.setLastServerId(replacementId)
+        }
+    }
 
     private suspend fun withRefreshTracking(block: suspend () -> Unit) {
         refreshOperations.update { it + 1 }

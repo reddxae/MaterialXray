@@ -16,7 +16,7 @@ interface ServerDao {
     suspend fun getById(id: Long): ServerEntity?
 
     @Insert
-    suspend fun insertAll(servers: List<ServerEntity>)
+    suspend fun insertAll(servers: List<ServerEntity>): List<Long>
 
     @Query("DELETE FROM servers WHERE subscriptionId = :subId")
     suspend fun deleteBySubscription(subId: Long)

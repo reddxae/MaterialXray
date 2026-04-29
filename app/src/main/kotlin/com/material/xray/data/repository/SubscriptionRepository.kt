@@ -23,6 +23,10 @@ class SubscriptionRepository @Inject constructor(
 
     fun observeAll(): Flow<List<SubscriptionEntity>> = subscriptionDao.observeAll()
 
+    data class RefreshResult(
+        val serverIdByConfigJson: Map<String, Long>,
+    )
+
     suspend fun add(name: String, url: String): Long {
         val trimmedName = name.trim()
         val trimmedUrl = url.trim()
@@ -36,31 +40,37 @@ class SubscriptionRepository @Inject constructor(
         return id
     }
 
-    suspend fun refresh(subId: Long, url: String) {
-        val existing = subscriptionDao.getById(subId) ?: return
+    suspend fun refresh(subId: Long, url: String): RefreshResult? {
+        val existing = subscriptionDao.getById(subId) ?: return null
         val fetched = fetcher.fetchWithMetadata(url)
+        val servers = fetched.configs.mapIndexed { index, config ->
+            ServerEntity(
+                subscriptionId = subId,
+                name = config.name,
+                protocol = config.protocol.name,
+                address = config.address,
+                port = config.port,
+                configJson = json.encodeToString(config),
+                sortOrder = index,
+            )
+        }
 
         serverDao.deleteBySubscription(subId)
-        serverDao.insertAll(
-            fetched.configs.mapIndexed { index, config ->
-                ServerEntity(
-                    subscriptionId = subId,
-                    name = config.name,
-                    protocol = config.protocol.name,
-                    address = config.address,
-                    port = config.port,
-                    configJson = json.encodeToString(config),
-                    sortOrder = index,
-                )
-            }
-        )
+        val insertedIds = serverDao.insertAll(servers)
 
         subscriptionDao.update(existing.applyFetchedData(fetched))
+        return RefreshResult(
+            serverIdByConfigJson = servers
+                .zip(insertedIds)
+                .associate { (server, id) -> server.configJson to id },
+        )
     }
 
-    suspend fun refreshAll() {
+    suspend fun refreshAll(): Map<Long, RefreshResult> = buildMap {
         subscriptionDao.getAll().forEach { sub ->
             runCatching { refresh(sub.id, sub.url) }
+                .getOrNull()
+                ?.let { result -> put(sub.id, result) }
         }
     }
 
@@ -68,13 +78,13 @@ class SubscriptionRepository @Inject constructor(
         subscriptionDao.delete(sub)
     }
 
-    suspend fun update(sub: SubscriptionEntity, name: String, url: String) {
+    suspend fun update(sub: SubscriptionEntity, name: String, url: String): RefreshResult? {
         val updated = sub.copy(
             name = name.trim().ifEmpty { nextFallbackName(excludingId = sub.id) },
             url = url.trim(),
         )
         subscriptionDao.update(updated)
-        refresh(updated.id, updated.url)
+        return refresh(updated.id, updated.url)
     }
 
     private suspend fun SubscriptionEntity.applyFetchedData(fetched: FetchedSubscription): SubscriptionEntity {

@@ -104,7 +104,7 @@ class TunManager(private val shell: RootShell) {
             .plus(appTunRoutes.map { it.routeTable })
             .distinct()
         shell.execute("ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null")
-        removeManagedRoutingTables(routeTable, managedAppTables)
+        removeManagedRoutingTables(routeTable, listOf(bypassTable) + managedAppTables)
         flushRouteTables(listOf(bypassTable, routeTable) + managedAppTables)
 
         val bypassRoute = if (physicalRoute.gateway != null) {
@@ -161,7 +161,7 @@ class TunManager(private val shell: RootShell) {
             ).joinToString("; ")
         )
         val appTables = appRouteTables(routeTable, managedAppRouteCount)
-        removeManagedRoutingTables(routeTable, appTables)
+        removeManagedRoutingTables(routeTable, listOf(bypassTable) + appTables)
         flushRouteTables(listOf(bypassTable, routeTable) + appTables)
         val linkDeleteCommands = buildList {
             add("ip link del $tunName 2>/dev/null")
@@ -196,10 +196,24 @@ class TunManager(private val shell: RootShell) {
         val included = uids.filter { it in APP_UID_MIN..APP_UID_MAX }.toSortedSet()
         if (included.isEmpty()) return RoutingResult(success = true)
 
+        return executeRoutingCommands(
+            uidRoutingRuleCommands(
+                routeTable = routeTable,
+                uids = included,
+                priority = priority,
+            )
+        )
+    }
+
+    private fun uidRoutingRuleCommands(
+        routeTable: Int,
+        uids: Set<Int>,
+        priority: Int,
+    ): List<String> {
         val commands = mutableListOf<String>()
-        var start = included.first()
+        var start = uids.first()
         var previous = start
-        included.drop(1).forEach { uid ->
+        uids.drop(1).forEach { uid ->
             if (uid == previous + 1) {
                 previous = uid
             } else {
@@ -209,7 +223,7 @@ class TunManager(private val shell: RootShell) {
             }
         }
         commands += uidRoutingRuleCommand(start, previous, routeTable, priority)
-        return executeRoutingCommands(commands)
+        return commands
     }
 
     private fun uidRoutingRuleCommand(

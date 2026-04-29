@@ -661,9 +661,16 @@ private fun ServerRow(
     onTestLatency: () -> Unit,
 ) {
     val latencyMs = server.latencyMs
-    val latencyText = latencyMs?.let { if (it < 0) "Failed" else "${it}ms" }
+    val latencyText = latencyMs?.let {
+        when {
+            it == LATENCY_TESTING -> "Testing..."
+            it < 0 -> "Failed"
+            else -> "${it}ms"
+        }
+    }
     val latencyColor = when {
         latencyMs == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        latencyMs == LATENCY_TESTING -> MaterialTheme.colorScheme.onSurfaceVariant
         latencyMs < 0 -> MaterialTheme.colorScheme.error
         latencyMs < 200 -> MaterialTheme.colorScheme.primary
         latencyMs < 500 -> MaterialTheme.colorScheme.tertiary

@@ -244,7 +244,7 @@ class ConnectionManager(
                 log.append(LogSource.APP, "App TUN interface ${route.tunName} is up")
             }
 
-            val bypassUids = appRoutingPlan.directUids
+            val bypassUids = runtimeBypassUids(appRoutingPlan.directUids)
             log.append(
                 LogSource.APP,
                 "Applying IP routing (tunTable=$routeTable, bypassTable=$bypassTable, fwmark=$fwmark, ${bypassUids.size} apps direct, ${appRoutingPlan.tunRoutes.size} app proxy route(s))...",
@@ -359,7 +359,7 @@ class ConnectionManager(
                 routeTable = routeTable,
                 bypassTable = bypassTable,
                 physicalRoute = physicalRoute,
-                bypassUids = appRoutingPlan.directUids,
+                bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
                 appTunRoutes = appRoutingPlan.tunRoutes,
                 managedAppRouteCount = persistedState.appProxyServerIds.size,
             )
@@ -582,6 +582,11 @@ class ConnectionManager(
     suspend fun readProcessResidentMemoryMb(pid: Int): Long? {
         val rssKb = readProcessResidentMemoryKb(pid) ?: return null
         return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
+    }
+
+    private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
+        val appUid = context.applicationInfo.uid
+        return if (appUid > 0) directUids + appUid else directUids
     }
 
     private suspend fun readCrashReason(lines: Int = 80): String {

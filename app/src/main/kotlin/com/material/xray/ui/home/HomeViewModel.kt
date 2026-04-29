@@ -3,6 +3,7 @@ package com.material.xray.ui.home
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.ServerRepository
@@ -20,10 +21,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import java.net.InetSocketAddress
-import java.net.Socket
 import javax.inject.Inject
 
 data class ServerListItem(
@@ -31,6 +32,8 @@ data class ServerListItem(
     val endpointSummary: String,
     val latencyMs: Int?,
 )
+
+const val LATENCY_TESTING = Int.MIN_VALUE
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -40,10 +43,12 @@ class HomeViewModel @Inject constructor(
     private val subscriptionRepo: SubscriptionRepository,
     private val connectionStateHolder: ConnectionStateHolder,
     private val routingChangeManager: RoutingChangeManager,
+    private val serverLatencyTester: ServerLatencyTester,
 ) : ViewModel() {
     private val json = Json { ignoreUnknownKeys = true }
     private val endpointSummaryCache = mutableMapOf<String, String>()
     private val activeConfigFile = context.filesDir.resolve("config.json")
+    private val latencySemaphore = Semaphore(MAX_PARALLEL_LATENCY_TESTS)
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
 
@@ -193,7 +198,8 @@ class HomeViewModel @Inject constructor(
 
     fun testLatency(server: ServerEntity) {
         viewModelScope.launch {
-            val latency = withContext(Dispatchers.IO) { measureLatency(server.address, server.port) }
+            latencyByServerId.update { it + (server.id to LATENCY_TESTING) }
+            val latency = measureLatency(server)
             latencyByServerId.update { it + (server.id to latency) }
         }
     }
@@ -204,7 +210,8 @@ class HomeViewModel @Inject constructor(
                 .filter { it.subscriptionId == sub.id }
                 .forEach { server ->
                     launch {
-                        val latency = withContext(Dispatchers.IO) { measureLatency(server.address, server.port) }
+                        latencyByServerId.update { it + (server.id to LATENCY_TESTING) }
+                        val latency = latencySemaphore.withPermit { measureLatency(server) }
                         latencyByServerId.update { it + (server.id to latency) }
                     }
                 }
@@ -215,7 +222,8 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             allServers.value.forEach { server ->
                 launch {
-                    val latency = withContext(Dispatchers.IO) { measureLatency(server.address, server.port) }
+                    latencyByServerId.update { it + (server.id to LATENCY_TESTING) }
+                    val latency = latencySemaphore.withPermit { measureLatency(server) }
                     latencyByServerId.update { it + (server.id to latency) }
                 }
             }
@@ -234,11 +242,8 @@ class HomeViewModel @Inject constructor(
         return ServerListItem(entity = this, endpointSummary = summary, latencyMs = latencyMs)
     }
 
-    private fun measureLatency(address: String, port: Int): Int = runCatching {
-        val start = System.currentTimeMillis()
-        Socket().use { it.connect(InetSocketAddress(address, port), 3000) }
-        (System.currentTimeMillis() - start).toInt()
-    }.getOrElse { -1 }
+    private suspend fun measureLatency(server: ServerEntity): Int =
+        serverLatencyTester.tcping(server.address, server.port)
 
     private fun selectedServerEntity(): ServerEntity? {
         val id = selectedServerId.value
@@ -298,5 +303,6 @@ class HomeViewModel @Inject constructor(
 
     private companion object {
         const val AUTO_UPDATE_CHECK_INTERVAL_MS = 15L * 60L * 1000L
+        const val MAX_PARALLEL_LATENCY_TESTS = 8
     }
 }

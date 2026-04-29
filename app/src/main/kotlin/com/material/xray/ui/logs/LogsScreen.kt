@@ -39,7 +39,9 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
     val pagerState = rememberPagerState(pageCount = { LogFilter.entries.size })
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
-    val filter = LogFilter.entries[pagerState.currentPage]
+    val selectedFilter by remember {
+        derivedStateOf { LogFilter.entries[pagerState.targetPage] }
+    }
 
     Scaffold(
         topBar = {
@@ -61,7 +63,7 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
         },
         bottomBar = {
             LogFilterSelector(
-                selectedFilter = filter,
+                selectedFilter = selectedFilter,
                 onSelected = { index ->
                     coroutineScope.launch {
                         pagerState.animateScrollToPage(index)

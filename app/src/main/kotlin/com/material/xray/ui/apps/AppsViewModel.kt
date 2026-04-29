@@ -159,7 +159,16 @@ class AppsViewModel @Inject constructor(
     fun setAppRoute(app: AppItem, option: AppRouteOption) {
         viewModelScope.launch {
             when (option.kind) {
-                AppRouteKind.INHERIT -> appBypassDao.delete(app.packageName)
+                AppRouteKind.INHERIT -> appBypassDao.upsert(
+                    AppBypassEntity(
+                        packageName = app.packageName,
+                        uid = app.uid,
+                        excluded = false,
+                        serverId = null,
+                        manual = true,
+                        routeMode = ROUTE_MODE_DEFAULT_OUTBOUND,
+                    )
+                )
                 AppRouteKind.DEFAULT -> appBypassDao.upsert(
                     AppBypassEntity(
                         packageName = app.packageName,
@@ -167,6 +176,7 @@ class AppsViewModel @Inject constructor(
                         excluded = false,
                         serverId = null,
                         manual = true,
+                        routeMode = ROUTE_MODE_DEFAULT_SELECTED,
                     )
                 )
                 AppRouteKind.DIRECT -> appBypassDao.upsert(
@@ -176,6 +186,7 @@ class AppsViewModel @Inject constructor(
                         excluded = true,
                         serverId = null,
                         manual = true,
+                        routeMode = ROUTE_MODE_DIRECT,
                     )
                 )
                 AppRouteKind.SERVER -> {
@@ -187,6 +198,7 @@ class AppsViewModel @Inject constructor(
                             excluded = false,
                             serverId = serverId,
                             manual = true,
+                            routeMode = ROUTE_MODE_SERVER,
                         )
                     )
                 }
@@ -217,6 +229,7 @@ class AppsViewModel @Inject constructor(
                         excluded = true,
                         serverId = null,
                         manual = false,
+                        routeMode = ROUTE_MODE_DIRECT,
                     )
                 )
             }
@@ -234,6 +247,7 @@ class AppsViewModel @Inject constructor(
                         excluded = false,
                         serverId = null,
                         manual = false,
+                        routeMode = ROUTE_MODE_DEFAULT_SELECTED,
                     )
                 )
             }
@@ -245,8 +259,9 @@ class AppsViewModel @Inject constructor(
         assignment: AppBypassEntity?,
         serverOptionsById: Map<Long, AppRouteOption>,
     ): AppRouteOption {
-        if (assignment == null) return INHERIT_ROUTE_OPTION
+        if (assignment == null) return DEFAULT_ROUTE_OPTION
         if (assignment.excluded) return DIRECT_ROUTE_OPTION
+        if (assignment.routeMode == ROUTE_MODE_DEFAULT_OUTBOUND) return INHERIT_ROUTE_OPTION
         val serverId = assignment.serverId ?: return DEFAULT_ROUTE_OPTION
         return serverOptionsById[serverId] ?: AppRouteOption(
             key = serverRouteKey(serverId),
@@ -275,6 +290,10 @@ class AppsViewModel @Inject constructor(
         private const val INHERIT_ROUTE_KEY = "inherit"
         private const val DEFAULT_ROUTE_KEY = "default"
         private const val DIRECT_ROUTE_KEY = "direct"
+        private const val ROUTE_MODE_DEFAULT_OUTBOUND = "default_outbound"
+        private const val ROUTE_MODE_DEFAULT_SELECTED = "default_selected"
+        private const val ROUTE_MODE_DIRECT = "direct"
+        private const val ROUTE_MODE_SERVER = "server"
 
         val INHERIT_ROUTE_OPTION = AppRouteOption(
             key = INHERIT_ROUTE_KEY,

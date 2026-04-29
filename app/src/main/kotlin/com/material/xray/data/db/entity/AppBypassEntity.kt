@@ -10,4 +10,5 @@ data class AppBypassEntity(
     val excluded: Boolean = true,
     val serverId: Long? = null,
     val manual: Boolean = true,
+    val routeMode: String? = null,
 )

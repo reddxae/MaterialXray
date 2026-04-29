@@ -9,13 +9,16 @@ interface AppBypassDao {
     @Query("SELECT * FROM app_bypass ORDER BY packageName")
     fun observeAll(): Flow<List<AppBypassEntity>>
 
+    @Query("SELECT * FROM app_bypass ORDER BY packageName")
+    suspend fun getAll(): List<AppBypassEntity>
+
     @Query("SELECT * FROM app_bypass WHERE excluded = 1")
     suspend fun getExcluded(): List<AppBypassEntity>
 
     @Query("SELECT * FROM app_bypass WHERE excluded = 0 AND serverId IS NOT NULL")
     suspend fun getProxyAssignments(): List<AppBypassEntity>
 
-    @Query("SELECT * FROM app_bypass WHERE excluded = 0 AND serverId IS NULL")
+    @Query("SELECT * FROM app_bypass WHERE excluded = 0 AND serverId IS NULL AND (routeMode IS NULL OR routeMode = 'default_selected')")
     suspend fun getDefaultProxyAssignments(): List<AppBypassEntity>
 
     @Upsert

@@ -1,6 +1,7 @@
 package com.material.xray.service
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
@@ -436,17 +437,29 @@ class ConnectionManager(
         includeProxyRoutes: Boolean,
         defaultProxyServer: ServerConfig? = null,
     ): AppRoutingPlan {
-        val directUids = appBypassDao.getExcluded()
+        val assignments = appBypassDao.getAll()
+        val assignmentUids = assignments
             .map { it.uid }
             .filter { it > 0 }
             .toSet()
 
-        val defaultProxyUids = appBypassDao.getDefaultProxyAssignments()
+        val directUids = assignments
+            .filter { it.excluded }
             .map { it.uid }
             .filter { it > 0 }
             .toSet()
 
-        val proxyAssignments = appBypassDao.getProxyAssignments()
+        val defaultProxyUids = assignments
+            .filter {
+                !it.excluded &&
+                    it.serverId == null &&
+                    it.routeMode != ROUTE_MODE_DEFAULT_OUTBOUND
+            }
+            .map { it.uid }
+            .filter { it > 0 }
+            .toSet() + defaultSelectedUidsForUnassignedApps(assignmentUids)
+
+        val proxyAssignments = assignments
             .filter { it.uid > 0 && it.serverId != null }
             .groupBy { requireNotNull(it.serverId) }
             .toSortedMap()
@@ -725,6 +738,17 @@ class ConnectionManager(
         }
     }
 
+    private fun defaultSelectedUidsForUnassignedApps(assignmentUids: Set<Int>): Set<Int> =
+        runCatching {
+            context.packageManager
+                .getInstalledApplications(PackageManager.GET_META_DATA)
+                .asSequence()
+                .filterNot { it.packageName == context.packageName }
+                .map { it.uid }
+                .filter { it > 0 && it !in assignmentUids }
+                .toSet()
+        }.getOrDefault(emptySet())
+
     companion object {
         private const val DEFAULT_MEMORY_PAGE_KB = 4L
         private const val KILOBYTES_PER_MEGABYTE = 1024L
@@ -732,5 +756,6 @@ class ConnectionManager(
         private const val DEFAULT_SELECTED_CONFIG_ROUTE_ID = Long.MIN_VALUE
         private const val DEFAULT_SELECTED_CONFIG_INBOUND_TAG = "app-in-default-selected"
         private const val DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG = "proxy"
+        private const val ROUTE_MODE_DEFAULT_OUTBOUND = "default_outbound"
     }
 }

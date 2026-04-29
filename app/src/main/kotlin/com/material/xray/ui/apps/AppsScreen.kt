@@ -36,7 +36,6 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     val apps by viewModel.apps.collectAsStateWithLifecycle()
     val routeOptions by viewModel.routeOptions.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val showSystemApps by viewModel.showSystemApps.collectAsStateWithLifecycle()
     val isLoadingApps by viewModel.isLoadingApps.collectAsStateWithLifecycle()
     val appSpecificServerNoteShown by viewModel.appSpecificServerNoteShown.collectAsStateWithLifecycle()
     val density = LocalDensity.current
@@ -53,56 +52,8 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     }
     var editingApp by remember { mutableStateOf<AppItem?>(null) }
     var pendingSpecificServerRoute by remember { mutableStateOf<AppRouteSelection?>(null) }
-    var pendingBulkAction by remember { mutableStateOf<BulkAppRouteAction?>(null) }
-    var appRoutingMenuExpanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("App Routing") },
-            windowInsets = WindowInsets(0.dp),
-            actions = {
-                Box {
-                    IconButton(onClick = { appRoutingMenuExpanded = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "App routing menu")
-                    }
-                    DropdownMenu(
-                        expanded = appRoutingMenuExpanded,
-                        onDismissRequest = { appRoutingMenuExpanded = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Clear proxied apps list") },
-                            leadingIcon = { Icon(Icons.Default.Deselect, contentDescription = null) },
-                            onClick = {
-                                appRoutingMenuExpanded = false
-                                pendingBulkAction = BulkAppRouteAction.ClearProxiedApps
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Proxy all apps") },
-                            leadingIcon = { Icon(Icons.Default.SelectAll, contentDescription = null) },
-                            onClick = {
-                                appRoutingMenuExpanded = false
-                                pendingBulkAction = BulkAppRouteAction.ProxyAllApps
-                            },
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("Show system apps") },
-                            trailingIcon = {
-                                Checkbox(
-                                    checked = showSystemApps,
-                                    onCheckedChange = null,
-                                )
-                            },
-                            onClick = {
-                                viewModel.setShowSystemApps(!showSystemApps)
-                            },
-                        )
-                    }
-                }
-            },
-        )
-
         if (isLoadingApps) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -199,6 +150,53 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                 pendingSpecificServerRoute = null
             },
         )
+    }
+}
+
+@Composable
+fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
+    val showSystemApps by viewModel.showSystemApps.collectAsStateWithLifecycle()
+    var pendingBulkAction by remember { mutableStateOf<BulkAppRouteAction?>(null) }
+    var appRoutingMenuExpanded by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { appRoutingMenuExpanded = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "App routing menu")
+        }
+        DropdownMenu(
+            expanded = appRoutingMenuExpanded,
+            onDismissRequest = { appRoutingMenuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("Clear proxied apps list") },
+                leadingIcon = { Icon(Icons.Default.Deselect, contentDescription = null) },
+                onClick = {
+                    appRoutingMenuExpanded = false
+                    pendingBulkAction = BulkAppRouteAction.ClearProxiedApps
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Proxy all apps") },
+                leadingIcon = { Icon(Icons.Default.SelectAll, contentDescription = null) },
+                onClick = {
+                    appRoutingMenuExpanded = false
+                    pendingBulkAction = BulkAppRouteAction.ProxyAllApps
+                },
+            )
+            HorizontalDivider()
+            DropdownMenuItem(
+                text = { Text("Show system apps") },
+                trailingIcon = {
+                    Checkbox(
+                        checked = showSystemApps,
+                        onCheckedChange = null,
+                    )
+                },
+                onClick = {
+                    viewModel.setShowSystemApps(!showSystemApps)
+                },
+            )
+        }
     }
 
     pendingBulkAction?.let { action ->

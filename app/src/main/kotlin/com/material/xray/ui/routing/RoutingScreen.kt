@@ -74,6 +74,7 @@ import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
+import com.material.xray.ui.apps.AppRoutingMenuActions
 import kotlinx.coroutines.launch
 
 private enum class RoutingTab(val title: String) {
@@ -148,35 +149,38 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                 },
                 windowInsets = TopAppBarDefaults.windowInsets,
                 actions = {
-                    if (pagerState.currentPage == RoutingTab.Rules.ordinal) {
-                        if (selectionMode) {
-                            IconButton(onClick = { selectedRuleIds = emptySet() }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear selection")
-                            }
-                            IconButton(
-                                onClick = {
-                                    viewModel.deleteRules(selectedRuleIds)
-                                    selectedRuleIds = emptySet()
-                                },
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete selected rules")
-                            }
-                        } else {
-                            IconButton(
-                                onClick = {
-                                    editingRule = EditableRoutingRule(
-                                        rule = RoutingRule(
-                                            id = "custom-${System.currentTimeMillis()}",
-                                            name = "New Rule",
-                                            outboundTag = "proxy",
-                                        ),
-                                        isNew = true,
-                                    )
-                                },
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Add rule")
+                    when (pagerState.currentPage) {
+                        RoutingTab.Rules.ordinal -> {
+                            if (selectionMode) {
+                                IconButton(onClick = { selectedRuleIds = emptySet() }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear selection")
+                                }
+                                IconButton(
+                                    onClick = {
+                                        viewModel.deleteRules(selectedRuleIds)
+                                        selectedRuleIds = emptySet()
+                                    },
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete selected rules")
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = {
+                                        editingRule = EditableRoutingRule(
+                                            rule = RoutingRule(
+                                                id = "custom-${System.currentTimeMillis()}",
+                                                name = "New Rule",
+                                                outboundTag = "proxy",
+                                            ),
+                                            isNew = true,
+                                        )
+                                    },
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Add rule")
+                                }
                             }
                         }
+                        RoutingTab.Apps.ordinal -> AppRoutingMenuActions()
                     }
                 },
             )

@@ -68,7 +68,14 @@ class XrayService : Service() {
             onXrayLogReady = { startLogTail() },
         )
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Starting...", showDisconnectAction = false))
+        startForeground(
+            NOTIFICATION_ID,
+            buildNotification(
+                title = "Material Xray",
+                text = "Starting...",
+                showDisconnectAction = false,
+            ),
+        )
 
         scope.launch {
             connectionStateHolder.state.drop(1).collect { state ->
@@ -336,7 +343,7 @@ class XrayService : Service() {
 
             if (currentInterface.isNullOrBlank()) {
                 logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for a usable physical route")
-                updateNotification("${latestState.serverName} | Native: ${latestState.tunName} -> waiting for network")
+                updateNotification("Waiting for physical route")
                 return@launch
             }
 
@@ -350,7 +357,7 @@ class XrayService : Service() {
                 "Network changed ($reason): ${latestState.physicalInterface} -> $currentInterface, reconnecting...",
             )
             connectionCommandMutex.withLock {
-                updateNotification("${latestState.serverName} | Native: ${latestState.tunName} -> $currentInterface")
+                updateNotification("Pinning ${latestState.tunName} to $currentInterface")
                 stopLogTail()
                 connectionManager.disconnect()
                 connectWithCurrentSettings(latestConfig, cleanStateFirst = false)
@@ -366,8 +373,12 @@ class XrayService : Service() {
             return
         }
 
+        val title = when (state) {
+            is ConnectionState.Connected -> state.serverName
+            else -> "Material Xray"
+        }
         val text = overrideText ?: when (state) {
-            is ConnectionState.Connected -> "${state.serverName} | Native: ${state.tunName} -> ${state.physicalInterface}"
+            is ConnectionState.Connected -> connectedNotificationText(state)
             is ConnectionState.Connecting -> "Connecting..."
             ConnectionState.ApplyingRoutingChanges -> "Applying routing changes..."
             ConnectionState.UpdatingRoutingData -> "Updating routing data..."
@@ -377,10 +388,13 @@ class XrayService : Service() {
         }
         val showDisconnectAction = state !is ConnectionState.Error
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, buildNotification(text, showDisconnectAction))
+            .notify(NOTIFICATION_ID, buildNotification(title, text, showDisconnectAction))
     }
 
-    private fun buildNotification(text: String, showDisconnectAction: Boolean): Notification {
+    private fun connectedNotificationText(state: ConnectionState.Connected): String =
+        "Pinned ${state.tunName} to ${state.physicalInterface}"
+
+    private fun buildNotification(title: String, text: String, showDisconnectAction: Boolean): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
@@ -390,7 +404,7 @@ class XrayService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Material Xray")
+            .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.ic_menu_compass)

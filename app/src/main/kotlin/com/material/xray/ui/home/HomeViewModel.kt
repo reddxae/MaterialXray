@@ -86,7 +86,7 @@ class HomeViewModel @Inject constructor(
     val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
 
     init {
-        restoreColdStartConnectionState()
+        refreshTunnelInterfaceState()
         viewModelScope.launch {
             runDueSubscriptionUpdates()
             while (isActive) {
@@ -106,43 +106,55 @@ class HomeViewModel @Inject constructor(
         XrayService.disconnect(context)
     }
 
-    private fun restoreColdStartConnectionState() {
+    fun refreshTunnelInterfaceState() {
         viewModelScope.launch {
-            val restoredState = withContext(Dispatchers.IO) {
-                val persistedState = stateFile.read()
-                val configuredTunName = settingsRepo.tunName.first().trim().ifBlank { DEFAULT_TUN_NAME }
-                val activeTunName = configuredTunName
-
-                if (!TunInterfaceDetector.isInterfaceUp(activeTunName)) {
-                    return@withContext null
+            val detectedState = detectTunnelInterfaceState()
+            val currentState = connectionStateHolder.state.value
+            when {
+                detectedState is ConnectionState.InterfaceBusy -> {
+                    connectionStateHolder.update(detectedState)
                 }
-
-                if (activeTunName == AMBIGUOUS_TUN_NAME && TunInterfaceDetector.isVpnServiceActive(context)) {
-                    return@withContext ConnectionState.InterfaceBusy(activeTunName)
+                detectedState is ConnectionState.Connected && currentState is ConnectionState.Disconnected -> {
+                    connectionStateHolder.update(detectedState)
                 }
-
-                val persistedServerName = persistedState
-                    ?.serverName
-                    ?.takeIf { it.isNotBlank() }
-                val selectedServerName = settingsRepo.lastServerId.first()
-                    .takeIf { it > 0 }
-                    ?.let { serverRepo.getById(it) }
-                    ?.let { entity -> runCatching { serverRepo.parseConfig(entity).name }.getOrNull() }
-                    ?.takeIf { it.isNotBlank() }
-
-                ConnectionState.Connected(
-                    serverName = persistedServerName ?: selectedServerName ?: "Selected server",
-                    corePid = persistedState?.xrayPid ?: -1,
-                    tunName = activeTunName,
-                    physicalInterface = "unknown",
-                    startTime = persistedState?.timestamp ?: System.currentTimeMillis(),
-                )
-            }
-
-            if (restoredState != null && connectionStateHolder.state.value is ConnectionState.Disconnected) {
-                connectionStateHolder.update(restoredState)
+                detectedState == null && (currentState is ConnectionState.InterfaceBusy ||
+                    currentState is ConnectionState.RestartRequired ||
+                    (currentState is ConnectionState.Connected && currentState.corePid <= 0)
+                ) -> {
+                    connectionStateHolder.update(ConnectionState.Disconnected)
+                }
             }
         }
+    }
+
+    private suspend fun detectTunnelInterfaceState(): ConnectionState? = withContext(Dispatchers.IO) {
+        val persistedState = stateFile.read()
+        val activeTunName = settingsRepo.tunName.first().trim().ifBlank { DEFAULT_TUN_NAME }
+
+        if (!TunInterfaceDetector.isInterfaceUp(activeTunName)) {
+            return@withContext null
+        }
+
+        if (activeTunName == AMBIGUOUS_TUN_NAME && TunInterfaceDetector.isVpnServiceActive(context)) {
+            return@withContext ConnectionState.InterfaceBusy(activeTunName)
+        }
+
+        val persistedServerName = persistedState
+            ?.serverName
+            ?.takeIf { it.isNotBlank() }
+        val selectedServerName = settingsRepo.lastServerId.first()
+            .takeIf { it > 0 }
+            ?.let { serverRepo.getById(it) }
+            ?.let { entity -> runCatching { serverRepo.parseConfig(entity).name }.getOrNull() }
+            ?.takeIf { it.isNotBlank() }
+
+        ConnectionState.Connected(
+            serverName = persistedServerName ?: selectedServerName ?: "Selected server",
+            corePid = persistedState?.xrayPid ?: -1,
+            tunName = activeTunName,
+            physicalInterface = "unknown",
+            startTime = persistedState?.timestamp ?: System.currentTimeMillis(),
+        )
     }
 
     fun showRunningConfig() {

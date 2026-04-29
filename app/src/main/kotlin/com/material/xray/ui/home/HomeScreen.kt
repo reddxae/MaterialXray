@@ -6,6 +6,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +70,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
+    var autoUpdateSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
     val selectedServerName = remember(selectedServer) { selectedServer?.name ?: "No server selected" }
     val selectedServerDetail = remember(selectedServer) {
         selectedServer?.let {
@@ -141,6 +144,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                         onEdit = { editingSubscription = subscription },
                         onRefresh = { viewModel.refreshSubscription(subscription) },
                         onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
+                        onAutoUpdateIntervalClick = { autoUpdateSubscription = subscription },
                         onServerSelected = { viewModel.selectServer(it) },
                         onTestLatency = { viewModel.testLatency(it) },
                     )
@@ -174,6 +178,17 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             onConfirm = { name, url ->
                 viewModel.updateSubscription(subscription, name, url)
                 editingSubscription = null
+            },
+        )
+    }
+
+    autoUpdateSubscription?.let { subscription ->
+        AutoUpdateIntervalDialog(
+            subscription = subscription,
+            onDismiss = { autoUpdateSubscription = null },
+            onSelected = { intervalHours ->
+                viewModel.setSubscriptionAutoUpdateInterval(subscription.id, intervalHours)
+                autoUpdateSubscription = null
             },
         )
     }
@@ -377,6 +392,7 @@ private fun SubscriptionCard(
     onEdit: () -> Unit,
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
+    onAutoUpdateIntervalClick: () -> Unit,
     onServerSelected: (Long) -> Unit,
     onTestLatency: (ServerEntity) -> Unit,
 ) {
@@ -393,7 +409,10 @@ private fun SubscriptionCard(
                 onDelete = onDelete,
                 onEdit = onEdit,
             )
-            SubscriptionMetadataSection(subscription = subscription)
+            SubscriptionMetadataSection(
+                subscription = subscription,
+                onAutoUpdateIntervalClick = onAutoUpdateIntervalClick,
+            )
 
             if (servers.isEmpty()) {
                 Text(
@@ -425,7 +444,10 @@ private fun SubscriptionCard(
 }
 
 @Composable
-private fun SubscriptionMetadataSection(subscription: SubscriptionEntity) {
+private fun SubscriptionMetadataSection(
+    subscription: SubscriptionEntity,
+    onAutoUpdateIntervalClick: () -> Unit,
+) {
     val announcement = remember(subscription.announce) {
         subscription.announce?.trim().orEmpty()
     }
@@ -439,16 +461,14 @@ private fun SubscriptionMetadataSection(subscription: SubscriptionEntity) {
     val expiryText = remember(subscription.subscriptionExpireAt) {
         subscription.subscriptionExpireAt?.let(::formatSubscriptionExpiryRelative)
     }
-    val updateIntervalText = remember(subscription.profileUpdateIntervalHours) {
-        subscription.profileUpdateIntervalHours?.let { interval ->
-            if (interval == 1) "Auto update every hour" else "Auto update every $interval hours"
-        }
+    val updateIntervalText = remember(subscription.autoUpdateIntervalHours) {
+        formatAutoUpdateInterval(subscription.autoUpdateIntervalHours)
     }
 
     val hasMetadata = announcement.isNotEmpty() ||
             traffic != null ||
             !expiryText.isNullOrBlank() ||
-            !updateIntervalText.isNullOrBlank()
+            updateIntervalText.isNotBlank()
 
     if (!hasMetadata) return
 
@@ -466,7 +486,7 @@ private fun SubscriptionMetadataSection(subscription: SubscriptionEntity) {
             )
         }
 
-        if (traffic != null || !expiryText.isNullOrBlank() || !updateIntervalText.isNullOrBlank()) {
+        if (traffic != null || !expiryText.isNullOrBlank() || updateIntervalText.isNotBlank()) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
@@ -502,13 +522,13 @@ private fun SubscriptionMetadataSection(subscription: SubscriptionEntity) {
                         )
                     }
 
-                    if (!updateIntervalText.isNullOrBlank()) {
-                        Text(
-                            text = updateIntervalText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    Text(
+                        text = updateIntervalText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable(onClick = onAutoUpdateIntervalClick),
+                    )
                 }
             }
         }
@@ -780,6 +800,63 @@ private fun formatByteCount(bytes: Long): String {
     }
 
     return "$formatted ${units[unitIndex]}"
+}
+
+private data class AutoUpdateIntervalOption(
+    val label: String,
+    val intervalHours: Int,
+)
+
+private val autoUpdateIntervalOptions = listOf(
+    AutoUpdateIntervalOption("1 hour", 1),
+    AutoUpdateIntervalOption("3 hours", 3),
+    AutoUpdateIntervalOption("6 hours", 6),
+    AutoUpdateIntervalOption("1 day", 24),
+    AutoUpdateIntervalOption("3 days", 72),
+    AutoUpdateIntervalOption("Manual only", 0),
+)
+
+private fun formatAutoUpdateInterval(intervalHours: Int): String =
+    when (intervalHours) {
+        0 -> "Manual update only"
+        1 -> "Auto update every hour"
+        24 -> "Auto update every day"
+        72 -> "Auto update every 3 days"
+        else -> "Auto update every $intervalHours hours"
+    }
+
+@Composable
+private fun AutoUpdateIntervalDialog(
+    subscription: SubscriptionEntity,
+    onDismiss: () -> Unit,
+    onSelected: (Int) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Auto Update") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                autoUpdateIntervalOptions.forEach { option ->
+                    val selected = option.intervalHours == subscription.autoUpdateIntervalHours
+                    ListItem(
+                        headlineContent = { Text(option.label) },
+                        leadingContent = {
+                            RadioButton(
+                                selected = selected,
+                                onClick = null,
+                            )
+                        },
+                        modifier = Modifier.clickable { onSelected(option.intervalHours) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable

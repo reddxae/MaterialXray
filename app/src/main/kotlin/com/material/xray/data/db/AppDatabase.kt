@@ -13,7 +13,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 
 @Database(
     entities = [ServerEntity::class, SubscriptionEntity::class, AppBypassEntity::class],
-    version = 4,
+    version = 5,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun serverDao(): ServerDao
@@ -47,6 +47,12 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE app_bypass ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
                 database.execSQL("UPDATE app_bypass SET manual = 1 WHERE excluded = 0 AND serverId IS NOT NULL")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE subscriptions ADD COLUMN autoUpdateIntervalHours INTEGER NOT NULL DEFAULT 1")
             }
         }
     }

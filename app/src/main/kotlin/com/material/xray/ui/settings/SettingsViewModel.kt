@@ -106,6 +106,7 @@ class SettingsViewModel @Inject constructor(
                         BackupData.BackupSubscription(
                             name = sub.name,
                             url = sub.url,
+                            autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
                             metadata = sub.toSubscriptionMetadata(),
                         )
                     },
@@ -137,6 +138,7 @@ class SettingsViewModel @Inject constructor(
                         SubscriptionEntity(
                             name = sub.name,
                             url = sub.url,
+                            autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
                         ).withSubscriptionMetadata(sub.metadata)
                     )
                 }

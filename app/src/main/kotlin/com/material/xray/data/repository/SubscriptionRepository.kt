@@ -74,8 +74,22 @@ class SubscriptionRepository @Inject constructor(
         }
     }
 
+    suspend fun refreshDueSubscriptions(nowMillis: Long = System.currentTimeMillis()): Map<Long, RefreshResult> = buildMap {
+        subscriptionDao.getAll()
+            .filter { it.isDueForAutoUpdate(nowMillis) }
+            .forEach { sub ->
+                runCatching { refresh(sub.id, sub.url) }
+                    .getOrNull()
+                    ?.let { result -> put(sub.id, result) }
+            }
+    }
+
     suspend fun delete(sub: SubscriptionEntity) {
         subscriptionDao.delete(sub)
+    }
+
+    suspend fun setAutoUpdateInterval(subId: Long, intervalHours: Int) {
+        subscriptionDao.updateAutoUpdateInterval(subId, intervalHours.coerceAtLeast(0))
     }
 
     suspend fun update(sub: SubscriptionEntity, name: String, url: String): RefreshResult? {
@@ -133,7 +147,16 @@ class SubscriptionRepository @Inject constructor(
     private fun String.isFallbackSubscriptionName(): Boolean =
         matches(FALLBACK_NAME_PATTERN)
 
+    private fun SubscriptionEntity.isDueForAutoUpdate(nowMillis: Long): Boolean {
+        val interval = autoUpdateIntervalHours
+        if (interval <= 0) return false
+
+        val intervalMillis = interval * MILLIS_PER_HOUR
+        return lastUpdated <= 0L || nowMillis - lastUpdated >= intervalMillis
+    }
+
     private companion object {
         val FALLBACK_NAME_PATTERN = Regex("""Subscription \d+""")
+        const val MILLIS_PER_HOUR = 60L * 60L * 1000L
     }
 }

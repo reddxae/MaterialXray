@@ -21,6 +21,9 @@ interface SubscriptionDao {
     @Update
     suspend fun update(sub: SubscriptionEntity)
 
+    @Query("UPDATE subscriptions SET autoUpdateIntervalHours = :intervalHours WHERE id = :id")
+    suspend fun updateAutoUpdateInterval(id: Long, intervalHours: Int)
+
     @Delete
     suspend fun delete(sub: SubscriptionEntity)
 

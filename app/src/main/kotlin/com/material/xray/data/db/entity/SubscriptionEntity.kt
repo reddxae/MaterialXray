@@ -13,6 +13,7 @@ data class SubscriptionEntity(
     val contentType: String? = null,
     val profileTitle: String? = null,
     val profileUpdateIntervalHours: Int? = null,
+    val autoUpdateIntervalHours: Int = 1,
     val subscriptionUploadBytes: Long? = null,
     val subscriptionDownloadBytes: Long? = null,
     val subscriptionTotalBytes: Long? = null,

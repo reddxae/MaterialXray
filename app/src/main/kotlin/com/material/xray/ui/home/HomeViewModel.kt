@@ -16,7 +16,9 @@ import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -74,6 +76,16 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     private val _runningConfig = MutableStateFlow<String?>(null)
     val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            runDueSubscriptionUpdates()
+            while (isActive) {
+                delay(AUTO_UPDATE_CHECK_INTERVAL_MS)
+                runDueSubscriptionUpdates()
+            }
+        }
+    }
 
     fun connect() {
         val server = selectedServer.value ?: return
@@ -145,15 +157,7 @@ class HomeViewModel @Inject constructor(
                 val selectedBeforeRefresh = selectedServerEntity()
                 runCatching { subscriptionRepo.refreshAll() }
                     .onSuccess { refreshResults ->
-                        selectedBeforeRefresh?.let { previousServer ->
-                            refreshResults[previousServer.subscriptionId]?.let { refreshResult ->
-                                syncSelectedServerAfterRefresh(
-                                    selectedBeforeRefresh = previousServer,
-                                    refreshedSubscriptionId = previousServer.subscriptionId,
-                                    refreshResult = refreshResult,
-                                )
-                            }
-                        }
+                        syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, refreshResults)
                     }
             }
         }
@@ -172,6 +176,12 @@ class HomeViewModel @Inject constructor(
                         )
                     }
             }
+        }
+    }
+
+    fun setSubscriptionAutoUpdateInterval(subId: Long, intervalHours: Int) {
+        viewModelScope.launch {
+            subscriptionRepo.setAutoUpdateInterval(subId, intervalHours)
         }
     }
 
@@ -246,6 +256,31 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private suspend fun syncSelectedServerAfterRefreshResults(
+        selectedBeforeRefresh: ServerEntity?,
+        refreshResults: Map<Long, SubscriptionRepository.RefreshResult>,
+    ) {
+        selectedBeforeRefresh?.let { previousServer ->
+            refreshResults[previousServer.subscriptionId]?.let { refreshResult ->
+                syncSelectedServerAfterRefresh(
+                    selectedBeforeRefresh = previousServer,
+                    refreshedSubscriptionId = previousServer.subscriptionId,
+                    refreshResult = refreshResult,
+                )
+            }
+        }
+    }
+
+    private suspend fun runDueSubscriptionUpdates() {
+        withRefreshTracking {
+            val selectedBeforeRefresh = selectedServerEntity()
+            runCatching { subscriptionRepo.refreshDueSubscriptions() }
+                .onSuccess { refreshResults ->
+                    syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, refreshResults)
+                }
+        }
+    }
+
     private suspend fun withRefreshTracking(block: suspend () -> Unit) {
         refreshOperations.update { it + 1 }
         try {
@@ -253,5 +288,9 @@ class HomeViewModel @Inject constructor(
         } finally {
             refreshOperations.update { current -> (current - 1).coerceAtLeast(0) }
         }
+    }
+
+    private companion object {
+        const val AUTO_UPDATE_CHECK_INTERVAL_MS = 15L * 60L * 1000L
     }
 }

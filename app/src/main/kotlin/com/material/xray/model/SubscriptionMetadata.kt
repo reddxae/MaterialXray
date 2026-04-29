@@ -80,7 +80,7 @@ fun SubscriptionEntity.toSubscriptionMetadata(): SubscriptionMetadata? =
 fun SubscriptionEntity.withSubscriptionMetadata(
     metadata: SubscriptionMetadata?,
     resolvedUrl: String = url,
-    resolvedName: String = metadata?.profileTitle?.trimToNull() ?: name,
+    resolvedName: String = name,
     lastUpdated: Long = this.lastUpdated,
 ): SubscriptionEntity {
     val normalizedMetadata = metadata?.normalized()

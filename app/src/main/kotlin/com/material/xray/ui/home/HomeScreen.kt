@@ -171,8 +171,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         EditSubscriptionDialog(
             subscription = subscription,
             onDismiss = { editingSubscription = null },
-            onConfirm = { url ->
-                viewModel.updateSubscriptionUrl(subscription, url)
+            onConfirm = { name, url ->
+                viewModel.updateSubscription(subscription, name, url)
                 editingSubscription = null
             },
         )
@@ -771,26 +771,39 @@ private fun formatByteCount(bytes: Long): String {
 private fun EditSubscriptionDialog(
     subscription: SubscriptionEntity,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
+    onConfirm: (String, String) -> Unit,
 ) {
+    var name by remember(subscription.id) { mutableStateOf(subscription.name) }
     var url by remember(subscription.id) { mutableStateOf(subscription.url) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Subscription") },
         text = {
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it },
-                label = { Text("URL") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Leave empty to get name from subscription provider") },
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(url.trim()) },
-                enabled = url.isNotBlank() && url.trim() != subscription.url,
+                onClick = { onConfirm(name.trim(), url.trim()) },
+                enabled = url.isNotBlank() &&
+                    (name.trim() != subscription.name || url.trim() != subscription.url),
             ) {
                 Text("Save")
             }
@@ -815,6 +828,7 @@ private fun AddSubscriptionDialog(onDismiss: () -> Unit, onConfirm: (String, Str
                     label = { Text("Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Leave empty to get name from subscription provider") },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
@@ -829,7 +843,7 @@ private fun AddSubscriptionDialog(onDismiss: () -> Unit, onConfirm: (String, Str
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(name.trim(), url.trim()) },
-                enabled = name.isNotBlank() && url.isNotBlank(),
+                enabled = url.isNotBlank(),
             ) {
                 Text("Add")
             }

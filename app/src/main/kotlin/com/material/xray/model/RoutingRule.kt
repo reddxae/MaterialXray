@@ -51,7 +51,7 @@ object RoutingRuleCatalog {
     fun defaults(): List<RoutingRule> = listOf(
         RoutingRule(
             id = "ru-direct",
-            name = "RU Direct",
+            name = "Bypass Russian domains and IPs",
             outboundTag = "direct",
             domains = listOf("domain:ru"),
             ips = listOf("geoip:ru"),
@@ -59,7 +59,7 @@ object RoutingRuleCatalog {
         ),
         RoutingRule(
             id = "block-ads",
-            name = "Block Ads",
+            name = "Block ads",
             outboundTag = "block",
             domains = listOf("geosite:category-ads-all"),
             enabled = false,

@@ -3,7 +3,6 @@ package com.material.xray.ui.home
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -73,14 +72,11 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             connectionState is ConnectionState.UpdatingRoutingData ||
             connectionState is ConnectionState.Disconnecting
 
-    val buttonColor by animateColorAsState(
-        targetValue = when {
-            isConnected || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
-            isTransitioning -> MaterialTheme.colorScheme.tertiary
-            else -> MaterialTheme.colorScheme.primary
-        },
-        label = "buttonColor",
-    )
+    val buttonColor = when {
+        isConnected || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
+        isTransitioning -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
+    }
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }

@@ -37,12 +37,13 @@ class RootShell {
     suspend fun execute(
         command: String,
         namespace: NetworkNamespace = defaultNamespace,
+        timeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS,
     ): Result = withContext(Dispatchers.IO) {
         mutex.withLock {
             if (process == null && !openInternal()) {
                 return@withContext Result(-1, "", "Root shell not available")
             }
-            executeInternal(command, namespace)
+            executeInternal(command, namespace, timeoutMs)
         }
     }
 
@@ -75,7 +76,11 @@ class RootShell {
         }
     }
 
-    private fun executeInternal(command: String, namespace: NetworkNamespace): Result {
+    private fun executeInternal(
+        command: String,
+        namespace: NetworkNamespace,
+        timeoutMs: Long = DEFAULT_COMMAND_TIMEOUT_MS,
+    ): Result {
         val writer = stdin ?: return Result(-1, "", "Shell closed")
         val reader = stdout ?: return Result(-1, "", "Shell closed")
 
@@ -90,8 +95,22 @@ class RootShell {
 
         val outputLines = mutableListOf<String>()
         var exitCode = -1
+        val deadline = System.nanoTime() + timeoutMs * NANOS_PER_MILLI
 
         while (true) {
+            if (!reader.ready()) {
+                if (System.nanoTime() >= deadline) {
+                    close()
+                    return Result(-1, outputLines.joinToString("\n"), "Root command timed out after ${timeoutMs}ms: $command")
+                }
+                if (process?.isAlive == false) {
+                    close()
+                    return Result(-1, outputLines.joinToString("\n"), "Root shell exited while running: $command")
+                }
+                Thread.sleep(COMMAND_POLL_INTERVAL_MS)
+                continue
+            }
+
             val line = reader.readLine() ?: break
             if (line == marker) break
             if (line.startsWith(exitMarker)) {
@@ -130,5 +149,11 @@ class RootShell {
         stdout = null
         stderr = null
         defaultNamespace = NetworkNamespace.CURRENT
+    }
+
+    private companion object {
+        const val DEFAULT_COMMAND_TIMEOUT_MS = 30_000L
+        const val COMMAND_POLL_INTERVAL_MS = 10L
+        const val NANOS_PER_MILLI = 1_000_000L
     }
 }

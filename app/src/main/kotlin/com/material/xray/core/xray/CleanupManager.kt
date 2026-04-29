@@ -12,20 +12,25 @@ class CleanupManager(
     private val nftables = NftablesManager(shell)
     private val tunManager = TunManager(shell)
 
-    suspend fun ensureCleanState() {
+    suspend fun ensureCleanState(fallbackTunName: String = "xray0") {
         val state = stateFile.read()
 
         // 1. Kill orphaned xray process
         if (state != null && state.xrayPid > 0) {
             shell.execute("kill ${state.xrayPid} 2>/dev/null")
         }
-        shell.execute("pkill -f 'xray run' 2>/dev/null")
+        shell.execute(
+            "for pid in \$(pidof xray 2>/dev/null); do " +
+                "cmdline=\$(tr '\\0' ' ' < /proc/\$pid/cmdline 2>/dev/null); " +
+                "case \"\$cmdline\" in *'xray run'*) kill \$pid 2>/dev/null;; esac; " +
+                "done"
+        )
 
         // 2. Remove nftables table (atomic)
         nftables.remove()
 
         // 3. Remove ip rules and routes
-        val tunName = state?.tunName ?: "xray0"
+        val tunName = state?.tunName ?: fallbackTunName
         val fwmark = state?.fwmark ?: 255
         val routeMark = state?.routeMark ?: 100
         val routeTable = state?.routeTable ?: 100

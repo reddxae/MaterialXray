@@ -68,7 +68,7 @@ class ConnectionManager(
             if (cleanStateFirst) {
                 log.append(LogSource.APP, "Cleaning up previous state...")
                 timedStep("Cleanup") {
-                    cleanupManager.ensureCleanState()
+                    cleanupManager.ensureCleanState(fallbackTunName = tunName)
                 }
             }
 

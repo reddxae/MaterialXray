@@ -46,9 +46,9 @@ class SettingsRepository @Inject constructor(
         private const val CURRENT_ROUTING_RULES_VERSION = 2
 
         const val DEFAULT_GEOIP_URL =
-            "https://github.com/v2fly/geoip/releases/download/202604200545/geoip.dat"
+            "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"
         const val DEFAULT_GEOSITE_URL =
-            "https://github.com/v2fly/domain-list-community/releases/download/20260429071553/dlc.dat"
+            "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
     }
 
     val tunName: Flow<String> = store.data.map { it[TUN_NAME] ?: "xray0" }

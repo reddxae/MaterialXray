@@ -461,14 +461,16 @@ class ConfigGenerator {
 
         val rules = mutableListOf<JsonObject>()
 
-        if (rule.domains.isNotEmpty()) {
+        val domains = rule.domains.map { it.trim() }.filter { it.isNotEmpty() }
+        if (domains.isNotEmpty()) {
             rules += JsonObject(base().apply {
-                put("domain", buildJsonArray { rule.domains.forEach { add(it) } })
+                put("domain", buildJsonArray { domains.forEach { add(it) } })
             })
         }
-        if (rule.ips.isNotEmpty()) {
+        val ips = rule.ips.map { it.trim() }.filter { it.isNotEmpty() }
+        if (ips.isNotEmpty()) {
             rules += JsonObject(base().apply {
-                put("ip", buildJsonArray { rule.ips.forEach { add(it) } })
+                put("ip", buildJsonArray { ips.forEach { add(it) } })
             })
         }
         rule.port?.takeIf { it.isNotBlank() }?.let { port ->

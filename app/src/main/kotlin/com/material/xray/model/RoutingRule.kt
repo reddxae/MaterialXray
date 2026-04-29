@@ -27,20 +27,28 @@ data class RoutingRule(
     val enabled: Boolean = true,
 ) {
     fun contentText(): String = buildList {
-        if (domains.isNotEmpty()) add("Domain: ${domains.joinToString(", ")}")
-        if (ips.isNotEmpty()) add("IP: ${ips.joinToString(", ")}")
+        val cleanDomains = domains.cleanEntries()
+        val cleanIps = ips.cleanEntries()
+        if (cleanDomains.isNotEmpty()) add("Domain: ${cleanDomains.joinToString(", ")}")
+        if (cleanIps.isNotEmpty()) add("IP: ${cleanIps.joinToString(", ")}")
         port?.takeIf { it.isNotBlank() }?.let { add("Port: $it") }
-        if (protocols.isNotEmpty()) add("Protocol: ${protocols.joinToString(", ")}")
+        val cleanProtocols = protocols.cleanEntries()
+        if (cleanProtocols.isNotEmpty()) add("Protocol: ${cleanProtocols.joinToString(", ")}")
     }.joinToString("\n")
 
     fun toXrayRule(): JsonObject = buildJsonObject {
+        val cleanDomains = domains.cleanEntries()
+        val cleanIps = ips.cleanEntries()
+        val cleanProtocols = protocols.cleanEntries()
         put("type", "field")
         put("outboundTag", outboundTag)
-        if (domains.isNotEmpty()) put("domain", domains.asJsonArray())
-        if (ips.isNotEmpty()) put("ip", ips.asJsonArray())
+        if (cleanDomains.isNotEmpty()) put("domain", cleanDomains.asJsonArray())
+        if (cleanIps.isNotEmpty()) put("ip", cleanIps.asJsonArray())
         port?.takeIf { it.isNotBlank() }?.let { put("port", it) }
-        if (protocols.isNotEmpty()) put("protocol", protocols.asJsonArray())
+        if (cleanProtocols.isNotEmpty()) put("protocol", cleanProtocols.asJsonArray())
     }
+
+    private fun List<String>.cleanEntries(): List<String> = map { it.trim() }.filter { it.isNotEmpty() }
 
     private fun List<String>.asJsonArray(): JsonArray = buildJsonArray {
         forEach { add(JsonPrimitive(it)) }

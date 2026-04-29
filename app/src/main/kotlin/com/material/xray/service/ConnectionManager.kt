@@ -485,6 +485,10 @@ class ConnectionManager(
         val tunRoutes = mutableListOf<TunManager.AppTunRoute>()
         val proxyServerIds = mutableListOf<Long>()
 
+        fun <T> MutableList<T>.removeLastItem() {
+            if (isNotEmpty()) removeAt(lastIndex)
+        }
+
         fun addTunRoute(routeKey: Long, uids: Set<Int>): String {
             val routeIndex = tunRoutes.size + 1
             val routeTunName = TunManager.appTunName(baseTunName, routeIndex)
@@ -503,8 +507,8 @@ class ConnectionManager(
                 val activeServer = defaultProxyServer
                 if (activeServer == null) {
                     log.append(LogSource.APP, "Skipping default selected config app route: active server is not ready")
-                    proxyServerIds.removeLast()
-                    tunRoutes.removeLast()
+                    proxyServerIds.removeLastItem()
+                    tunRoutes.removeLastItem()
                 } else {
                     proxyRoutes += ConfigGenerator.AppProxyRoute(
                         inboundTag = DEFAULT_SELECTED_CONFIG_INBOUND_TAG,
@@ -529,8 +533,8 @@ class ConnectionManager(
             val serverEntity = serverRepository.getById(serverId)
             if (serverEntity == null) {
                 log.append(LogSource.APP, "Skipping app route for missing server id=$serverId")
-                proxyServerIds.removeLast()
-                tunRoutes.removeLast()
+                proxyServerIds.removeLastItem()
+                tunRoutes.removeLastItem()
                 return@forEach
             }
 
@@ -540,8 +544,8 @@ class ConnectionManager(
                     LogSource.APP,
                     "Skipping app route for ${serverEntity.name}: ${parsedServerResult.exceptionOrNull()?.message}",
                 )
-                proxyServerIds.removeLast()
-                tunRoutes.removeLast()
+                proxyServerIds.removeLastItem()
+                tunRoutes.removeLastItem()
                 return@forEach
             }
             val parsedServer = parsedServerResult.getOrThrow()

@@ -409,6 +409,10 @@ class XrayService : Service() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(openIntent)
+            .setShowWhen(false)
+            .setWhen(0)
+            .setUsesChronometer(false)
+            .setOnlyAlertOnce(true)
             .setOngoing(showDisconnectAction)
 
         if (showDisconnectAction) {

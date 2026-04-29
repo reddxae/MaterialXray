@@ -519,14 +519,14 @@ private fun SubscriptionHeader(
             .fillMaxWidth()
             .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = subscription.name,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(

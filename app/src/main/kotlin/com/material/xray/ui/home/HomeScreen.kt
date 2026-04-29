@@ -63,6 +63,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val runningConfig by viewModel.runningConfig.collectAsStateWithLifecycle()
 
     val isConnected = connectionState is ConnectionState.Connected
+    val isRestartRequired = connectionState is ConnectionState.RestartRequired
+    val isInterfaceBusy = connectionState is ConnectionState.InterfaceBusy
     val isTransitioning = connectionState is ConnectionState.Connecting ||
             connectionState is ConnectionState.ApplyingRoutingChanges ||
             connectionState is ConnectionState.UpdatingRoutingData ||
@@ -70,7 +72,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     val buttonColor by animateColorAsState(
         targetValue = when {
-            isConnected -> MaterialTheme.colorScheme.error
+            isConnected || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
             isTransitioning -> MaterialTheme.colorScheme.tertiary
             else -> MaterialTheme.colorScheme.primary
         },
@@ -88,6 +90,9 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     }
     val context = LocalContext.current
     val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+    val displayServerName = remember(connectionState, selectedServerName) {
+        (connectionState as? ConnectionState.Connected)?.serverName ?: selectedServerName
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
@@ -109,10 +114,12 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             item {
                 ConnectionPanel(
                     connectionState = connectionState,
-                    selectedServerName = selectedServerName,
+                    selectedServerName = displayServerName,
                     selectedServerDetail = selectedServerDetail,
                     buttonColor = buttonColor,
                     isConnected = isConnected,
+                    isRestartRequired = isRestartRequired,
+                    isInterfaceBusy = isInterfaceBusy,
                     isTransitioning = isTransitioning,
                     canStart = selectedServer != null,
                     onClick = {
@@ -224,12 +231,14 @@ private fun ConnectionPanel(
     selectedServerDetail: String,
     buttonColor: androidx.compose.ui.graphics.Color,
     isConnected: Boolean,
+    isRestartRequired: Boolean,
+    isInterfaceBusy: Boolean,
     isTransitioning: Boolean,
     canStart: Boolean,
     onClick: () -> Unit,
     onViewConfig: () -> Unit,
 ) {
-    val buttonEnabled = (canStart || isConnected) && !isTransitioning
+    val buttonEnabled = (canStart || isConnected || isRestartRequired || isInterfaceBusy) && !isTransitioning
     val containerColor = if (buttonEnabled) {
         buttonColor.copy(alpha = 0.15f)
     } else {
@@ -251,6 +260,8 @@ private fun ConnectionPanel(
                 is ConnectionState.Connecting -> "Connecting..."
                 ConnectionState.ApplyingRoutingChanges -> "Applying routing changes..."
                 ConnectionState.UpdatingRoutingData -> "Updating routing data..."
+                is ConnectionState.RestartRequired -> "Restart required"
+                is ConnectionState.InterfaceBusy -> "Interface busy"
                 is ConnectionState.Disconnecting -> "Disconnecting..."
                 is ConnectionState.Error -> "Error"
                 ConnectionState.Disconnected -> "Disconnected"
@@ -258,6 +269,7 @@ private fun ConnectionPanel(
             style = MaterialTheme.typography.titleLarge,
             color = when {
                 isConnected -> MaterialTheme.colorScheme.primary
+                isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
                 connectionState is ConnectionState.Error -> MaterialTheme.colorScheme.error
                 else -> MaterialTheme.colorScheme.onSurface
             },
@@ -266,19 +278,26 @@ private fun ConnectionPanel(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = selectedServerName,
+            text = when {
+                isInterfaceBusy -> "The selected interface is currently in use by another client.\nClick the \"Restart\" button to shut it down and connect to the selected server."
+                isRestartRequired -> "The client has been relaunched; to regain control, click the Restart button."
+                else -> selectedServerName
+            },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
+            maxLines = if (isRestartRequired || isInterfaceBusy) 4 else 1,
             overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
         )
-        Text(
-            text = selectedServerDetail,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (!isRestartRequired && !isInterfaceBusy) {
+            Text(
+                text = selectedServerDetail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -308,7 +327,11 @@ private fun ConnectionPanel(
                     )
                 } else {
                     Text(
-                        text = if (isConnected) "Stop" else "Start",
+                        text = when {
+                            isConnected -> "Stop"
+                            isRestartRequired || isInterfaceBusy -> "Restart"
+                            else -> "Start"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
                         color = contentColor,

@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.core.network.ServerLatencyTester
+import com.material.xray.core.xray.StateFile
+import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.ServerRepository
@@ -37,7 +39,7 @@ const val LATENCY_TESTING = Int.MIN_VALUE
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val settingsRepo: SettingsRepository,
     private val serverRepo: ServerRepository,
     private val subscriptionRepo: SubscriptionRepository,
@@ -48,6 +50,7 @@ class HomeViewModel @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
     private val endpointSummaryCache = mutableMapOf<String, String>()
     private val activeConfigFile = context.filesDir.resolve("config.json")
+    private val stateFile = StateFile(context)
     private val latencySemaphore = Semaphore(MAX_PARALLEL_LATENCY_TESTS)
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
@@ -83,6 +86,7 @@ class HomeViewModel @Inject constructor(
     val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
 
     init {
+        restoreColdStartConnectionState()
         viewModelScope.launch {
             runDueSubscriptionUpdates()
             while (isActive) {
@@ -100,6 +104,45 @@ class HomeViewModel @Inject constructor(
 
     fun disconnect() {
         XrayService.disconnect(context)
+    }
+
+    private fun restoreColdStartConnectionState() {
+        viewModelScope.launch {
+            val restoredState = withContext(Dispatchers.IO) {
+                val persistedState = stateFile.read()
+                val configuredTunName = settingsRepo.tunName.first().trim().ifBlank { DEFAULT_TUN_NAME }
+                val activeTunName = configuredTunName
+
+                if (!TunInterfaceDetector.isInterfaceUp(activeTunName)) {
+                    return@withContext null
+                }
+
+                if (activeTunName == AMBIGUOUS_TUN_NAME && TunInterfaceDetector.isVpnServiceActive(context)) {
+                    return@withContext ConnectionState.InterfaceBusy(activeTunName)
+                }
+
+                val persistedServerName = persistedState
+                    ?.serverName
+                    ?.takeIf { it.isNotBlank() }
+                val selectedServerName = settingsRepo.lastServerId.first()
+                    .takeIf { it > 0 }
+                    ?.let { serverRepo.getById(it) }
+                    ?.let { entity -> runCatching { serverRepo.parseConfig(entity).name }.getOrNull() }
+                    ?.takeIf { it.isNotBlank() }
+
+                ConnectionState.Connected(
+                    serverName = persistedServerName ?: selectedServerName ?: "Selected server",
+                    corePid = persistedState?.xrayPid ?: -1,
+                    tunName = activeTunName,
+                    physicalInterface = "unknown",
+                    startTime = persistedState?.timestamp ?: System.currentTimeMillis(),
+                )
+            }
+
+            if (restoredState != null && connectionStateHolder.state.value is ConnectionState.Disconnected) {
+                connectionStateHolder.update(restoredState)
+            }
+        }
     }
 
     fun showRunningConfig() {
@@ -302,6 +345,8 @@ class HomeViewModel @Inject constructor(
     }
 
     private companion object {
+        const val DEFAULT_TUN_NAME = "xray0"
+        const val AMBIGUOUS_TUN_NAME = "tun0"
         const val AUTO_UPDATE_CHECK_INTERVAL_MS = 15L * 60L * 1000L
         const val MAX_PARALLEL_LATENCY_TESTS = 8
     }

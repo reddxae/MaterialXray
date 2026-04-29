@@ -10,6 +10,7 @@ import java.io.File
 data class XrayState(
     val xrayPid: Int = -1,
     val tunName: String = "xray0",
+    val serverName: String = "",
     val nftTableCreated: Boolean = false,
     val ipRulesApplied: Boolean = false,
     val appProxyServerIds: List<Long> = emptyList(),

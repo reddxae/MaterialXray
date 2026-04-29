@@ -206,6 +206,7 @@ class ConnectionManager(
             stateFile.write(
                 XrayState(
                     xrayPid = pid, tunName = tunName,
+                    serverName = server.name,
                     fwmark = fwmark, routeMark = routeMark, routeTable = routeTable, bypassTable = bypassTable,
                     appProxyServerIds = appRoutingPlan.proxyServerIds,
                 )
@@ -273,6 +274,7 @@ class ConnectionManager(
             stateFile.write(
                 XrayState(
                     xrayPid = pid, tunName = tunName,
+                    serverName = server.name,
                     nftTableCreated = false, ipRulesApplied = true,
                     fwmark = fwmark, routeMark = routeMark, routeTable = routeTable, bypassTable = bypassTable,
                     appProxyServerIds = appRoutingPlan.proxyServerIds,

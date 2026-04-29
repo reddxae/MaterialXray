@@ -380,6 +380,8 @@ class XrayService : Service() {
             is ConnectionState.Connecting -> "Connecting..."
             ConnectionState.ApplyingRoutingChanges -> "Applying routing changes..."
             ConnectionState.UpdatingRoutingData -> "Updating routing data..."
+            is ConnectionState.RestartRequired -> "Restart required"
+            is ConnectionState.InterfaceBusy -> "Interface busy"
             is ConnectionState.Disconnecting -> "Disconnecting..."
             is ConnectionState.Error -> "Error: ${state.message}"
             ConnectionState.Disconnected -> return

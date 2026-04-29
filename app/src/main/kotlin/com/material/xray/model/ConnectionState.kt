@@ -5,6 +5,8 @@ sealed interface ConnectionState {
     data object Connecting : ConnectionState
     data object ApplyingRoutingChanges : ConnectionState
     data object UpdatingRoutingData : ConnectionState
+    data class RestartRequired(val tunName: String) : ConnectionState
+    data class InterfaceBusy(val tunName: String) : ConnectionState
     data class Connected(
         val serverName: String,
         val corePid: Int,

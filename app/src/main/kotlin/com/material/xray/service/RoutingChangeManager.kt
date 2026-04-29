@@ -15,7 +15,7 @@ enum class PendingRoutingChange {
 
 @Singleton
 class RoutingChangeManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val connectionStateHolder: ConnectionStateHolder,
 ) {
     private val _pendingChange = MutableStateFlow<PendingRoutingChange?>(null)
@@ -48,6 +48,8 @@ class RoutingChangeManager @Inject constructor(
                 }
             }
             ConnectionState.Disconnected,
+            is ConnectionState.RestartRequired,
+            is ConnectionState.InterfaceBusy,
             is ConnectionState.Error -> {
                 clearPendingChanges()
             }

@@ -48,13 +48,21 @@ data class RoutingRule(
 }
 
 object RoutingRuleCatalog {
+    private val ruDirectDomains = listOf(
+        "domain:ru",
+        "domain:su",
+        "domain:xn--p1ai",
+        "geosite:category-ru",
+    )
+    private val ruDirectIps = listOf("geoip:ru")
+
     fun defaults(): List<RoutingRule> = listOf(
         RoutingRule(
             id = "ru-direct",
             name = "Bypass Russian domains and IPs",
             outboundTag = "direct",
-            domains = listOf("domain:ru"),
-            ips = listOf("geoip:ru"),
+            domains = ruDirectDomains,
+            ips = ruDirectIps,
             operator = RoutingRuleOperator.OR,
         ),
         RoutingRule(
@@ -68,8 +76,8 @@ object RoutingRuleCatalog {
 
     fun mergeWithDefaults(savedRules: List<RoutingRule>): List<RoutingRule> {
         val normalizedRules = savedRules.map { rule ->
-            if (rule.id == "ru-direct" && rule.domains == listOf("domain:ru", "geosite:ru")) {
-                rule.copy(domains = listOf("domain:ru"))
+            if (rule.isUntouchedLegacyRuDirect()) {
+                rule.copy(domains = ruDirectDomains, ips = ruDirectIps)
             } else {
                 rule
             }
@@ -83,4 +91,14 @@ object RoutingRuleCatalog {
         if (missingDefaultRules.isEmpty()) return normalizedRules
         return normalizedRules + missingDefaultRules
     }
+
+    private fun RoutingRule.isUntouchedLegacyRuDirect(): Boolean =
+        id == "ru-direct" &&
+            name == "Bypass Russian domains and IPs" &&
+            outboundTag == "direct" &&
+            ips == ruDirectIps &&
+            domains in listOf(
+                listOf("domain:ru"),
+                listOf("domain:ru", "geosite:ru"),
+            )
 }

@@ -1,5 +1,6 @@
 package com.material.xray.ui.apps
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -16,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
@@ -71,56 +73,81 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 8.dp),
         )
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(
-                items = apps,
-                key = { it.packageName },
-                contentType = { "app" },
-            ) { app ->
-                ListItem(
-                    headlineContent = { Text(app.name) },
-                    supportingContent = {
-                        Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                    },
-                    leadingContent = {
-                        val iconBitmap = remember(app.packageName, app.icon, iconPixelSize) {
-                            app.icon?.toBitmap(iconPixelSize, iconPixelSize)?.asImageBitmap()
-                        }
-                        iconBitmap?.let { bitmap ->
-                            Image(
-                                bitmap = bitmap,
-                                contentDescription = null,
-                                modifier = Modifier.size(iconSize),
-                            )
-                        }
-                    },
-                    trailingContent = {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                            modifier = Modifier.width(176.dp),
-                        ) {
-                            Text(
-                                text = app.routeTitle,
-                                style = MaterialTheme.typography.labelLarge,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    },
-                    modifier = Modifier.clickable { editingApp = app },
-                )
+        val fadeColor = MaterialTheme.colorScheme.surface
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(
+                    items = apps,
+                    key = { it.packageName },
+                    contentType = { "app" },
+                ) { app ->
+                    ListItem(
+                        headlineContent = { Text(app.name) },
+                        supportingContent = {
+                            Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                        },
+                        leadingContent = {
+                            val iconBitmap = remember(app.packageName, app.icon, iconPixelSize) {
+                                app.icon?.toBitmap(iconPixelSize, iconPixelSize)?.asImageBitmap()
+                            }
+                            iconBitmap?.let { bitmap ->
+                                Image(
+                                    bitmap = bitmap,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(iconSize),
+                                )
+                            }
+                        },
+                        trailingContent = {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                modifier = Modifier.width(176.dp),
+                            ) {
+                                Text(
+                                    text = app.routeTitle,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
+                        },
+                        modifier = Modifier.clickable { editingApp = app },
+                    )
+                }
             }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(fadeColor, fadeColor.copy(alpha = 0f)),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(fadeColor.copy(alpha = 0f), fadeColor),
+                        ),
+                    ),
+            )
         }
     }
 

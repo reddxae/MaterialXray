@@ -1,6 +1,7 @@
 package com.material.xray.ui.logs
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -14,7 +15,9 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -67,22 +70,49 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
             )
         },
     ) { padding ->
-        HorizontalPager(
-            state = pagerState,
+        val fadeColor = MaterialTheme.colorScheme.surface
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-        ) { page ->
-            val pageFilter = LogFilter.entries[page]
-            val entries = remember(allEntries, pageFilter) {
-                allEntries.filterBy(pageFilter)
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                val pageFilter = LogFilter.entries[page]
+                val entries = remember(allEntries, pageFilter) {
+                    allEntries.filterBy(pageFilter)
+                }
+                LogEntriesList(
+                    entries = entries,
+                    onCopy = { entry ->
+                        viewModel.copyEntry(entry)
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    },
+                )
             }
-            LogEntriesList(
-                entries = entries,
-                onCopy = { entry ->
-                    viewModel.copyEntry(entry)
-                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                },
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(fadeColor, fadeColor.copy(alpha = 0f)),
+                        ),
+                    ),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(fadeColor.copy(alpha = 0f), fadeColor),
+                        ),
+                    ),
             )
         }
     }

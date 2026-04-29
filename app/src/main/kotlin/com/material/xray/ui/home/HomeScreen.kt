@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -25,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -835,19 +837,26 @@ private fun AutoUpdateIntervalDialog(
         onDismissRequest = onDismiss,
         title = { Text("Auto Update") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                autoUpdateIntervalOptions.forEach { option ->
+            Column {
+                autoUpdateIntervalOptions.forEachIndexed { index, option ->
                     val selected = option.intervalHours == subscription.autoUpdateIntervalHours
-                    ListItem(
-                        headlineContent = { Text(option.label) },
-                        leadingContent = {
-                            RadioButton(
-                                selected = selected,
-                                onClick = null,
-                            )
-                        },
-                        modifier = Modifier.clickable { onSelected(option.intervalHours) },
-                    )
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = autoUpdateIntervalItemShape(index, autoUpdateIntervalOptions.lastIndex),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(option.label) },
+                            leadingContent = {
+                                RadioButton(
+                                    selected = selected,
+                                    onClick = null,
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier.clickable { onSelected(option.intervalHours) },
+                        )
+                    }
                 }
             }
         },
@@ -858,6 +867,14 @@ private fun AutoUpdateIntervalDialog(
         },
     )
 }
+
+private fun autoUpdateIntervalItemShape(index: Int, lastIndex: Int) =
+    when {
+        lastIndex <= 0 -> RoundedCornerShape(12.dp)
+        index == 0 -> RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+        index == lastIndex -> RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
+        else -> RoundedCornerShape(0.dp)
+    }
 
 @Composable
 private fun EditSubscriptionDialog(

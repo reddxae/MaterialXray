@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,7 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -26,9 +27,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
@@ -838,25 +840,13 @@ private fun AutoUpdateIntervalDialog(
         title = { Text("Auto Update") },
         text = {
             Column {
-                autoUpdateIntervalOptions.forEachIndexed { index, option ->
+                autoUpdateIntervalOptions.forEach { option ->
                     val selected = option.intervalHours == subscription.autoUpdateIntervalHours
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = autoUpdateIntervalItemShape(index, autoUpdateIntervalOptions.lastIndex),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                        ListItem(
-                            headlineContent = { Text(option.label) },
-                            leadingContent = {
-                                RadioButton(
-                                    selected = selected,
-                                    onClick = null,
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            modifier = Modifier.clickable { onSelected(option.intervalHours) },
-                        )
-                    }
+                    AutoUpdateIntervalRow(
+                        option = option,
+                        selected = selected,
+                        onSelected = { onSelected(option.intervalHours) },
+                    )
                 }
             }
         },
@@ -868,13 +858,54 @@ private fun AutoUpdateIntervalDialog(
     )
 }
 
-private fun autoUpdateIntervalItemShape(index: Int, lastIndex: Int) =
-    when {
-        lastIndex <= 0 -> RoundedCornerShape(12.dp)
-        index == 0 -> RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
-        index == lastIndex -> RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-        else -> RoundedCornerShape(0.dp)
+@Composable
+private fun AutoUpdateIntervalRow(
+    option: AutoUpdateIntervalOption,
+    selected: Boolean,
+    onSelected: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .selectable(
+                selected = selected,
+                onClick = onSelected,
+                role = Role.RadioButton,
+            )
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AutoUpdateIntervalIndicator(selected = selected)
+        Text(
+            text = option.label,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.weight(1f),
+        )
     }
+}
+
+@Composable
+private fun AutoUpdateIntervalIndicator(selected: Boolean) {
+    val primary = MaterialTheme.colorScheme.primary
+    val outline = MaterialTheme.colorScheme.outline
+
+    Canvas(modifier = Modifier.size(20.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        drawCircle(
+            color = if (selected) primary else outline,
+            radius = size.minDimension / 2 - strokeWidth / 2,
+            style = Stroke(width = strokeWidth),
+        )
+        if (selected) {
+            drawCircle(
+                color = primary,
+                radius = size.minDimension * 0.28f,
+            )
+        }
+    }
+}
 
 @Composable
 private fun EditSubscriptionDialog(

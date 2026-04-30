@@ -55,7 +55,7 @@ fun SubscriptionUserInfo.normalized(): SubscriptionUserInfo? {
         upload = upload?.takeIf { it >= 0 },
         download = download?.takeIf { it >= 0 },
         total = total?.takeIf { it >= 0 },
-        expire = expire?.takeIf { it >= 0 },
+        expire = expire?.takeIf { it > 0 },
     )
     return normalized.takeIf { it.hasValues() }
 }

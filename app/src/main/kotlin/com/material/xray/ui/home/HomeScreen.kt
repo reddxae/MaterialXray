@@ -11,7 +11,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,10 +34,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -51,6 +52,10 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.ui.components.ScrolledTopAppBar
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeParseException
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -460,12 +465,10 @@ private fun SubscriptionCard(
                 onTestAll = onTestAll,
                 onDelete = onDelete,
                 onEdit = onEdit,
+                onAutoUpdateIntervalClick = onAutoUpdateIntervalClick,
                 onDescriptionHiddenChange = onDescriptionHiddenChange,
             )
-            SubscriptionMetadataSection(
-                subscription = subscription,
-                onAutoUpdateIntervalClick = onAutoUpdateIntervalClick,
-            )
+            SubscriptionMetadataSection(subscription = subscription)
 
             if (servers.isEmpty()) {
                 Text(
@@ -499,7 +502,6 @@ private fun SubscriptionCard(
 @Composable
 private fun SubscriptionMetadataSection(
     subscription: SubscriptionEntity,
-    onAutoUpdateIntervalClick: () -> Unit,
 ) {
     val announcement = remember(subscription.announce) {
         subscription.announce?.trim().orEmpty()
@@ -511,8 +513,8 @@ private fun SubscriptionMetadataSection(
     ) {
         buildSubscriptionTrafficUiState(subscription)
     }
-    val expiryText = remember(subscription.subscriptionExpireAt) {
-        subscription.subscriptionExpireAt?.let(::formatSubscriptionExpiryRelative)
+    val expiry = remember(subscription.subscriptionExpireAt) {
+        subscription.subscriptionExpireAt?.let(::formatSubscriptionExpiryUiState)
     }
     val updateIntervalText = remember(subscription.autoUpdateIntervalHours) {
         formatAutoUpdateInterval(subscription.autoUpdateIntervalHours)
@@ -520,7 +522,7 @@ private fun SubscriptionMetadataSection(
 
     val hasMetadata = announcement.isNotEmpty() ||
             traffic != null ||
-            !expiryText.isNullOrBlank() ||
+            expiry != null ||
             updateIntervalText.isNotBlank()
 
     if (!hasMetadata) return
@@ -544,7 +546,7 @@ private fun SubscriptionMetadataSection(
             )
         }
 
-        if (traffic != null || !expiryText.isNullOrBlank() || updateIntervalText.isNotBlank()) {
+        if (traffic != null || expiry != null || updateIntervalText.isNotBlank()) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
@@ -559,37 +561,77 @@ private fun SubscriptionMetadataSection(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     traffic?.let { trafficState ->
-                        Text(
-                            text = trafficState.summary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        trafficState.progress?.let { progress ->
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.fillMaxWidth(),
+                        if (trafficState.quotaText == null) {
+                            SubscriptionTrafficText(
+                                text = trafficState.summaryText(expiry),
                             )
+                        } else {
+                            SubscriptionTrafficProgress(state = trafficState)
                         }
                     }
 
-                    if (!expiryText.isNullOrBlank()) {
-                        Text(
-                            text = expiryText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    val detailText = traffic?.detailText(expiry)
+                    if (!detailText.isNullOrBlank()) {
+                        SubscriptionTrafficText(
+                            text = detailText,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                            textAlign = TextAlign.Center,
+                        )
+                    } else if (traffic == null && expiry != null) {
+                        SubscriptionTrafficText(
+                            text = expiry.standaloneText,
                         )
                     }
 
                     Text(
                         text = updateIntervalText,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        textDecoration = TextDecoration.Underline,
-                        modifier = Modifier.clickable(onClick = onAutoUpdateIntervalClick),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SubscriptionTrafficText(
+    text: String,
+    modifier: Modifier = Modifier,
+    textAlign: TextAlign? = null,
+) {
+    Text(
+        text = remember(text) { text.withMetadataEmphasis() },
+        modifier = modifier,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = textAlign,
+    )
+}
+
+@Composable
+private fun SubscriptionTrafficProgress(
+    state: SubscriptionTrafficUiState,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "0 GB",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LinearProgressIndicator(
+            progress = { state.progress },
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = state.quotaText.orEmpty(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -601,6 +643,7 @@ private fun SubscriptionHeader(
     onTestAll: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
+    onAutoUpdateIntervalClick: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -679,6 +722,13 @@ private fun SubscriptionHeader(
                         },
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text("Auto update") },
+                    onClick = {
+                        showMenu = false
+                        onAutoUpdateIntervalClick()
+                    },
+                )
                 DropdownMenuItem(
                     text = { Text("Delete") },
                     onClick = {
@@ -796,89 +846,173 @@ private fun CompactSelectionDot(isSelected: Boolean) {
 
 private data class SubscriptionTrafficUiState(
     val summary: String,
-    val progress: Float? = null,
+    val quotaText: String? = null,
+    val progress: Float = 0f,
+    val downloadText: String? = null,
 )
 
+private data class SubscriptionExpiryUiState(
+    val inlineText: String,
+    val standaloneText: String,
+)
+
+private fun SubscriptionTrafficUiState.summaryText(expiry: SubscriptionExpiryUiState?): String =
+    if (quotaText == null && expiry != null) {
+        "$summary, ${expiry.inlineText}"
+    } else {
+        summary
+    }
+
+private fun SubscriptionTrafficUiState.detailText(expiry: SubscriptionExpiryUiState?): String? {
+    val downloaded = downloadText
+    return when {
+        quotaText == null -> null
+        downloaded != null && expiry != null -> "$downloaded, ${expiry.inlineText}"
+        downloaded != null -> downloaded
+        expiry != null -> expiry.inlineText
+        else -> null
+    }
+}
+
 private fun buildSubscriptionTrafficUiState(subscription: SubscriptionEntity): SubscriptionTrafficUiState? {
-    val upload = subscription.subscriptionUploadBytes
     val download = subscription.subscriptionDownloadBytes
     val total = subscription.subscriptionTotalBytes
 
-    if (upload == null && download == null && total == null) return null
+    if (subscription.subscriptionUploadBytes == null && download == null && total == null) return null
 
-    val used = listOfNotNull(upload, download).sum()
-    val details = buildList {
-        upload?.let { add("↑ ${formatByteCount(it)}") }
-        download?.let { add("↓ ${formatByteCount(it)}") }
-    }.joinToString("  ")
+    val downloaded = download?.coerceAtLeast(0) ?: 0L
+    val downloadText = "$DOWNLOAD_TRAFFIC_PREFIX ${formatGigabyteCount(downloaded)}"
 
     return when {
-        total == null -> {
-            val summary = if (details.isNotEmpty()) {
-                "Unlimited traffic • $details"
+        total == null || total <= 0 -> SubscriptionTrafficUiState(
+            summary = if (download == null) {
+                INFINITE_TRAFFIC_TEXT
             } else {
-                "Unlimited traffic"
-            }
-            SubscriptionTrafficUiState(summary = summary)
-        }
-
-        total > 0 -> {
-            val remaining = (total - used).coerceAtLeast(0)
-            val summary = buildString {
-                append("${formatByteCount(used)} used of ${formatByteCount(total)}")
-                append(" • ${formatByteCount(remaining)} left")
-                if (details.isNotEmpty()) append(" • $details")
-            }
-            SubscriptionTrafficUiState(
-                summary = summary,
-                progress = (used.toDouble() / total.toDouble()).coerceIn(0.0, 1.0).toFloat(),
-            )
-        }
+                "$INFINITE_TRAFFIC_TEXT, $downloadText"
+            },
+            downloadText = download?.let { downloadText },
+        )
 
         else -> {
-            val summary = if (details.isNotEmpty()) {
-                "No traffic quota • $details"
-            } else {
-                "No traffic quota"
-            }
-            SubscriptionTrafficUiState(summary = summary)
+            SubscriptionTrafficUiState(
+                summary = "${formatGigabyteCount(downloaded)} of ${formatGigabyteCount(total)}",
+                quotaText = formatGigabyteCount(total),
+                progress = (downloaded.toDouble() / total.toDouble()).coerceIn(0.0, 1.0).toFloat(),
+                downloadText = downloadText,
+            )
         }
     }
 }
 
-private fun formatSubscriptionExpiryRelative(epochSeconds: Long): String {
-    val now = Instant.now()
-    val expiresAt = Instant.ofEpochSecond(epochSeconds)
-    if (!expiresAt.isAfter(now)) return "Expired"
+private fun formatSubscriptionExpiryUiState(epochSeconds: Long): SubscriptionExpiryUiState? {
+    if (epochSeconds <= 0) return null
 
-    val remaining = Duration.between(now, expiresAt)
-    val days = remaining.toDays()
-    if (days >= 1) {
-        return if (days == 1L) "Expires in 1 day" else "Expires in $days days"
+    val now = Instant.now()
+    val expiresAt = normalizeSubscriptionExpireInstant(epochSeconds) ?: return null
+    if (expiresAt.isAfter(now.plus(LONG_TERM_SUBSCRIPTION_DURATION))) return null
+    if (!expiresAt.isAfter(now)) {
+        return SubscriptionExpiryUiState(
+            inlineText = "expired",
+            standaloneText = "Expired",
+        )
     }
 
-    val hours = remaining.toHours().coerceAtLeast(1)
-    return if (hours == 1L) "Expires in 1 hour" else "Expires in $hours hours"
+    val formattedDate = SUBSCRIPTION_EXPIRY_DATE_FORMATTER.format(
+        expiresAt.atZone(ZoneId.systemDefault()).toLocalDate(),
+    )
+    return SubscriptionExpiryUiState(
+        inlineText = "expires on $formattedDate",
+        standaloneText = "Expires on $formattedDate",
+    )
 }
 
-private fun formatByteCount(bytes: Long): String {
-    val units = arrayOf("B", "KB", "MB", "GB", "TB", "PB")
-    var value = bytes.toDouble()
-    var unitIndex = 0
+private fun normalizeSubscriptionExpireInstant(value: Long): Instant? {
+    val normalizedValue = value.coerceAtLeast(0)
+    return runCatching {
+        when {
+            normalizedValue in SUBSCRIPTION_EXPIRY_BASIC_DATE_RANGE -> {
+                parseBasicDateExpireInstant(normalizedValue) ?: Instant.ofEpochSecond(normalizedValue)
+            }
 
-    while (value >= 1024.0 && unitIndex < units.lastIndex) {
-        value /= 1024.0
-        unitIndex++
+            normalizedValue in SUBSCRIPTION_EXPIRY_YEAR_RANGE -> {
+                LocalDate.of(normalizedValue.toInt(), 12, 31)
+                    .atStartOfDay(ZoneId.systemDefault())
+                    .toInstant()
+            }
+
+            normalizedValue >= EPOCH_MILLIS_THRESHOLD -> Instant.ofEpochMilli(normalizedValue)
+
+            else -> Instant.ofEpochSecond(normalizedValue)
+        }
+    }.getOrNull()
+}
+
+private fun parseBasicDateExpireInstant(value: Long): Instant? =
+    try {
+        LocalDate.parse(value.toString(), DateTimeFormatter.BASIC_ISO_DATE)
+            .atStartOfDay(ZoneId.systemDefault())
+            .toInstant()
+    } catch (_: DateTimeParseException) {
+        null
     }
 
-    val formatted = if (unitIndex == 0) {
-        bytes.toString()
+private fun formatGigabyteCount(bytes: Long): String {
+    val value = bytes.coerceAtLeast(0).toDouble() / BYTES_PER_GB
+    val formatted = if (value == 0.0 || value >= 10.0 && value % 1.0 == 0.0) {
+        String.format(Locale.US, "%.0f", value)
     } else {
         String.format(Locale.US, "%.1f", value)
     }
-
-    return "$formatted ${units[unitIndex]}"
+    return "$formatted GB"
 }
+
+private fun String.withMetadataEmphasis() = buildAnnotatedString {
+    var startIndex = 0
+    while (true) {
+        val nextToken = findNextEmphasizedToken(startIndex)
+        if (nextToken == null) {
+            append(substring(startIndex))
+            return@buildAnnotatedString
+        }
+
+        append(substring(startIndex, nextToken.range.first))
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+            append(nextToken.value)
+        }
+        startIndex = nextToken.range.last + 1
+    }
+}
+
+private data class EmphasizedToken(
+    val range: IntRange,
+    val value: String,
+)
+
+private fun String.findNextEmphasizedToken(startIndex: Int): EmphasizedToken? {
+    val arrowIndex = indexOf(DOWNLOAD_TRAFFIC_PREFIX, startIndex)
+    val expiredIndex = indexOf(EXPIRED_STATUS_TEXT, startIndex, ignoreCase = true)
+
+    return listOfNotNull(
+        arrowIndex.takeIf { it >= 0 }?.let {
+            EmphasizedToken(it until it + DOWNLOAD_TRAFFIC_PREFIX.length, DOWNLOAD_TRAFFIC_PREFIX)
+        },
+        expiredIndex.takeIf { it >= 0 }?.let {
+            val value = substring(it, it + EXPIRED_STATUS_TEXT.length)
+            EmphasizedToken(it until it + value.length, value)
+        },
+    ).minByOrNull { it.range.first }
+}
+
+private const val INFINITE_TRAFFIC_TEXT = "∞ traffic"
+private const val DOWNLOAD_TRAFFIC_PREFIX = "↓"
+private const val EXPIRED_STATUS_TEXT = "expired"
+private const val BYTES_PER_GB = 1024.0 * 1024.0 * 1024.0
+private const val EPOCH_MILLIS_THRESHOLD = 100_000_000_000L
+private val SUBSCRIPTION_EXPIRY_YEAR_RANGE = 2000L..9999L
+private val SUBSCRIPTION_EXPIRY_BASIC_DATE_RANGE = 20_000_000L..99_991_231L
+private val LONG_TERM_SUBSCRIPTION_DURATION: Duration = Duration.ofDays(365)
+private val SUBSCRIPTION_EXPIRY_DATE_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.US)
 
 private data class AutoUpdateIntervalOption(
     val label: String,
@@ -911,7 +1045,7 @@ private fun AutoUpdateIntervalDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Auto Update") },
+        title = { Text("Auto update") },
         text = {
             Column {
                 autoUpdateIntervalOptions.forEach { option ->

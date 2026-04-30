@@ -50,7 +50,7 @@ class CaptivePortalDetector @Inject constructor(
             .proxy(Proxy.NO_PROXY)
             .socketFactory(network.socketFactory)
             .dns(Dns { host -> network.getAllByName(host).toList() })
-            .followRedirects(true)
+            .followRedirects(false)
             .followSslRedirects(false)
             .connectTimeout(CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -73,6 +73,13 @@ class CaptivePortalDetector @Inject constructor(
                 }
                 if (response.code == HTTP_NETWORK_AUTHENTICATION_REQUIRED) {
                     return@withContext Result.Captive("Network returned HTTP 511 authentication required")
+                }
+                if (response.isRedirect) {
+                    val location = response.header("Location").orEmpty().ifBlank { "unknown location" }
+                    return@withContext Result.Captive("Captive portal detected: HTTP check redirected to $location")
+                }
+                if (response.code == HTTP_NO_CONTENT) {
+                    return@withContext Result.Clear
                 }
 
                 val body = response.peekBody(MAX_RESPONSE_BYTES).string()
@@ -115,8 +122,9 @@ class CaptivePortalDetector @Inject constructor(
     }
 
     private companion object {
-        const val DEFAULT_TEST_URL = "http://neverssl.com/"
+        const val DEFAULT_TEST_URL = "http://connectivitycheck.gstatic.com/generate_204"
         const val NEVERSSL_MARKER = "NeverSSL"
+        const val HTTP_NO_CONTENT = 204
         const val HTTP_NETWORK_AUTHENTICATION_REQUIRED = 511
         const val CHECK_TIMEOUT_SECONDS = 2L
         const val CHECK_CALL_TIMEOUT_SECONDS = 3L

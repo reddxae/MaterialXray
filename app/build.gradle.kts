@@ -50,8 +50,8 @@ android {
         applicationId = "com.material.xray"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1510
-        versionName = "1.5.1"
+        versionCode = 100
+        versionName = "0.1.0"
     }
 
     signingConfigs {

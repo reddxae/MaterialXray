@@ -1,92 +1,10 @@
 name: Android CI
 
 on:
-  push:
-    branches:
-      - "**"
+  workflow_dispatch:
 
 jobs:
-  release-state:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      version_name: ${{ steps.version.outputs.version_name }}
-      version_tag: ${{ steps.version.outputs.version_tag }}
-      should_release: ${{ steps.release_check.outputs.should_release }}
-
-    steps:
-      - name: Check out sources
-        uses: actions/checkout@v4
-
-      - name: Read app version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          version_name="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
-          if [ -z "$version_name" ]; then
-            echo "Failed to read versionName from app/build.gradle.kts" >&2
-            exit 1
-          fi
-          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
-          echo "version_tag=v$version_name" >> "$GITHUB_OUTPUT"
-
-      - name: Check whether this version already has a release
-        id: release_check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION_TAG: ${{ steps.version.outputs.version_tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Release already exists for $VERSION_TAG"
-          else
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "Release does not exist yet for $VERSION_TAG"
-          fi
-
-  debug-build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Check out sources
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Build debug APK
-        run: ./gradlew --stacktrace app:assembleDebug
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MaterialXray-debug-${{ github.sha }}
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
   release-build:
-    needs:
-      - release-state
-      - debug-build
-    if: ${{ needs.release-state.outputs.should_release == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -131,7 +49,7 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
           echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
+      - name: Build release APK
         env:
           RELEASE_KEYSTORE_PATH: ${{ env.RELEASE_KEYSTORE_PATH }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
@@ -139,23 +57,46 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
         run: ./gradlew --stacktrace app:assembleRelease
 
-      - name: Upload release APK artifact
+      - name: Prepare release APK artifact
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_name="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)"
+          if [ -z "$version_name" ]; then
+            echo "Failed to read versionName from app/build.gradle.kts" >&2
+            exit 1
+          fi
+
+          short_sha="${GITHUB_SHA::7}"
+          apk_name="MaterialXray-v${version_name}-${short_sha}.apk"
+          apk_path="app/build/outputs/apk/release/${apk_name}"
+          cp app/build/outputs/apk/release/app-release.apk "$apk_path"
+
+          echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
+          echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
+          echo "version_tag=v$version_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: MaterialXray-release-${{ needs.release-state.outputs.version_tag }}
-          path: app/build/outputs/apk/release/app-release.apk
+          name: ${{ steps.artifact.outputs.apk_name }}
+          path: ${{ steps.artifact.outputs.apk_path }}
           if-no-files-found: error
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION_TAG: ${{ needs.release-state.outputs.version_tag }}
+          VERSION_TAG: ${{ steps.artifact.outputs.version_tag }}
+          APK_PATH: ${{ steps.artifact.outputs.apk_path }}
+          APK_NAME: ${{ steps.artifact.outputs.apk_name }}
         run: |
+          set -euo pipefail
           if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
-            echo "Release already exists for $VERSION_TAG, skipping publish."
-            exit 0
+            gh release upload "$VERSION_TAG" "$APK_PATH#${APK_NAME}" --clobber
+          else
+            gh release create "$VERSION_TAG" "$APK_PATH#${APK_NAME}" \
+              --target "$GITHUB_SHA" \
+              --title "$VERSION_TAG" \
+              --generate-notes
           fi
-          gh release create "$VERSION_TAG" app/build/outputs/apk/release/app-release.apk \
-            --target "$GITHUB_SHA" \
-            --title "$VERSION_TAG" \
-            --generate-notes

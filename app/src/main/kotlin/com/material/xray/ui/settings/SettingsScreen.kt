@@ -32,6 +32,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
+    val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
     val geoipUpdating by viewModel.geoipUpdating.collectAsStateWithLifecycle()
@@ -299,6 +300,30 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     )
                 }
                 Switch(checked = autoConnect, onCheckedChange = { viewModel.setAutoConnect(it) })
+            }
+
+            HorizontalDivider()
+            Text("Settings", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Show advanced options", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Show advanced routing options and logs",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = showAdvancedOptions,
+                    onCheckedChange = { viewModel.setShowAdvancedOptions(it) },
+                )
             }
 
             HorizontalDivider()

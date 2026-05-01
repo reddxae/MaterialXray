@@ -43,6 +43,7 @@ enum class AppRouteKind {
     INHERIT,
     DEFAULT,
     DIRECT,
+    BYPASS,
     SERVER,
 }
 
@@ -81,19 +82,22 @@ class AppsViewModel @Inject constructor(
 
     private val _installedApps = MutableStateFlow<List<AppItem>>(emptyList())
 
-    val routeOptions: StateFlow<List<AppRouteOption>> = serverRepository.observeAll()
-        .map { servers ->
+    val routeOptions: StateFlow<List<AppRouteOption>> = combine(
+        serverRepository.observeAll(),
+        settingsRepository.showAdvancedOptions,
+    ) { servers, showAdvancedOptions ->
             buildList {
-                add(INHERIT_ROUTE_OPTION)
+                if (showAdvancedOptions) add(INHERIT_ROUTE_OPTION)
                 add(DEFAULT_ROUTE_OPTION)
                 add(DIRECT_ROUTE_OPTION)
+                if (showAdvancedOptions) add(BYPASS_ROUTE_OPTION)
                 servers.forEach { server -> add(server.toRouteOption()) }
             }
         }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            listOf(INHERIT_ROUTE_OPTION, DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION),
+            listOf(DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION),
         )
 
     val apps: StateFlow<List<AppItem>> = combine(
@@ -199,10 +203,21 @@ class AppsViewModel @Inject constructor(
                         packageName = app.packageName,
                         profileId = app.profileId,
                         uid = app.uid,
-                        excluded = true,
+                        excluded = false,
                         serverId = null,
                         manual = true,
                         routeMode = ROUTE_MODE_DIRECT,
+                    )
+                )
+                AppRouteKind.BYPASS -> appBypassDao.upsert(
+                    AppBypassEntity(
+                        packageName = app.packageName,
+                        profileId = app.profileId,
+                        uid = app.uid,
+                        excluded = true,
+                        serverId = null,
+                        manual = true,
+                        routeMode = ROUTE_MODE_BYPASS,
                     )
                 )
                 AppRouteKind.SERVER -> {
@@ -244,7 +259,7 @@ class AppsViewModel @Inject constructor(
                         packageName = it.packageName,
                         profileId = it.profileId,
                         uid = it.uid,
-                        excluded = true,
+                        excluded = false,
                         serverId = null,
                         manual = false,
                         routeMode = ROUTE_MODE_DIRECT,
@@ -279,7 +294,8 @@ class AppsViewModel @Inject constructor(
         serverOptionsById: Map<Long, AppRouteOption>,
     ): AppRouteOption {
         if (assignment == null) return DEFAULT_ROUTE_OPTION
-        if (assignment.excluded) return DIRECT_ROUTE_OPTION
+        if (assignment.routeMode == ROUTE_MODE_DIRECT) return DIRECT_ROUTE_OPTION
+        if (assignment.excluded || assignment.routeMode == ROUTE_MODE_BYPASS) return BYPASS_ROUTE_OPTION
         if (assignment.routeMode == ROUTE_MODE_DEFAULT_OUTBOUND) return INHERIT_ROUTE_OPTION
         val serverId = assignment.serverId ?: return DEFAULT_ROUTE_OPTION
         return serverOptionsById[serverId] ?: AppRouteOption(
@@ -307,28 +323,36 @@ class AppsViewModel @Inject constructor(
         private const val INHERIT_ROUTE_KEY = "inherit"
         private const val DEFAULT_ROUTE_KEY = "default"
         private const val DIRECT_ROUTE_KEY = "direct"
+        private const val BYPASS_ROUTE_KEY = "bypass"
         private const val ROUTE_MODE_DEFAULT_OUTBOUND = "default_outbound"
         private const val ROUTE_MODE_DEFAULT_SELECTED = "default_selected"
         private const val ROUTE_MODE_DIRECT = "direct"
+        private const val ROUTE_MODE_BYPASS = "bypass"
         private const val ROUTE_MODE_SERVER = "server"
 
         val INHERIT_ROUTE_OPTION = AppRouteOption(
             key = INHERIT_ROUTE_KEY,
             title = "Default outbound",
-            description = "Use the default outbound selected in Settings.",
+            description = "Use the default outbound selected on Settings page.",
             kind = AppRouteKind.INHERIT,
         )
         val DEFAULT_ROUTE_OPTION = AppRouteOption(
             key = DEFAULT_ROUTE_KEY,
             title = "Default selected server",
-            description = "Use the server selected on Home.",
+            description = "Use the server selected on Home page.",
             kind = AppRouteKind.DEFAULT,
         )
         val DIRECT_ROUTE_OPTION = AppRouteOption(
             key = DIRECT_ROUTE_KEY,
             title = "Not proxied",
-            description = "Bypass the TUN interface and use the device network.",
+            description = "Use the device network.",
             kind = AppRouteKind.DIRECT,
+        )
+        val BYPASS_ROUTE_OPTION = AppRouteOption(
+            key = BYPASS_ROUTE_KEY,
+            title = "Bypass TUN",
+            description = "Bypass the TUN interface entirely.",
+            kind = AppRouteKind.BYPASS,
         )
 
         fun serverRouteKey(serverId: Long): String = "server:$serverId"

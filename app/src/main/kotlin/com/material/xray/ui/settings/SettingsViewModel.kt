@@ -87,6 +87,11 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         LauncherIcon.default,
     )
+    val showAdvancedOptions = settingsRepo.showAdvancedOptions.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        false,
+    )
     val geoipUrl = settingsRepo.geoipUrl.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -127,6 +132,9 @@ class SettingsViewModel @Inject constructor(
         if (icon == launcherIcon.value) return@launch
         settingsRepo.setLauncherIcon(icon)
         launcherIconManager.apply(icon)
+    }
+    fun setShowAdvancedOptions(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setShowAdvancedOptions(enabled)
     }
 
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }

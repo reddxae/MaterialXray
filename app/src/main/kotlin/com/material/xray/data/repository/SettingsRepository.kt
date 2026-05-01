@@ -42,6 +42,7 @@ class SettingsRepository @Inject constructor(
         val XRAY_LOG_LEVEL = stringPreferencesKey("xray_log_level")
         val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
         val LAUNCHER_ICON = stringPreferencesKey("launcher_icon")
+        val SHOW_ADVANCED_OPTIONS = booleanPreferencesKey("show_advanced_options")
         val APP_SPECIFIC_SERVER_NOTE_SHOWN = booleanPreferencesKey("app_specific_server_note_shown")
         val ROUTING_RULES = stringPreferencesKey("routing_rules")
         val ROUTING_RULES_VERSION = intPreferencesKey("routing_rules_version")
@@ -78,6 +79,9 @@ class SettingsRepository @Inject constructor(
     }
     val launcherIcon: Flow<LauncherIcon> = store.data.map { prefs ->
         LauncherIcon.fromValue(prefs[LAUNCHER_ICON])
+    }
+    val showAdvancedOptions: Flow<Boolean> = store.data.map { prefs ->
+        prefs[SHOW_ADVANCED_OPTIONS] ?: false
     }
     val appSpecificServerNoteShown: Flow<Boolean> = store.data.map { prefs ->
         prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] ?: false
@@ -118,6 +122,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setLauncherIcon(icon: LauncherIcon) = store.edit { prefs ->
         prefs[LAUNCHER_ICON] = icon.value
+    }
+    suspend fun setShowAdvancedOptions(enabled: Boolean) = store.edit { prefs ->
+        prefs[SHOW_ADVANCED_OPTIONS] = enabled
     }
     suspend fun setAppSpecificServerNoteShown(shown: Boolean) = store.edit { prefs ->
         prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] = shown
@@ -173,6 +180,7 @@ class SettingsRepository @Inject constructor(
             prefs[XRAY_LOG_LEVEL] = XrayLogLevel.fromValue(map["xray_log_level"]).value
             prefs[DEFAULT_OUTBOUND] = XrayOutbound.fromTag(map["default_outbound"]).tag
             prefs[LAUNCHER_ICON] = LauncherIcon.fromValue(map["launcher_icon"]).value
+            prefs[SHOW_ADVANCED_OPTIONS] = map["show_advanced_options"]?.toBooleanStrictOrNull() ?: false
             prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] =
                 map["app_specific_server_note_shown"]?.toBooleanStrictOrNull() ?: false
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }

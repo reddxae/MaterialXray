@@ -1,10 +1,10 @@
 package com.material.xray.ui.navigation
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.DisposableEffect
@@ -75,14 +75,20 @@ fun MainNavigation() {
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
         bottomBar = {
-            NavigationBar {
-                Screen.entries.forEach { screen ->
-                    if (screen == Screen.Logs) {
-                        AnimatedVisibility(
-                            visible = showAdvancedOptions,
-                            enter = fadeIn() + expandHorizontally(),
-                            exit = fadeOut() + shrinkHorizontally(),
-                        ) {
+            AnimatedContent(
+                targetState = showAdvancedOptions,
+                transitionSpec = { fadeIn(tween(150)) togetherWith fadeOut(tween(150)) },
+                label = "advancedNavigationItems",
+            ) { showLogs ->
+                val navigationScreens = remember(showLogs) {
+                    if (showLogs) {
+                        Screen.entries
+                    } else {
+                        Screen.entries.filterNot { it == Screen.Logs }
+                    }
+                }
+                NavigationBar {
+                    navigationScreens.forEach { screen ->
                             NavigationBarItem(
                                 icon = { Icon(screen.icon, contentDescription = screen.label) },
                                 label = { Text(screen.label) },
@@ -95,20 +101,6 @@ fun MainNavigation() {
                                     }
                                 },
                             )
-                        }
-                    } else {
-                        NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.label) },
-                            label = { Text(screen.label) },
-                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                            onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                        )
                     }
                 }
             }

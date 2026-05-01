@@ -101,31 +101,27 @@ class SettingsViewModel @Inject constructor(
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
     val assetUpdateEvents: SharedFlow<String> = _assetUpdateEvents.asSharedFlow()
 
-    fun setTunName(name: String) = viewModelScope.launch { settingsRepo.setTunName(name) }
-    fun setDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setDnsServers(servers) }
-    fun setDomesticDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setDomesticDnsServers(servers) }
+    fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
+    fun setDnsServers(servers: String) =
+        updateXrayConfigStringSetting(servers, dnsServers.value, settingsRepo::setDnsServers)
+    fun setDomesticDnsServers(servers: String) =
+        updateXrayConfigStringSetting(servers, domesticDnsServers.value, settingsRepo::setDomesticDnsServers)
     fun setLatencyDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setLatencyDnsServers(servers) }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
     fun setBypassLan(enabled: Boolean) = viewModelScope.launch {
         if (enabled == bypassLan.value) return@launch
         settingsRepo.setBypassLan(enabled)
-        if (connectionStateHolder.state.value is ConnectionState.Connected) {
-            XrayService.reload(context)
-        }
+        reloadActiveConnectionIfConnected()
     }
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {
         if (level == xrayLogLevel.value) return@launch
         settingsRepo.setXrayLogLevel(level)
-        if (connectionStateHolder.state.value is ConnectionState.Connected) {
-            XrayService.reload(context)
-        }
+        reloadActiveConnectionIfConnected()
     }
     fun setDefaultOutbound(outbound: XrayOutbound) = viewModelScope.launch {
         if (outbound == defaultOutbound.value) return@launch
         settingsRepo.setDefaultOutbound(outbound)
-        if (connectionStateHolder.state.value is ConnectionState.Connected) {
-            XrayService.reload(context)
-        }
+        reloadActiveConnectionIfConnected()
     }
     fun setLauncherIcon(icon: LauncherIcon) = viewModelScope.launch {
         if (icon == launcherIcon.value) return@launch
@@ -221,6 +217,7 @@ class SettingsViewModel @Inject constructor(
                 }
                 settingsRepo.restoreFromMap(backup.settings)
                 launcherIconManager.apply(settingsRepo.launcherIcon.first())
+                reloadActiveConnectionIfConnected()
             }
         }
     }
@@ -240,10 +237,30 @@ class SettingsViewModel @Inject constructor(
                 geoDataManager.refresh(asset)
             }.onSuccess {
                 _assetUpdateEvents.emit(successMessage)
+                reloadActiveConnectionIfConnected()
             }.onFailure { error ->
                 _assetUpdateEvents.emit(error.message ?: "Update failed")
             }
             updating.value = false
+        }
+    }
+
+    private fun updateXrayConfigStringSetting(
+        newValue: String,
+        currentValue: String,
+        setter: suspend (String) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val trimmedValue = newValue.trim()
+            if (trimmedValue == currentValue) return@launch
+            setter(trimmedValue)
+            reloadActiveConnectionIfConnected()
+        }
+    }
+
+    private fun reloadActiveConnectionIfConnected() {
+        if (connectionStateHolder.state.value is ConnectionState.Connected) {
+            XrayService.reload(context)
         }
     }
 }

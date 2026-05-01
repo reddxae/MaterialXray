@@ -113,7 +113,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 supportingText = { Text("Default: xray0") },
             )
             if (hasTunNameChanges) {
-                TextButton(onClick = { viewModel.setTunName(editingTunName) }) { Text("Save") }
+                Button(onClick = { viewModel.setTunName(editingTunName) }) { Text("Save") }
             }
 
             ExposedDropdownMenuBox(
@@ -165,7 +165,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 supportingText = { Text("Comma-separated, e.g. 1.1.1.1,8.8.8.8") },
             )
             if (hasDnsChanges) {
-                TextButton(onClick = { viewModel.setDnsServers(editingDns) }) { Text("Save") }
+                Button(onClick = { viewModel.setDnsServers(editingDns) }) { Text("Save") }
             }
 
             OutlinedTextField(
@@ -177,7 +177,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 supportingText = { Text("Used for direct domestic domains, e.g. 77.88.8.8,77.88.8.1") },
             )
             if (hasDomesticDnsChanges) {
-                TextButton(onClick = { viewModel.setDomesticDnsServers(editingDomesticDns) }) { Text("Save") }
+                Button(onClick = { viewModel.setDomesticDnsServers(editingDomesticDns) }) { Text("Save") }
             }
 
             OutlinedTextField(
@@ -189,7 +189,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 supportingText = { Text("Used only for node latency checks, e.g. 77.88.8.8,77.88.8.1") },
             )
             if (hasLatencyDnsChanges) {
-                TextButton(onClick = { viewModel.setLatencyDnsServers(editingLatencyDns) }) { Text("Save") }
+                Button(onClick = { viewModel.setLatencyDnsServers(editingLatencyDns) }) { Text("Save") }
             }
 
             ExposedDropdownMenuBox(
@@ -234,7 +234,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 },
             )
             if (hasGeoipUrlChanges) {
-                TextButton(onClick = { viewModel.setGeoipUrl(editingGeoipUrl) }) { Text("Save") }
+                Button(onClick = { viewModel.setGeoipUrl(editingGeoipUrl) }) { Text("Save") }
             }
             OutlinedButton(
                 onClick = { viewModel.updateGeoipAsset(editingGeoipUrl) },
@@ -254,7 +254,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 },
             )
             if (hasGeositeUrlChanges) {
-                TextButton(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) { Text("Save") }
+                Button(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) { Text("Save") }
             }
             OutlinedButton(
                 onClick = { viewModel.updateGeositeAsset(editingGeositeUrl) },

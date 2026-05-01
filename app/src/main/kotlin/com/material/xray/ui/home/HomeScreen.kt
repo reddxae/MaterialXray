@@ -1148,7 +1148,7 @@ private fun EditSubscriptionDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = { onConfirm(name.trim(), url.trim()) },
                 enabled = url.isNotBlank() &&
                     (name.trim() != subscription.name || url.trim() != subscription.url),

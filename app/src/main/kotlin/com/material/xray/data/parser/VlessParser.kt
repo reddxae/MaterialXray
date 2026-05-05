@@ -44,11 +44,3 @@ object VlessParser {
         )
     }.getOrNull()
 }
-
-internal fun parseQuery(query: String): Map<String, String> =
-    query.split("&")
-        .filter { it.contains("=") }
-        .associate {
-            val (k, v) = it.split("=", limit = 2)
-            k to v
-        }

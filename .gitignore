@@ -13,4 +13,3 @@ app/src/main/jniLibs/
 
 app/release/
 gradle/gradle-daemon-jvm.properties
-

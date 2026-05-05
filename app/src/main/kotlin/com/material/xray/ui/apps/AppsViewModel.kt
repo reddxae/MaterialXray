@@ -7,8 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.app.appKey
 import com.material.xray.data.db.dao.AppBypassDao
+import com.material.xray.data.db.entity.AppRouteAssignment
+import com.material.xray.data.db.entity.AppRouteMode
 import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.ServerEntity
+import com.material.xray.data.db.entity.routeAssignment
+import com.material.xray.data.db.entity.toAppBypassEntity
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.endpointSummary
@@ -17,7 +21,11 @@ import com.material.xray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -175,66 +183,15 @@ class AppsViewModel @Inject constructor(
 
     fun setAppRoute(app: AppItem, option: AppRouteOption) {
         viewModelScope.launch {
-            when (option.kind) {
-                AppRouteKind.INHERIT -> appBypassDao.upsert(
-                    AppBypassEntity(
-                        packageName = app.packageName,
-                        profileId = app.profileId,
-                        uid = app.uid,
-                        excluded = false,
-                        serverId = null,
-                        manual = true,
-                        routeMode = ROUTE_MODE_DEFAULT_OUTBOUND,
-                    )
+            val assignment = option.toRouteAssignment() ?: return@launch
+            appBypassDao.upsert(
+                assignment.toAppBypassEntity(
+                    packageName = app.packageName,
+                    profileId = app.profileId,
+                    uid = app.uid,
+                    manual = true,
                 )
-                AppRouteKind.DEFAULT -> appBypassDao.upsert(
-                    AppBypassEntity(
-                        packageName = app.packageName,
-                        profileId = app.profileId,
-                        uid = app.uid,
-                        excluded = false,
-                        serverId = null,
-                        manual = true,
-                        routeMode = ROUTE_MODE_DEFAULT_SELECTED,
-                    )
-                )
-                AppRouteKind.DIRECT -> appBypassDao.upsert(
-                    AppBypassEntity(
-                        packageName = app.packageName,
-                        profileId = app.profileId,
-                        uid = app.uid,
-                        excluded = false,
-                        serverId = null,
-                        manual = true,
-                        routeMode = ROUTE_MODE_DIRECT,
-                    )
-                )
-                AppRouteKind.BYPASS -> appBypassDao.upsert(
-                    AppBypassEntity(
-                        packageName = app.packageName,
-                        profileId = app.profileId,
-                        uid = app.uid,
-                        excluded = true,
-                        serverId = null,
-                        manual = true,
-                        routeMode = ROUTE_MODE_BYPASS,
-                    )
-                )
-                AppRouteKind.SERVER -> {
-                    val serverId = option.serverId ?: return@launch
-                    appBypassDao.upsert(
-                        AppBypassEntity(
-                            packageName = app.packageName,
-                            profileId = app.profileId,
-                            uid = app.uid,
-                            excluded = false,
-                            serverId = serverId,
-                            manual = true,
-                            routeMode = ROUTE_MODE_SERVER,
-                        )
-                    )
-                }
-            }
+            )
             routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
         }
     }
@@ -255,14 +212,11 @@ class AppsViewModel @Inject constructor(
         viewModelScope.launch {
             _installedApps.value.forEach {
                 appBypassDao.upsert(
-                    AppBypassEntity(
+                    AppRouteAssignment(AppRouteMode.Direct).toAppBypassEntity(
                         packageName = it.packageName,
                         profileId = it.profileId,
                         uid = it.uid,
-                        excluded = false,
-                        serverId = null,
                         manual = false,
-                        routeMode = ROUTE_MODE_DIRECT,
                     )
                 )
             }
@@ -274,14 +228,11 @@ class AppsViewModel @Inject constructor(
         viewModelScope.launch {
             _installedApps.value.forEach {
                 appBypassDao.upsert(
-                    AppBypassEntity(
+                    AppRouteAssignment(AppRouteMode.DefaultSelected).toAppBypassEntity(
                         packageName = it.packageName,
                         profileId = it.profileId,
                         uid = it.uid,
-                        excluded = false,
-                        serverId = null,
                         manual = false,
-                        routeMode = ROUTE_MODE_DEFAULT_SELECTED,
                     )
                 )
             }
@@ -294,17 +245,22 @@ class AppsViewModel @Inject constructor(
         serverOptionsById: Map<Long, AppRouteOption>,
     ): AppRouteOption {
         if (assignment == null) return DEFAULT_ROUTE_OPTION
-        if (assignment.routeMode == ROUTE_MODE_DIRECT) return DIRECT_ROUTE_OPTION
-        if (assignment.excluded || assignment.routeMode == ROUTE_MODE_BYPASS) return BYPASS_ROUTE_OPTION
-        if (assignment.routeMode == ROUTE_MODE_DEFAULT_OUTBOUND) return INHERIT_ROUTE_OPTION
-        val serverId = assignment.serverId ?: return DEFAULT_ROUTE_OPTION
-        return serverOptionsById[serverId] ?: AppRouteOption(
-            key = serverRouteKey(serverId),
-            title = "Missing server",
-            description = "This app is assigned to a deleted configuration.",
-            kind = AppRouteKind.SERVER,
-            serverId = serverId,
-        )
+        return when (val routeAssignment = assignment.routeAssignment()) {
+            AppRouteAssignment(AppRouteMode.Direct) -> DIRECT_ROUTE_OPTION
+            AppRouteAssignment(AppRouteMode.Bypass) -> BYPASS_ROUTE_OPTION
+            AppRouteAssignment(AppRouteMode.DefaultOutbound) -> INHERIT_ROUTE_OPTION
+            AppRouteAssignment(AppRouteMode.DefaultSelected) -> DEFAULT_ROUTE_OPTION
+            else -> {
+                val serverId = routeAssignment.serverId ?: return DEFAULT_ROUTE_OPTION
+                serverOptionsById[serverId] ?: AppRouteOption(
+                    key = serverRouteKey(serverId),
+                    title = "Missing server",
+                    description = "This app is assigned to a deleted configuration.",
+                    kind = AppRouteKind.SERVER,
+                    serverId = serverId,
+                )
+            }
+        }
     }
 
     private fun ServerEntity.toRouteOption(): AppRouteOption {
@@ -324,11 +280,6 @@ class AppsViewModel @Inject constructor(
         private const val DEFAULT_ROUTE_KEY = "default"
         private const val DIRECT_ROUTE_KEY = "direct"
         private const val BYPASS_ROUTE_KEY = "bypass"
-        private const val ROUTE_MODE_DEFAULT_OUTBOUND = "default_outbound"
-        private const val ROUTE_MODE_DEFAULT_SELECTED = "default_selected"
-        private const val ROUTE_MODE_DIRECT = "direct"
-        private const val ROUTE_MODE_BYPASS = "bypass"
-        private const val ROUTE_MODE_SERVER = "server"
 
         val INHERIT_ROUTE_OPTION = AppRouteOption(
             key = INHERIT_ROUTE_KEY,
@@ -356,5 +307,14 @@ class AppsViewModel @Inject constructor(
         )
 
         fun serverRouteKey(serverId: Long): String = "server:$serverId"
+
+        private fun AppRouteOption.toRouteAssignment(): AppRouteAssignment? =
+            when (kind) {
+                AppRouteKind.INHERIT -> AppRouteAssignment(AppRouteMode.DefaultOutbound)
+                AppRouteKind.DEFAULT -> AppRouteAssignment(AppRouteMode.DefaultSelected)
+                AppRouteKind.DIRECT -> AppRouteAssignment(AppRouteMode.Direct)
+                AppRouteKind.BYPASS -> AppRouteAssignment(AppRouteMode.Bypass)
+                AppRouteKind.SERVER -> serverId?.let { AppRouteAssignment(AppRouteMode.Server, it) }
+            }
     }
 }

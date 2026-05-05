@@ -25,10 +25,11 @@ class LogBuffer @Inject constructor() {
 
     @Synchronized
     fun append(source: LogSource, message: String) {
-        // Mirror to logcat
-        when (source) {
-            LogSource.APP -> Log.d("MXray", message)
-            LogSource.XRAY -> Log.d("MXray.xray", message)
+        runCatching {
+            when (source) {
+                LogSource.APP -> Log.d("MXray", message)
+                LogSource.XRAY -> Log.d("MXray.xray", message)
+            }
         }
 
         if (buffer.size == maxSize) {

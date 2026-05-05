@@ -1,7 +1,10 @@
 package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShareLinkParserTest {

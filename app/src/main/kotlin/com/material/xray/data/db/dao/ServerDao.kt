@@ -1,6 +1,8 @@
 package com.material.xray.data.db.dao
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
 import com.material.xray.data.db.entity.ServerEntity
 import kotlinx.coroutines.flow.Flow
 

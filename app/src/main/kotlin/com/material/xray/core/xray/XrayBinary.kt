@@ -3,18 +3,45 @@ package com.material.xray.core.xray
 import android.content.Context
 import android.os.Build
 import java.io.File
+import java.io.InputStream
 
-class XrayBinary(private val context: Context) {
+internal interface XrayBinaryEnvironment {
+    val filesDir: File
+    fun openAsset(name: String): InputStream
+    fun appVersion(): String
+}
 
-    private val binaryDir = File(context.filesDir, "bin")
+internal class AndroidXrayBinaryEnvironment(
+    private val context: Context,
+) : XrayBinaryEnvironment {
+    override val filesDir: File
+        get() = context.filesDir
+
+    override fun openAsset(name: String): InputStream = context.assets.open(name)
+
+    override fun appVersion(): String = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+    }.getOrDefault("unknown")
+}
+
+class XrayBinary internal constructor(
+    private val environment: XrayBinaryEnvironment,
+    private val supportedAbis: () -> Array<String>,
+) {
+    constructor(context: Context) : this(
+        environment = AndroidXrayBinaryEnvironment(context),
+        supportedAbis = { Build.SUPPORTED_ABIS },
+    )
+
+    private val binaryDir = File(environment.filesDir, "bin")
     val binaryPath: String get() = File(binaryDir, "xray").absolutePath
 
     fun ensureExtracted(): Boolean {
         binaryDir.mkdirs()
 
         val assetName = when {
-            Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } -> "xray_arm64"
-            Build.SUPPORTED_ABIS.any { it == "x86_64" } -> "xray_x86_64"
+            supportedAbis().any { it == "arm64-v8a" } -> "xray_arm64"
+            supportedAbis().any { it == "x86_64" } -> "xray_x86_64"
             else -> return false
         }
 
@@ -32,23 +59,21 @@ class XrayBinary(private val context: Context) {
         return File(binaryDir, "xray").let { it.exists() && it.canExecute() }
     }
 
-    fun configPath(): String = File(context.filesDir, "config.json").absolutePath
+    fun configPath(): String = File(environment.filesDir, "config.json").absolutePath
 
     fun writeConfig(configJson: String) {
-        File(context.filesDir, "config.json").writeText(configJson)
+        File(environment.filesDir, "config.json").writeText(configJson)
     }
 
     private fun extractAsset(assetName: String, targetName: String, executable: Boolean): Boolean =
         runCatching {
             val target = File(binaryDir, targetName)
-            context.assets.open(assetName).use { input ->
+            environment.openAsset(assetName).use { input ->
                 target.outputStream().use { output -> input.copyTo(output) }
             }
             if (executable) target.setExecutable(true, false)
             true
         }.getOrDefault(false)
 
-    private fun getAppVersion(): String = runCatching {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
-    }.getOrDefault("unknown")
+    private fun getAppVersion(): String = environment.appVersion()
 }

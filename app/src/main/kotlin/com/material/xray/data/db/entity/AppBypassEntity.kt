@@ -12,3 +12,51 @@ data class AppBypassEntity(
     val manual: Boolean = true,
     val routeMode: String? = null,
 )
+
+enum class AppRouteMode(val persistedValue: String?) {
+    DefaultSelected("default_selected"),
+    DefaultOutbound("default_outbound"),
+    Direct("direct"),
+    Bypass("bypass"),
+    Server("server"),
+}
+
+data class AppRouteAssignment(
+    val mode: AppRouteMode,
+    val serverId: Long? = null,
+)
+
+fun AppBypassEntity.routeAssignment(): AppRouteAssignment =
+    when {
+        excluded || routeMode == AppRouteMode.Bypass.persistedValue -> {
+            AppRouteAssignment(AppRouteMode.Bypass)
+        }
+        routeMode == AppRouteMode.Direct.persistedValue -> {
+            AppRouteAssignment(AppRouteMode.Direct)
+        }
+        routeMode == AppRouteMode.DefaultOutbound.persistedValue -> {
+            AppRouteAssignment(AppRouteMode.DefaultOutbound)
+        }
+        serverId != null -> {
+            AppRouteAssignment(AppRouteMode.Server, serverId)
+        }
+        else -> {
+            AppRouteAssignment(AppRouteMode.DefaultSelected)
+        }
+    }
+
+fun AppRouteAssignment.toAppBypassEntity(
+    packageName: String,
+    profileId: Int,
+    uid: Int,
+    manual: Boolean,
+): AppBypassEntity =
+    AppBypassEntity(
+        packageName = packageName,
+        profileId = profileId,
+        uid = uid,
+        excluded = mode == AppRouteMode.Bypass,
+        serverId = serverId.takeIf { mode == AppRouteMode.Server },
+        manual = manual,
+        routeMode = mode.persistedValue,
+    )

@@ -1,6 +1,10 @@
 package com.material.xray.data.db.dao
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Upsert
 import com.material.xray.data.db.entity.AppBypassEntity
 import kotlinx.coroutines.flow.Flow
 

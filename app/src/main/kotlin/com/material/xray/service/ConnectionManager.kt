@@ -1,24 +1,23 @@
 package com.material.xray.service
 
 import android.content.Context
-import android.os.Build
-import android.os.PowerManager
 import android.os.SystemClock
 import com.material.xray.core.app.AppInventory
-import com.material.xray.core.app.appKey
-import com.material.xray.core.app.profileIdForUid
 import com.material.xray.core.network.CaptivePortalDetector
 import com.material.xray.core.root.RootShell
-import com.material.xray.core.root.RootShell.NetworkNamespace
-import com.material.xray.core.xray.*
+import com.material.xray.core.xray.CleanupManager
+import com.material.xray.core.xray.ConfigGenerator
+import com.material.xray.core.xray.GeoDataManager
+import com.material.xray.core.xray.ServerAddressResolver
+import com.material.xray.core.xray.StateFile
+import com.material.xray.core.xray.TunManager
+import com.material.xray.core.xray.XrayBinary
+import com.material.xray.core.xray.XrayState
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.model.ConnectionState
-import com.material.xray.model.RoutingRule
 import com.material.xray.model.ServerConfig
-import com.material.xray.model.XrayLogLevel
-import com.material.xray.model.XrayOutbound
-import java.io.FileOutputStream
+import com.material.xray.model.XrayRuntimeSettings
 
 class ConnectionManager(
     private val context: Context,
@@ -38,33 +37,42 @@ class ConnectionManager(
     private val tunManager = TunManager(shell)
     private val cleanupManager = CleanupManager(context, shell)
     private val stateFile = StateFile(context)
-    private val logFile get() = "${context.filesDir.absolutePath}/xray.log"
-
-    private data class AppRoutingPlan(
-        val directUids: Set<Int>,
-        val proxyRoutes: List<ConfigGenerator.AppProxyRoute>,
-        val tunRoutes: List<TunManager.AppTunRoute>,
-        val proxyServerIds: List<Long>,
-        val routeProfileIds: Set<Int>,
+    private val processSupervisor = XrayProcessSupervisor(
+        environment = AndroidXrayRuntimeEnvironment(context),
+        commandRunner = RootShellCommandRunner(shell),
+        xrayBinary = XrayBinaryProcessBinary(xrayBinary),
+        log = log,
+    )
+    private val diagnostics = ConnectionDiagnostics(RootShellDiagnosticCommandRunner(shell), log)
+    private val appRoutingPlanner = AppRoutingPlanner(
+        appBypassDao = appBypassDao,
+        serverRepository = serverRepository,
+        appInventory = appInventory,
+        serverAddressResolver = serverAddressResolver,
+        log = log,
+    )
+    private val activeRoutingUpdater = ActiveRoutingUpdater(
+        appUidProvider = { context.applicationInfo.uid },
+        tunGateway = TunManagerRoutingGateway(tunManager),
+        stateStore = StateFileRoutingStateStore(stateFile),
+        routingPlanBuilder = appRoutingPlanner,
+        processProbe = processSupervisor,
+        log = log,
+        elapsedRealtime = SystemClock::elapsedRealtime,
     )
 
     suspend fun connect(
         server: ServerConfig,
-        tunName: String,
-        fwmark: Int,
-        routeTable: Int,
-        dnsServers: String,
-        domesticDnsServers: String,
-        logLevel: XrayLogLevel,
-        defaultOutbound: XrayOutbound,
-        bypassLan: Boolean,
-        routingRules: List<RoutingRule>,
+        runtimeSettings: XrayRuntimeSettings,
         transitionState: ConnectionState = ConnectionState.Connecting,
         cleanStateFirst: Boolean = true,
         fastReconnect: Boolean = false,
     ) {
         stateHolder.update(transitionState)
         val connectStartedAt = SystemClock.elapsedRealtime()
+        val tunName = runtimeSettings.tunName
+        val fwmark = runtimeSettings.fwmark
+        val routeTable = runtimeSettings.routeTable
         val routeMark = routeTable
         val bypassTable = routeTable + 1
         log.clear()
@@ -102,10 +110,10 @@ class ConnectionManager(
             if (fastReconnect) {
                 log.append(LogSource.APP, "Runtime exemption check skipped for fast reconnect")
             } else {
-                ensureNativeRuntimeExemptions()
+                processSupervisor.ensureNativeRuntimeExemptions()
             }
 
-            prepareLogFile()
+            processSupervisor.prepareLogFile()
             onXrayLogReady()
 
             if (fastReconnect) {
@@ -183,7 +191,7 @@ class ConnectionManager(
                 )
             }
 
-            val appRoutingPlan = buildAppRoutingPlan(
+            val appRoutingPlan = appRoutingPlanner.build(
                 baseTunName = tunName,
                 baseRouteTable = routeTable,
                 includeProxyRoutes = true,
@@ -202,12 +210,12 @@ class ConnectionManager(
                 server = xrayServer,
                 tunName = tunName,
                 fwmark = fwmark,
-                dnsServers = dnsServers,
-                domesticDnsServers = domesticDnsServers,
-                logLevel = logLevel,
-                defaultOutbound = defaultOutbound,
-                bypassLan = bypassLan,
-                routingRules = routingRules,
+                dnsServers = runtimeSettings.dnsServers,
+                domesticDnsServers = runtimeSettings.domesticDnsServers,
+                logLevel = runtimeSettings.logLevel,
+                defaultOutbound = runtimeSettings.defaultOutbound,
+                bypassLan = runtimeSettings.bypassLan,
+                routingRules = runtimeSettings.routingRules,
                 appProxyRoutes = appRoutingPlan.proxyRoutes,
                 physicalInterface = physicalRoute.dev,
             )
@@ -217,7 +225,7 @@ class ConnectionManager(
             log.append(LogSource.APP, "Starting xray process...")
             val binDir = context.filesDir.resolve("bin").absolutePath
             val pid = timedStep("xray process launch") {
-                startXrayProcess(binDir)
+                processSupervisor.start(binDir)
             }
 
             if (pid <= 0) {
@@ -245,9 +253,9 @@ class ConnectionManager(
             }
             if (!tunSetup.success) {
                 val diagnosticsStage = if (tunSetup.processExited) "tun-exit" else "tun-failure"
-                logNamespaceDiagnostics(stage = diagnosticsStage, tunName = tunName, xrayPid = pid)
+                diagnostics.logNamespaceDiagnostics(stage = diagnosticsStage, tunName = tunName, xrayPid = pid)
                 if (tunSetup.processExited) {
-                    fail("xray crashed: ${readCrashReason()}")
+                    fail("xray crashed: ${processSupervisor.readCrashReason()}")
                 } else {
                     fail(tunSetup.error ?: "TUN interface $tunName did not come up within timeout")
                 }
@@ -265,9 +273,9 @@ class ConnectionManager(
                 }
                 if (!appTunSetup.success) {
                     val diagnosticsStage = if (appTunSetup.processExited) "app-tun-exit" else "app-tun-failure"
-                    logNamespaceDiagnostics(stage = diagnosticsStage, tunName = route.tunName, xrayPid = pid)
+                    diagnostics.logNamespaceDiagnostics(stage = diagnosticsStage, tunName = route.tunName, xrayPid = pid)
                     if (appTunSetup.processExited) {
-                        fail("xray crashed: ${readCrashReason()}")
+                        fail("xray crashed: ${processSupervisor.readCrashReason()}")
                     } else {
                         fail(appTunSetup.error ?: "TUN interface ${route.tunName} did not come up within timeout")
                     }
@@ -334,184 +342,25 @@ class ConnectionManager(
 
     suspend fun applyAppRoutingChanges(
         connectedState: ConnectionState.Connected,
-        tunName: String,
-        fwmark: Int,
-        routeTable: Int,
-    ): Boolean {
-        val startedAt = SystemClock.elapsedRealtime()
-        val persistedState = stateFile.read()
-        if (persistedState == null) {
-            log.append(LogSource.APP, "Fast app routing update skipped: active state file is missing")
-            return false
-        }
-        if (persistedState.tunName != tunName || persistedState.routeTable != routeTable || persistedState.fwmark != fwmark) {
-            log.append(LogSource.APP, "Fast app routing update skipped: active routing settings changed")
-            return false
-        }
-        if (!isProcessAlive(connectedState.corePid)) {
-            log.append(LogSource.APP, "Fast app routing update skipped: xray process is not running")
-            return false
-        }
-
-        val appRoutingPlan = try {
-            buildAppRoutingPlan(tunName, routeTable, includeProxyRoutes = false)
-        } catch (error: Exception) {
-            log.append(LogSource.APP, "Fast app routing update skipped: ${error.message ?: "could not build app routing plan"}")
-            return false
-        }
-
-        if (appRoutingPlan.proxyServerIds != persistedState.appProxyServerIds) {
-            log.append(
-                LogSource.APP,
-                "Fast app routing update skipped: app proxy routes changed " +
-                    "(${persistedState.appProxyServerIds.size} -> ${appRoutingPlan.proxyServerIds.size})",
-            )
-            return false
-        }
-
-        val physicalRoute = timedStep("Physical route detection") {
-            tunManager.detectPhysicalRoute(tunName)
-        }
-        if (physicalRoute == null) {
-            log.append(LogSource.APP, "Fast app routing update skipped: could not detect physical network route")
-            return false
-        }
-
-        appRoutingPlan.tunRoutes.forEachIndexed { index, route ->
-            val appTunSetup = timedStep("App TUN check ${index + 1}") {
-                tunManager.configureTun(
-                    tunName = route.tunName,
-                    addressCidr = TunManager.appTunAddressCidr(index + 1),
-                ) { isProcessAlive(connectedState.corePid) }
-            }
-            if (!appTunSetup.success) {
-                log.append(LogSource.APP, "Fast app routing update skipped: ${appTunSetup.error ?: "app TUN ${route.tunName} is unavailable"}")
-                return false
-            }
-        }
-
-        val bypassTable = routeTable + 1
-        val routingResult = timedStep("IP routing update") {
-            tunManager.applyRouting(
-                tunName = tunName,
-                fwmark = fwmark,
-                routeTable = routeTable,
-                bypassTable = bypassTable,
-                physicalRoute = physicalRoute,
-                bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
-                appTunRoutes = appRoutingPlan.tunRoutes,
-                managedAppRouteCount = persistedState.appProxyServerIds.size,
-                routeProfileIds = appRoutingPlan.routeProfileIds,
-            )
-        }
-        if (!routingResult.success) {
-            log.append(LogSource.APP, "Fast app routing update skipped: ${routingResult.error ?: "unknown routing error"}")
-            return false
-        }
-
-        stateFile.write(
-            persistedState.copy(
-                ipRulesApplied = true,
-                appProxyServerIds = appRoutingPlan.proxyServerIds,
-                physicalInterface = physicalRoute.dev,
-                physicalGateway = physicalRoute.gateway,
-                physicalTable = physicalRoute.table,
-            )
+        runtimeSettings: XrayRuntimeSettings,
+    ): Boolean =
+        activeRoutingUpdater.applyAppRoutingChanges(
+            connectedState = connectedState,
+            tunName = runtimeSettings.tunName,
+            fwmark = runtimeSettings.fwmark,
+            routeTable = runtimeSettings.routeTable,
         )
-        log.append(LogSource.APP, "App routing changes applied in ${SystemClock.elapsedRealtime() - startedAt} ms")
-        return true
-    }
-
-    sealed interface PhysicalRouteUpdateResult {
-        data class Applied(val route: TunManager.PhysicalRoute) : PhysicalRouteUpdateResult
-        data object RouteUnavailable : PhysicalRouteUpdateResult
-        data object RequiresReconnect : PhysicalRouteUpdateResult
-    }
 
     suspend fun reapplyPhysicalRoutingForNetworkChange(
         connectedState: ConnectionState.Connected,
-        tunName: String,
-        fwmark: Int,
-        routeTable: Int,
-    ): PhysicalRouteUpdateResult {
-        val startedAt = SystemClock.elapsedRealtime()
-        val persistedState = stateFile.read()
-        if (persistedState == null) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: active state file is missing")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
-        if (persistedState.tunName != tunName || persistedState.routeTable != routeTable || persistedState.fwmark != fwmark) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: active routing settings changed")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
-        if (!isProcessAlive(connectedState.corePid)) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: xray process is not running")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
-
-        val appRoutingPlan = try {
-            buildAppRoutingPlan(tunName, routeTable, includeProxyRoutes = false)
-        } catch (error: Exception) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: ${error.message ?: "could not build app routing plan"}")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
-
-        if (appRoutingPlan.proxyServerIds != persistedState.appProxyServerIds) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: app proxy routes changed")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
-
-        val physicalRoute = timedStep("Physical route detection") {
-            tunManager.detectPhysicalRoute(tunName)
-        } ?: return PhysicalRouteUpdateResult.RouteUnavailable
-
-        appRoutingPlan.tunRoutes.forEachIndexed { index, route ->
-            val appTunSetup = timedStep("App TUN check ${index + 1}") {
-                tunManager.configureTun(
-                    tunName = route.tunName,
-                    addressCidr = TunManager.appTunAddressCidr(index + 1),
-                ) { isProcessAlive(connectedState.corePid) }
-            }
-            if (!appTunSetup.success) {
-                log.append(
-                    LogSource.APP,
-                    "Physical routing refresh requires reconnect: ${appTunSetup.error ?: "app TUN ${route.tunName} is unavailable"}",
-                )
-                return PhysicalRouteUpdateResult.RequiresReconnect
-            }
-        }
-
-        val bypassTable = routeTable + 1
-        val routingResult = timedStep("IP routing refresh") {
-            tunManager.applyRouting(
-                tunName = tunName,
-                fwmark = fwmark,
-                routeTable = routeTable,
-                bypassTable = bypassTable,
-                physicalRoute = physicalRoute,
-                bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
-                appTunRoutes = appRoutingPlan.tunRoutes,
-                managedAppRouteCount = persistedState.appProxyServerIds.size,
-                routeProfileIds = appRoutingPlan.routeProfileIds,
-            )
-        }
-        if (!routingResult.success) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: ${routingResult.error ?: "unknown routing error"}")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
-
-        stateFile.write(
-            persistedState.copy(
-                ipRulesApplied = true,
-                appProxyServerIds = appRoutingPlan.proxyServerIds,
-                physicalInterface = physicalRoute.dev,
-                physicalGateway = physicalRoute.gateway,
-                physicalTable = physicalRoute.table,
-            )
+        runtimeSettings: XrayRuntimeSettings,
+    ): PhysicalRouteUpdateResult =
+        activeRoutingUpdater.reapplyPhysicalRoutingForNetworkChange(
+            connectedState = connectedState,
+            tunName = runtimeSettings.tunName,
+            fwmark = runtimeSettings.fwmark,
+            routeTable = runtimeSettings.routeTable,
         )
-        log.append(LogSource.APP, "Physical routing refreshed in ${SystemClock.elapsedRealtime() - startedAt} ms")
-        return PhysicalRouteUpdateResult.Applied(physicalRoute)
-    }
 
     suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? {
         if (!shell.open()) return null
@@ -566,273 +415,18 @@ class ConnectionManager(
         stateHolder.update(ConnectionState.Error(message))
     }
 
-    private suspend fun prepareLogFile() {
-        shell.execute("rm -f $logFile")
-        FileOutputStream(context.filesDir.resolve("xray.log"), false).use { }
-    }
+    suspend fun isProcessAlive(pid: Int): Boolean =
+        processSupervisor.isAlive(pid)
 
-    private suspend fun startXrayProcess(binDir: String): Int {
-        val command = buildString {
-            append("cd ${shellQuote(binDir)} && ")
-            append("${shellQuote(xrayBinary.binaryPath)} run -c ${shellQuote(xrayBinary.configPath())}")
-            append(" > ${shellQuote(logFile)} 2>&1 & printf '%s' \$!")
-        }
-        val result = shell.execute(command)
-        return result.output.trim().toIntOrNull() ?: -1
-    }
+    suspend fun killProcess(pid: Int, signal: Int = 15): Boolean =
+        processSupervisor.kill(pid, signal)
 
-    suspend fun isProcessAlive(pid: Int): Boolean {
-        if (pid <= 0) return false
-        return shell.execute("kill -0 $pid 2>/dev/null").isSuccess
-    }
-
-    suspend fun killProcess(pid: Int, signal: Int = 15): Boolean {
-        if (pid <= 0) return false
-        return shell.execute("kill -$signal $pid 2>/dev/null").isSuccess
-    }
-
-    private suspend fun buildAppRoutingPlan(
-        baseTunName: String,
-        baseRouteTable: Int,
-        includeProxyRoutes: Boolean,
-        defaultProxyServer: ServerConfig? = null,
-    ): AppRoutingPlan {
-        val assignments = appBypassDao.getAll()
-        val appSnapshot = appInventory.loadSnapshot()
-        val installedAppsByKey = appSnapshot.apps.associateBy { it.appKey }
-        val assignmentsWithUid = assignments.mapNotNull { assignment ->
-            val currentUid = installedAppsByKey[appKey(assignment.profileId, assignment.packageName)]?.uid
-            val uid = currentUid?.takeIf { it > 0 } ?: assignment.uid
-            if (uid > 0) assignment to uid else null
-        }
-        val assignmentUids = assignmentsWithUid
-            .map { (_, uid) -> uid }
-            .filter { it > 0 }
-            .toSet()
-
-        val directUids = assignmentsWithUid
-            .filter { (assignment, _) -> assignment.excluded }
-            .map { (_, uid) -> uid }
-            .filter { it > 0 }
-            .toSet()
-
-        val defaultProxyUids = assignmentsWithUid
-            .filter { (assignment, _) ->
-                !assignment.excluded &&
-                    assignment.serverId == null &&
-                    assignment.routeMode != ROUTE_MODE_DEFAULT_OUTBOUND
-            }
-            .map { (_, uid) -> uid }
-            .filter { it > 0 }
-            .toSet() + defaultSelectedUidsForUnassignedApps(appSnapshot.apps.map { it.uid }, assignmentUids)
-
-        val proxyAssignments = assignmentsWithUid
-            .filter { (assignment, uid) -> uid > 0 && assignment.serverId != null }
-            .groupBy { (assignment, _) -> requireNotNull(assignment.serverId) }
-            .toSortedMap()
-        val routeProfileIds = (appSnapshot.profileIds + assignmentUids.map(::profileIdForUid)).ifEmpty { setOf(0) }
-
-        if (defaultProxyUids.isEmpty() && proxyAssignments.isEmpty()) {
-            return AppRoutingPlan(
-                directUids = directUids,
-                proxyRoutes = emptyList(),
-                tunRoutes = emptyList(),
-                proxyServerIds = emptyList(),
-                routeProfileIds = routeProfileIds,
-            )
-        }
-
-        val routeGroupCount = proxyAssignments.size + if (defaultProxyUids.isNotEmpty()) 1 else 0
-        if (routeGroupCount > MAX_APP_PROXY_ROUTES) {
-            log.append(
-                LogSource.APP,
-                "Only the first $MAX_APP_PROXY_ROUTES app proxy server groups can be active at once; extra groups are ignored",
-            )
-        }
-
-        val proxyRoutes = mutableListOf<ConfigGenerator.AppProxyRoute>()
-        val tunRoutes = mutableListOf<TunManager.AppTunRoute>()
-        val proxyServerIds = mutableListOf<Long>()
-
-        fun <T> MutableList<T>.removeLastItem() {
-            if (isNotEmpty()) removeAt(lastIndex)
-        }
-
-        fun addTunRoute(routeKey: Long, uids: Set<Int>): String {
-            val routeIndex = tunRoutes.size + 1
-            val routeTunName = TunManager.appTunName(baseTunName, routeIndex)
-            proxyServerIds += routeKey
-            tunRoutes += TunManager.AppTunRoute(
-                tunName = routeTunName,
-                routeTable = TunManager.appRouteTable(baseRouteTable, routeIndex),
-                uids = uids,
-            )
-            return routeTunName
-        }
-
-        if (defaultProxyUids.isNotEmpty()) {
-            val routeTunName = addTunRoute(DEFAULT_SELECTED_CONFIG_ROUTE_ID, defaultProxyUids)
-            if (includeProxyRoutes) {
-                val activeServer = defaultProxyServer
-                if (activeServer == null) {
-                    log.append(LogSource.APP, "Skipping default selected config app route: active server is not ready")
-                    proxyServerIds.removeLastItem()
-                    tunRoutes.removeLastItem()
-                } else {
-                    proxyRoutes += ConfigGenerator.AppProxyRoute(
-                        inboundTag = DEFAULT_SELECTED_CONFIG_INBOUND_TAG,
-                        tunName = routeTunName,
-                        outboundTag = DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG,
-                        server = activeServer,
-                        applyRoutingRules = true,
-                    )
-                }
-            }
-        }
-
-        proxyAssignments.entries.take(MAX_APP_PROXY_ROUTES - tunRoutes.size).forEach { (serverId, assignments) ->
-            val uids = assignments.map { (_, uid) -> uid }.filter { it > 0 }.toSet()
-            if (uids.isEmpty()) return@forEach
-            val routeTunName = addTunRoute(serverId, uids)
-
-            if (!includeProxyRoutes) {
-                return@forEach
-            }
-
-            val serverEntity = serverRepository.getById(serverId)
-            if (serverEntity == null) {
-                log.append(LogSource.APP, "Skipping app route for missing server id=$serverId")
-                proxyServerIds.removeLastItem()
-                tunRoutes.removeLastItem()
-                return@forEach
-            }
-
-            val parsedServerResult = runCatching { serverRepository.parseConfig(serverEntity) }
-            if (parsedServerResult.isFailure) {
-                log.append(
-                    LogSource.APP,
-                    "Skipping app route for ${serverEntity.name}: ${parsedServerResult.exceptionOrNull()?.message}",
-                )
-                proxyServerIds.removeLastItem()
-                tunRoutes.removeLastItem()
-                return@forEach
-            }
-            val parsedServer = parsedServerResult.getOrThrow()
-
-            val routedServer = if (parsedServer.rawConfigJson.isNotBlank()) {
-                log.append(LogSource.APP, "Using raw outbound from ${parsedServer.name} for app routing")
-                parsedServer
-            } else {
-                val resolvedServer = serverAddressResolver.resolve(parsedServer)
-                if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
-                    error("Could not resolve ${parsedServer.address} for app route ${parsedServer.name}")
-                }
-                resolvedServer.server
-            }
-
-            val inboundTag = "app-in-$serverId"
-            val outboundTag = "app-proxy-$serverId"
-            proxyRoutes += ConfigGenerator.AppProxyRoute(
-                inboundTag = inboundTag,
-                tunName = routeTunName,
-                outboundTag = outboundTag,
-                server = routedServer,
-            )
-        }
-
-        return AppRoutingPlan(
-            directUids = directUids,
-            proxyRoutes = proxyRoutes,
-            tunRoutes = tunRoutes,
-            proxyServerIds = proxyServerIds,
-            routeProfileIds = routeProfileIds,
-        )
-    }
-
-    suspend fun readProcessResidentMemoryMb(pid: Int): Long? {
-        val rssKb = readProcessResidentMemoryKb(pid) ?: return null
-        return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
-    }
+    suspend fun readProcessResidentMemoryMb(pid: Int): Long? =
+        processSupervisor.readResidentMemoryMb(pid)
 
     private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
         val appUid = context.applicationInfo.uid
         return if (appUid > 0) directUids + appUid else directUids
-    }
-
-    private suspend fun readCrashReason(lines: Int = 80): String {
-        val crashLog = shell.execute("tail -n $lines ${shellQuote(logFile)} 2>/dev/null").output.trim()
-        return crashLog.lines().lastOrNull { it.isNotBlank() } ?: "xray process exited"
-    }
-
-    private suspend fun ensureNativeRuntimeExemptions() {
-        val packageName = context.packageName
-        val packageUid = context.applicationInfo.uid
-        val powerManager = context.getSystemService(PowerManager::class.java)
-
-        val wasIgnoringBatteryOptimizations =
-            powerManager?.isIgnoringBatteryOptimizations(packageName) == true
-        if (wasIgnoringBatteryOptimizations) {
-            log.append(LogSource.APP, "Battery optimizations already disabled for $packageName")
-        } else {
-            val result = shell.execute("cmd deviceidle whitelist +${shellQuote(packageName)}")
-            if (result.isSuccess) {
-                val nowIgnoringBatteryOptimizations =
-                    powerManager?.isIgnoringBatteryOptimizations(packageName) == true
-                log.append(
-                    LogSource.APP,
-                    if (nowIgnoringBatteryOptimizations) {
-                        "Added $packageName to the device idle whitelist"
-                    } else {
-                        "Requested device idle whitelist for $packageName"
-                    },
-                )
-            } else {
-                log.append(
-                    LogSource.APP,
-                    "Could not update device idle whitelist for $packageName: ${
-                        result.error.ifBlank { result.output }.ifBlank { "unknown error" }
-                    }",
-                )
-            }
-        }
-
-        if (packageUid > 0) {
-            val netPolicyResult = shell.execute("cmd netpolicy add restrict-background-whitelist $packageUid")
-            if (netPolicyResult.isSuccess) {
-                log.append(LogSource.APP, "Added uid=$packageUid to the background-data allowlist")
-            } else if (netPolicyResult.exitCode != 0) {
-                val details = netPolicyResult.error.ifBlank { netPolicyResult.output }.trim()
-                log.append(
-                    LogSource.APP,
-                    "Background-data allowlist update skipped for uid=$packageUid${
-                        details.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""
-                    }",
-                )
-            }
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val lowPowerStandbyExempt = powerManager?.isExemptFromLowPowerStandby() == true
-            log.append(
-                LogSource.APP,
-                if (lowPowerStandbyExempt) {
-                    "Low Power Standby exemption is active for $packageName"
-                } else {
-                    "Low Power Standby exemption is not active for $packageName"
-                },
-            )
-        }
-    }
-
-    private suspend fun readProcessResidentMemoryKb(pid: Int): Long? {
-        if (pid <= 0) return null
-
-        val statusResult = shell.execute("awk '/^VmRSS:/ { print \$2 }' /proc/$pid/status 2>/dev/null")
-        statusResult.output.trim().toLongOrNull()?.let { return it }
-
-        val statmResult = shell.execute("awk '{ print \$2 }' /proc/$pid/statm 2>/dev/null")
-        val rssPages = statmResult.output.trim().toLongOrNull() ?: return null
-        return rssPages * DEFAULT_MEMORY_PAGE_KB
     }
 
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
@@ -844,94 +438,4 @@ class ConnectionManager(
         }
     }
 
-    private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
-
-    private suspend fun logNamespaceDiagnostics(
-        stage: String,
-        tunName: String? = null,
-        xrayPid: Int? = null,
-    ) {
-        logCommand(
-            "$stage/current-netns",
-            "printf 'pid=%s self=%s pid1=%s\\n' \"$$\" \"$(readlink /proc/$$/ns/net 2>/dev/null)\" \"$(readlink /proc/1/ns/net 2>/dev/null)\"",
-            NetworkNamespace.CURRENT,
-        )
-
-        if (shell.defaultNetworkNamespace() == NetworkNamespace.INIT) {
-            logCommand(
-                "$stage/init-netns",
-                "printf 'pid=%s self=%s pid1=%s\\n' \"$$\" \"$(readlink /proc/$$/ns/net 2>/dev/null)\" \"$(readlink /proc/1/ns/net 2>/dev/null)\"",
-                NetworkNamespace.INIT,
-            )
-        }
-
-        if (tunName != null) {
-            logCommand(
-                "$stage/current-link",
-                "ip link show $tunName 2>/dev/null | head -n 1",
-                NetworkNamespace.CURRENT,
-            )
-            if (shell.defaultNetworkNamespace() == NetworkNamespace.INIT) {
-                logCommand(
-                    "$stage/init-link",
-                    "ip link show $tunName 2>/dev/null | head -n 1",
-                    NetworkNamespace.INIT,
-                )
-            }
-        }
-
-        if (xrayPid != null && xrayPid > 0) {
-            logCommand(
-                "$stage/xray-proc",
-                "if [ -d /proc/$xrayPid ]; then printf 'pid=$xrayPid net=%s\\n' \"$(readlink /proc/$xrayPid/ns/net 2>/dev/null)\"; tr '\\0' ' ' </proc/$xrayPid/cmdline 2>/dev/null; else echo 'pid=$xrayPid missing'; fi",
-                NetworkNamespace.CURRENT,
-            )
-            if (tunName != null) {
-                logCommand(
-                    "$stage/xray-link",
-                    "if [ -d /proc/$xrayPid ]; then nsenter -t $xrayPid -n -- ip link show $tunName 2>/dev/null | head -n 1; fi",
-                    NetworkNamespace.CURRENT,
-                )
-            }
-        }
-    }
-
-    private suspend fun logCommand(
-        label: String,
-        command: String,
-        namespace: NetworkNamespace,
-    ) {
-        val result = shell.execute(command, namespace)
-        val outputLines = result.output.lines().map { it.trimEnd() }.filter { it.isNotBlank() }
-        val errorLines = result.error.lines().map { it.trimEnd() }.filter { it.isNotBlank() }
-
-        if (outputLines.isEmpty() && errorLines.isEmpty()) {
-            log.append(LogSource.APP, "$label: exit=${result.exitCode}")
-            return
-        }
-
-        outputLines.forEach { log.append(LogSource.APP, "$label: $it") }
-        errorLines.forEach { log.append(LogSource.APP, "$label stderr: $it") }
-        if (!result.isSuccess) {
-            log.append(LogSource.APP, "$label: exit=${result.exitCode}")
-        }
-    }
-
-    private fun defaultSelectedUidsForUnassignedApps(
-        installedUids: List<Int>,
-        assignmentUids: Set<Int>,
-    ): Set<Int> = installedUids
-        .asSequence()
-        .filter { it > 0 && it !in assignmentUids }
-        .toSet()
-
-    companion object {
-        private const val DEFAULT_MEMORY_PAGE_KB = 4L
-        private const val KILOBYTES_PER_MEGABYTE = 1024L
-        private const val MAX_APP_PROXY_ROUTES = 64
-        private const val DEFAULT_SELECTED_CONFIG_ROUTE_ID = Long.MIN_VALUE
-        private const val DEFAULT_SELECTED_CONFIG_INBOUND_TAG = "app-in-default-selected"
-        private const val DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG = "proxy"
-        private const val ROUTE_MODE_DEFAULT_OUTBOUND = "default_outbound"
-    }
 }

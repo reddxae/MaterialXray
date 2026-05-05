@@ -1,6 +1,5 @@
 package com.material.xray.model
 
-import com.material.xray.data.db.entity.SubscriptionEntity
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -58,50 +57,6 @@ fun SubscriptionUserInfo.normalized(): SubscriptionUserInfo? {
         expire = expire?.takeIf { it > 0 },
     )
     return normalized.takeIf { it.hasValues() }
-}
-
-fun SubscriptionEntity.toSubscriptionMetadata(): SubscriptionMetadata? =
-    SubscriptionMetadata(
-        contentDisposition = contentDisposition,
-        contentType = contentType,
-        profileTitle = profileTitle,
-        profileUpdateIntervalHours = profileUpdateIntervalHours,
-        subscriptionUserInfo = SubscriptionUserInfo(
-            upload = subscriptionUploadBytes,
-            download = subscriptionDownloadBytes,
-            total = subscriptionTotalBytes,
-            expire = subscriptionExpireAt,
-        ).normalized(),
-        profileWebPageUrl = profileWebPageUrl,
-        announce = announce,
-        supportUrl = supportUrl,
-    ).normalized()
-
-fun SubscriptionEntity.withSubscriptionMetadata(
-    metadata: SubscriptionMetadata?,
-    resolvedUrl: String = url,
-    resolvedName: String = name,
-    lastUpdated: Long = this.lastUpdated,
-): SubscriptionEntity {
-    val normalizedMetadata = metadata?.normalized()
-    val userInfo = normalizedMetadata?.subscriptionUserInfo
-
-    return copy(
-        name = resolvedName,
-        url = resolvedUrl,
-        lastUpdated = lastUpdated,
-        contentDisposition = normalizedMetadata?.contentDisposition,
-        contentType = normalizedMetadata?.contentType,
-        profileTitle = normalizedMetadata?.profileTitle,
-        profileUpdateIntervalHours = normalizedMetadata?.profileUpdateIntervalHours,
-        subscriptionUploadBytes = userInfo?.upload,
-        subscriptionDownloadBytes = userInfo?.download,
-        subscriptionTotalBytes = userInfo?.total,
-        subscriptionExpireAt = userInfo?.expire,
-        profileWebPageUrl = normalizedMetadata?.profileWebPageUrl,
-        announce = normalizedMetadata?.announce,
-        supportUrl = normalizedMetadata?.supportUrl,
-    )
 }
 
 private fun String?.trimToNull(): String? =

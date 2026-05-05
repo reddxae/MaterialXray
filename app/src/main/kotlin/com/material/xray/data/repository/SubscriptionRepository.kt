@@ -6,7 +6,6 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.FetchedSubscription
 import com.material.xray.data.parser.SubscriptionFetcher
-import com.material.xray.model.withSubscriptionMetadata
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json

@@ -5,22 +5,20 @@ import android.content.Context
 import android.content.Intent
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.CleanupManager
-import com.material.xray.data.db.dao.ServerDao
+import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
-import com.material.xray.model.ServerConfig
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
 
     @Inject lateinit var settingsRepo: SettingsRepository
-    @Inject lateinit var serverDao: ServerDao
+    @Inject lateinit var serverRepository: ServerRepository
     @Inject lateinit var rootShell: RootShell
 
     override fun onReceive(context: Context, intent: Intent?) {
@@ -37,8 +35,8 @@ class BootReceiver : BroadcastReceiver() {
                 val lastServerId = settingsRepo.lastServerId.first()
                 if (lastServerId < 0) return@launch
 
-                val serverEntity = serverDao.getById(lastServerId) ?: return@launch
-                val config = Json.decodeFromString<ServerConfig>(serverEntity.configJson)
+                val serverEntity = serverRepository.getById(lastServerId) ?: return@launch
+                val config = serverRepository.parseConfig(serverEntity)
                 XrayService.connect(context, config)
             } finally {
                 pendingResult.finish()

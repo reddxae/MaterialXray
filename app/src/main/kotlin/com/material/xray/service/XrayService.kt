@@ -14,7 +14,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.material.xray.MainActivity
+import com.material.xray.R
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.network.CaptivePortalDetector
 import com.material.xray.core.root.RootShell
@@ -189,26 +189,10 @@ class XrayService : Service() {
         cleanStateFirst: Boolean = true,
         fastReconnect: Boolean = false,
     ) {
-        val tunName = settingsRepo.tunName.first()
-        val fwmark = settingsRepo.fwmark.first()
-        val routeTable = settingsRepo.routeTable.first()
-        val dns = settingsRepo.dnsServers.first()
-        val domesticDns = settingsRepo.domesticDnsServers.first()
-        val logLevel = settingsRepo.xrayLogLevel.first()
-        val defaultOutbound = settingsRepo.defaultOutbound.first()
-        val bypassLan = settingsRepo.bypassLan.first()
-        val routingRules = settingsRepo.routingRules.first()
+        val runtimeSettings = settingsRepo.runtimeSettingsSnapshot()
         connectionManager.connect(
             server = config,
-            tunName = tunName,
-            fwmark = fwmark,
-            routeTable = routeTable,
-            dnsServers = dns,
-            domesticDnsServers = domesticDns,
-            logLevel = logLevel,
-            defaultOutbound = defaultOutbound,
-            bypassLan = bypassLan,
-            routingRules = routingRules,
+            runtimeSettings = runtimeSettings,
             transitionState = transitionState,
             cleanStateFirst = cleanStateFirst,
             fastReconnect = fastReconnect,
@@ -244,9 +228,7 @@ class XrayService : Service() {
 
         val fastApplied = connectionManager.applyAppRoutingChanges(
             connectedState = connectedState,
-            tunName = settingsRepo.tunName.first(),
-            fwmark = settingsRepo.fwmark.first(),
-            routeTable = settingsRepo.routeTable.first(),
+            runtimeSettings = settingsRepo.runtimeSettingsSnapshot(),
         )
         if (fastApplied) {
             connectionStateHolder.update(connectedState)
@@ -526,12 +508,10 @@ class XrayService : Service() {
             when (val result = withContext(Dispatchers.IO) {
                 connectionManager.reapplyPhysicalRoutingForNetworkChange(
                     connectedState = latestState,
-                    tunName = settingsRepo.tunName.first(),
-                    fwmark = settingsRepo.fwmark.first(),
-                    routeTable = settingsRepo.routeTable.first(),
+                    runtimeSettings = settingsRepo.runtimeSettingsSnapshot(),
                 )
             }) {
-                is ConnectionManager.PhysicalRouteUpdateResult.Applied -> {
+                is PhysicalRouteUpdateResult.Applied -> {
                     connectionStateHolder.update(
                         latestState.copy(
                             physicalInterface = result.route.dev,
@@ -543,11 +523,11 @@ class XrayService : Service() {
                     updateNotification()
                     NetworkRetargetResult.Done
                 }
-                ConnectionManager.PhysicalRouteUpdateResult.RouteUnavailable -> {
+                PhysicalRouteUpdateResult.RouteUnavailable -> {
                     updateNotification("Waiting for physical route")
                     NetworkRetargetResult.Retry
                 }
-                ConnectionManager.PhysicalRouteUpdateResult.RequiresReconnect -> {
+                PhysicalRouteUpdateResult.RequiresReconnect -> {
                     reconnectForPhysicalRouteChange(latestConfig, latestState, currentRoute)
                     NetworkRetargetResult.Done
                 }
@@ -681,8 +661,9 @@ class XrayService : Service() {
     }
 
     private fun buildNotification(title: String, text: String, showDisconnectAction: Boolean): Notification {
+        val openAppIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent()
         val openIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+            this, 0, openAppIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val disconnectIntent = PendingIntent.getService(
             this, 1,
@@ -693,7 +674,7 @@ class XrayService : Service() {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setSmallIcon(R.drawable.ic_launcher_default_monochrome)
             .setContentIntent(openIntent)
             .setShowWhen(false)
             .setWhen(0)

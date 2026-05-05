@@ -30,13 +30,17 @@ data class AppInventorySnapshot(
     val profileIds: Set<Int>,
 )
 
+interface AppInventorySource {
+    suspend fun loadSnapshot(): AppInventorySnapshot
+}
+
 @Singleton
 class AppInventory @Inject constructor(
     @param:ApplicationContext private val context: Context,
-) {
+) : AppInventorySource {
     suspend fun loadInstalledApps(): List<InstalledApp> = loadSnapshot().apps
 
-    suspend fun loadSnapshot(): AppInventorySnapshot = withContext(Dispatchers.IO) {
+    override suspend fun loadSnapshot(): AppInventorySnapshot = withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val currentProfileId = profileIdForUid(context.applicationInfo.uid)
         val profiles = userProfiles()

@@ -1,14 +1,20 @@
 package com.material.xray.data.repository
 
 import android.content.Context
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
-import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayLogLevel
+import com.material.xray.model.XrayOutbound
 import com.material.xray.model.LauncherIcon
+import com.material.xray.model.XrayRuntimeSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -109,6 +115,19 @@ class SettingsRepository @Inject constructor(
             deletedDefaultRuleIds = prefs[DELETED_DEFAULT_ROUTING_RULE_IDS].orEmpty(),
         )
     }
+
+    suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings =
+        XrayRuntimeSettings(
+            tunName = tunName.first(),
+            fwmark = fwmark.first(),
+            routeTable = routeTable.first(),
+            dnsServers = dnsServers.first(),
+            domesticDnsServers = domesticDnsServers.first(),
+            logLevel = xrayLogLevel.first(),
+            defaultOutbound = defaultOutbound.first(),
+            bypassLan = bypassLan.first(),
+            routingRules = routingRules.first(),
+        )
 
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
     suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }

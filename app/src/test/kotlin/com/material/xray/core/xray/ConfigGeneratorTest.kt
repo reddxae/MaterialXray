@@ -5,8 +5,17 @@ import com.material.xray.model.RoutingRuleCatalog
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
-import kotlinx.serialization.json.*
-import org.junit.Assert.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConfigGeneratorTest {
@@ -270,7 +279,7 @@ class ConfigGeneratorTest {
         val config = generator.generate(
             vlessReality,
             appProxyRoutes = listOf(
-                ConfigGenerator.AppProxyRoute(
+                AppProxyRoute(
                     inboundTag = "app-in-42",
                     tunName = "xray0a1",
                     outboundTag = "app-proxy-42",
@@ -304,7 +313,7 @@ class ConfigGeneratorTest {
             defaultOutbound = XrayOutbound.Direct,
             routingRules = RoutingRuleCatalog.defaults(),
             appProxyRoutes = listOf(
-                ConfigGenerator.AppProxyRoute(
+                AppProxyRoute(
                     inboundTag = "app-in-default-selected",
                     tunName = "xray0a1",
                     outboundTag = "proxy",

@@ -4,6 +4,8 @@ Material Xray is an Android proxy client for rooted devices. It runs xray-core w
 
 The current app mode is native/root mode. A rootless `VpnService` mode is planned, but is not implemented yet.
 
+This project is AI-assisted.
+
 ## Features
 
 - Material Design 3 Jetpack Compose UI.

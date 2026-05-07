@@ -148,6 +148,10 @@ class AppsViewModel @Inject constructor(
 
     init { loadApps() }
 
+    fun refreshApps() {
+        loadApps()
+    }
+
     private fun loadApps() {
         viewModelScope.launch {
             _isLoadingApps.value = true

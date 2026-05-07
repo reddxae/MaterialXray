@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -218,46 +219,55 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
 @Composable
 fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
     val showSystemApps by viewModel.showSystemApps.collectAsStateWithLifecycle()
+    val isLoadingApps by viewModel.isLoadingApps.collectAsStateWithLifecycle()
     var pendingBulkAction by remember { mutableStateOf<BulkAppRouteAction?>(null) }
     var appRoutingMenuExpanded by remember { mutableStateOf(false) }
 
-    Box {
-        IconButton(onClick = { appRoutingMenuExpanded = true }) {
-            Icon(Icons.Default.MoreVert, contentDescription = "App routing menu")
-        }
-        DropdownMenu(
-            expanded = appRoutingMenuExpanded,
-            onDismissRequest = { appRoutingMenuExpanded = false },
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+            onClick = { viewModel.refreshApps() },
+            enabled = !isLoadingApps,
         ) {
-            DropdownMenuItem(
-                text = { Text("Clear proxied apps list") },
-                leadingIcon = { Icon(Icons.Default.Deselect, contentDescription = null) },
-                onClick = {
-                    appRoutingMenuExpanded = false
-                    pendingBulkAction = BulkAppRouteAction.ClearProxiedApps
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("Proxy all apps") },
-                leadingIcon = { Icon(Icons.Default.SelectAll, contentDescription = null) },
-                onClick = {
-                    appRoutingMenuExpanded = false
-                    pendingBulkAction = BulkAppRouteAction.ProxyAllApps
-                },
-            )
-            HorizontalDivider()
-            DropdownMenuItem(
-                text = { Text("Show system apps") },
-                trailingIcon = {
-                    Checkbox(
-                        checked = showSystemApps,
-                        onCheckedChange = null,
-                    )
-                },
-                onClick = {
-                    viewModel.setShowSystemApps(!showSystemApps)
-                },
-            )
+            Icon(Icons.Default.Refresh, contentDescription = "Refresh apps")
+        }
+        Box {
+            IconButton(onClick = { appRoutingMenuExpanded = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "App routing menu")
+            }
+            DropdownMenu(
+                expanded = appRoutingMenuExpanded,
+                onDismissRequest = { appRoutingMenuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Clear proxied apps list") },
+                    leadingIcon = { Icon(Icons.Default.Deselect, contentDescription = null) },
+                    onClick = {
+                        appRoutingMenuExpanded = false
+                        pendingBulkAction = BulkAppRouteAction.ClearProxiedApps
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Proxy all apps") },
+                    leadingIcon = { Icon(Icons.Default.SelectAll, contentDescription = null) },
+                    onClick = {
+                        appRoutingMenuExpanded = false
+                        pendingBulkAction = BulkAppRouteAction.ProxyAllApps
+                    },
+                )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Show system apps") },
+                    trailingIcon = {
+                        Checkbox(
+                            checked = showSystemApps,
+                            onCheckedChange = null,
+                        )
+                    },
+                    onClick = {
+                        viewModel.setShowSystemApps(!showSystemApps)
+                    },
+                )
+            }
         }
     }
 

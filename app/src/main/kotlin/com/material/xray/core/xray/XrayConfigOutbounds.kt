@@ -98,7 +98,9 @@ internal fun buildCoreOutbounds(
 }
 
 internal fun buildSockopt(fwmark: Int, physicalInterface: String?) = buildJsonObject {
-    put("mark", fwmark)
+    if (fwmark > 0) {
+        put("mark", fwmark)
+    }
     put("domainStrategy", "UseIP")
     if (!physicalInterface.isNullOrBlank()) {
         put("interface", physicalInterface)

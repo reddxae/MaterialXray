@@ -55,6 +55,7 @@ class SettingsRepository @Inject constructor(
         val ROUTING_RULES_VERSION = intPreferencesKey("routing_rules_version")
         val ROUTING_RULE_STATES = stringPreferencesKey("routing_rule_states")
         val DELETED_DEFAULT_ROUTING_RULE_IDS = stringSetPreferencesKey("deleted_default_routing_rule_ids")
+        val USE_ROOT_SERVICE = booleanPreferencesKey("use_root_service")
         private val LEGACY_GEO_DATA_BASE_URL = stringPreferencesKey("geo_data_base_url")
         private const val CURRENT_ROUTING_RULES_VERSION = 2
 
@@ -97,6 +98,9 @@ class SettingsRepository @Inject constructor(
     val appSpecificServerNoteShown: Flow<Boolean> = store.data.map { prefs ->
         prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] ?: false
     }
+    val useRootService: Flow<Boolean> = store.data.map { prefs ->
+        prefs[USE_ROOT_SERVICE] ?: false
+    }
     val geoipUrl: Flow<String> = store.data.map { prefs ->
         prefs[GEOIP_URL]
             ?: prefs[LEGACY_GEO_DATA_BASE_URL]?.let { legacyBaseUrl -> appendLegacyFileName(legacyBaseUrl, "geoip.dat") }
@@ -121,6 +125,7 @@ class SettingsRepository @Inject constructor(
             tunName = tunName.first(),
             fwmark = fwmark.first(),
             routeTable = routeTable.first(),
+            useRootService = useRootService.first(),
             dnsServers = dnsServers.first(),
             domesticDnsServers = domesticDnsServers.first(),
             logLevel = xrayLogLevel.first(),
@@ -162,6 +167,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setAppSpecificServerNoteShown(shown: Boolean) = store.edit { prefs ->
         prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] = shown
+    }
+    suspend fun setUseRootService(enabled: Boolean) = store.edit { prefs ->
+        prefs[USE_ROOT_SERVICE] = enabled
     }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
@@ -220,6 +228,7 @@ class SettingsRepository @Inject constructor(
             prefs[SHOW_ADVANCED_OPTIONS] = showAdvancedOptions
             prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] =
                 map["app_specific_server_note_shown"]?.toBooleanStrictOrNull() ?: false
+            prefs[USE_ROOT_SERVICE] = map["use_root_service"]?.toBooleanStrictOrNull() ?: false
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }

@@ -2,6 +2,7 @@
 build/
 .gradle/
 .kotlin/
+app/.cxx/
 local.properties
 
 # IDE
@@ -10,6 +11,9 @@ local.properties
 
 # xray binaries (downloaded via scripts/download-xray.sh)
 app/src/main/jniLibs/
+!app/src/main/jniLibs/
+!app/src/main/jniLibs/arm64-v8a/
+!app/src/main/jniLibs/arm64-v8a/libxray.so
 
 app/release/
 gradle/gradle-daemon-jvm.properties

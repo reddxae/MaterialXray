@@ -26,6 +26,7 @@ internal interface RoutingPlanBuilder {
         baseTunName: String,
         baseRouteTable: Int,
         includeProxyRoutes: Boolean,
+        includeTunRoutes: Boolean = true,
         defaultProxyServer: ServerConfig? = null,
     ): AppRoutingPlan
 }
@@ -41,6 +42,7 @@ internal class AppRoutingPlanner(
         baseTunName: String,
         baseRouteTable: Int,
         includeProxyRoutes: Boolean,
+        includeTunRoutes: Boolean,
         defaultProxyServer: ServerConfig?,
     ): AppRoutingPlan {
         val assignments = appBypassDao.getAll()
@@ -55,12 +57,23 @@ internal class AppRoutingPlanner(
             .map { it.uid }
             .filter { it > 0 }
             .toSet()
+        val routeProfileIds = (appSnapshot.profileIds + assignmentUids.map(::profileIdForUid)).ifEmpty { setOf(0) }
 
         val directUids = assignmentsWithUid
             .filter { it.route.mode == AppRouteMode.Direct || it.route.mode == AppRouteMode.Bypass }
             .map { it.uid }
             .filter { it > 0 }
             .toSet()
+
+        if (!includeTunRoutes) {
+            return AppRoutingPlan(
+                directUids = directUids,
+                proxyRoutes = emptyList(),
+                tunRoutes = emptyList(),
+                proxyServerIds = emptyList(),
+                routeProfileIds = routeProfileIds,
+            )
+        }
 
         val defaultProxyUids = assignmentsWithUid
             .filter { it.route.mode == AppRouteMode.DefaultSelected }
@@ -72,7 +85,6 @@ internal class AppRoutingPlanner(
             .filter { it.uid > 0 && it.route.mode == AppRouteMode.Server && it.route.serverId != null }
             .groupBy { requireNotNull(it.route.serverId) }
             .toSortedMap()
-        val routeProfileIds = (appSnapshot.profileIds + assignmentUids.map(::profileIdForUid)).ifEmpty { setOf(0) }
 
         if (defaultProxyUids.isEmpty() && proxyAssignments.isEmpty()) {
             return AppRoutingPlan(

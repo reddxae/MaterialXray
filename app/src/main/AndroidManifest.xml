@@ -57,7 +57,16 @@
         <service
             android:name=".service.XrayService"
             android:foregroundServiceType="specialUse"
-            android:exported="false" />
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            tools:ignore="VpnServicePolicy">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
+                android:value="false" />
+        </service>
 
         <receiver
             android:name=".service.BootReceiver"

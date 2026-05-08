@@ -20,11 +20,11 @@ class XrayBinaryTest {
         )
         val xrayBinary = XrayBinary(environment, supportedAbis = { arrayOf("arm64-v8a") })
 
-        assertTrue(xrayBinary.ensureExtracted())
+        assertTrue(xrayBinary.ensureRootBinaryExtracted())
 
         assertEquals("binary-v1", File(dir, "bin/xray").readText())
         assertEquals("1.0", File(dir, "bin/version").readText())
-        assertTrue(File(xrayBinary.binaryPath).canExecute())
+        assertTrue(File(xrayBinary.rootBinaryPath).canExecute())
     }
 
     @Test
@@ -39,9 +39,32 @@ class XrayBinaryTest {
             version = "1.0",
         )
 
-        assertTrue(XrayBinary(environment, supportedAbis = { arrayOf("arm64-v8a") }).ensureExtracted())
+        assertTrue(XrayBinary(environment, supportedAbis = { arrayOf("arm64-v8a") }).ensureRootBinaryExtracted())
 
         assertEquals("existing", File(binDir, "xray").readText())
+        assertFalse(environment.openedAssets.contains("xray_arm64"))
+    }
+
+    @Test
+    fun `ensureAndroidBinaryAvailable uses native library executable when available`() = withTempDir { dir ->
+        val nativeDir = File(dir, "lib").apply { mkdirs() }
+        val nativeBinary = File(nativeDir, "libxray.so").apply {
+            writeText("native")
+            setExecutable(true, false)
+        }
+        val environment = FakeEnvironment(
+            filesDir = dir,
+            nativeLibraryDir = nativeDir,
+            assets = mapOf("xray_arm64" to "asset"),
+            version = "1.0",
+        )
+        val xrayBinary = XrayBinary(environment, supportedAbis = { arrayOf("arm64-v8a") })
+
+        assertTrue(xrayBinary.ensureAndroidBinaryAvailable())
+
+        assertEquals(nativeBinary.absolutePath, xrayBinary.androidBinaryPath)
+        assertTrue(File(dir, "bin").isDirectory)
+        assertFalse(File(dir, "bin/xray").exists())
         assertFalse(environment.openedAssets.contains("xray_arm64"))
     }
 
@@ -49,7 +72,7 @@ class XrayBinaryTest {
     fun `ensureExtracted returns false for unsupported abi`() = withTempDir { dir ->
         val environment = FakeEnvironment(filesDir = dir)
 
-        assertFalse(XrayBinary(environment, supportedAbis = { arrayOf("armeabi-v7a") }).ensureExtracted())
+        assertFalse(XrayBinary(environment, supportedAbis = { arrayOf("armeabi-v7a") }).ensureRootBinaryExtracted())
         assertFalse(File(dir, "bin/xray").exists())
     }
 
@@ -65,6 +88,7 @@ class XrayBinaryTest {
 
     private class FakeEnvironment(
         override val filesDir: File,
+        override val nativeLibraryDir: File? = null,
         private val assets: Map<String, String> = emptyMap(),
         private val version: String = "test",
     ) : XrayBinaryEnvironment {

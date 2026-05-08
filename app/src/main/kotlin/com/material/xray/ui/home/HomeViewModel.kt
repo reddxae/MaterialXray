@@ -16,6 +16,7 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.ConnectionEvent
 import com.material.xray.service.RoutingChangeManager
 import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.service.XrayService
@@ -23,6 +24,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,6 +67,7 @@ class HomeViewModel @Inject constructor(
     private val latencySemaphore = Semaphore(MAX_PARALLEL_LATENCY_TESTS)
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
+    val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateHolder.events
 
     val subscriptions: StateFlow<List<SubscriptionEntity>> = subscriptionRepo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -84,6 +87,9 @@ class HomeViewModel @Inject constructor(
 
     val selectedServerId: StateFlow<Long> = settingsRepo.lastServerId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1L)
+
+    val useRootService: StateFlow<Boolean> = settingsRepo.useRootService
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val selectedServer: StateFlow<ServerConfig?> = combine(selectedServerId, allServers) { id, list ->
         list.find { it.id == id }?.let { runCatching { serverRepo.parseConfig(it) }.getOrNull() }
@@ -135,6 +141,10 @@ class HomeViewModel @Inject constructor(
     }
 
     private suspend fun detectTunnelInterfaceState(): ConnectionState? = withContext(Dispatchers.IO) {
+        if (!settingsRepo.useRootService.first()) {
+            return@withContext null
+        }
+
         val persistedState = stateFile.read()
         val activeTunName = settingsRepo.tunName.first().trim().ifBlank { DEFAULT_TUN_NAME }
 

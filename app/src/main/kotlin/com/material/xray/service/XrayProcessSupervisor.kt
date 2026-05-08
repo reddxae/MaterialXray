@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.PowerManager
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.XrayBinary
+import kotlinx.coroutines.delay
 import java.io.FileOutputStream
 import java.io.File
 
@@ -23,15 +24,19 @@ internal class RootShellCommandRunner(
 }
 
 internal interface XrayProcessBinary {
-    val binaryPath: String
+    val rootBinaryPath: String
+    val androidBinaryPath: String?
     fun configPath(): String
 }
 
 internal class XrayBinaryProcessBinary(
     private val xrayBinary: XrayBinary,
 ) : XrayProcessBinary {
-    override val binaryPath: String
-        get() = xrayBinary.binaryPath
+    override val rootBinaryPath: String
+        get() = xrayBinary.rootBinaryPath
+
+    override val androidBinaryPath: String?
+        get() = xrayBinary.androidBinaryPath
 
     override fun configPath(): String = xrayBinary.configPath()
 }
@@ -80,9 +85,28 @@ internal class XrayProcessSupervisor(
 
     suspend fun start(binDir: String): Int {
         val command = buildString {
+            append("config=${shellQuote(xrayBinary.configPath())}; ")
             append("cd ${shellQuote(binDir)} && ")
-            append("${shellQuote(xrayBinary.binaryPath)} run -c ${shellQuote(xrayBinary.configPath())}")
-            append(" > ${shellQuote(logFile)} 2>&1 & printf '%s' \$!")
+            append("env ")
+            xrayAssetEnvironment(binDir).forEach { (key, value) ->
+                append("${shellQuote("$key=$value")} ")
+            }
+            append("sh -c 'exec \"\$@\"' xray ")
+            append("${shellQuote(xrayBinary.rootBinaryPath)} run -c \"\$config\"")
+            append(" > ${shellQuote(logFile)} 2>&1 & ")
+            append("launcher=\$!; ")
+            append("found=\"\"; ")
+            append("i=0; ")
+            append("while [ \$i -lt 20 ]; do ")
+            append("for pid in \$(pidof xray 2>/dev/null); do ")
+            append("cmdline=\$(tr '\\0' ' ' < \"/proc/\$pid/cmdline\" 2>/dev/null) || continue; ")
+            append("case \"\$cmdline\" in *\"\$config\"*) found=\"\$pid\"; break;; esac; ")
+            append("done; ")
+            append("[ -n \"\$found\" ] && break; ")
+            append("sleep 0.05; ")
+            append("i=\$((i + 1)); ")
+            append("done; ")
+            append("printf '%s' \"\${found:-\$launcher}\"")
         }
         val result = commandRunner.execute(command)
         return result.output.trim().toIntOrNull() ?: -1
@@ -181,5 +205,151 @@ internal class XrayProcessSupervisor(
         private const val KILOBYTES_PER_MEGABYTE = 1024L
     }
 }
+
+internal class UserXrayProcessSupervisor(
+    private val environment: XrayRuntimeEnvironment,
+    private val xrayBinary: XrayProcessBinary,
+    private val processLauncher: UserXrayProcessLauncher = AndroidUserXrayProcessLauncher(),
+) : XrayProcessProbe {
+    private var pid: Int = -1
+    private val logFile: File
+        get() = environment.filesDir.resolve("xray.log")
+
+    fun prepareLogFile() {
+        FileOutputStream(logFile, false).use { }
+    }
+
+    fun start(binDir: String, tunFd: Int): Int {
+        val binaryPath = requireNotNull(xrayBinary.androidBinaryPath) { "Android xray binary is unavailable" }
+        pid = processLauncher.start(
+            binaryPath = binaryPath,
+            configPath = xrayBinary.configPath(),
+            workingDir = binDir,
+            logPath = logFile.absolutePath,
+            tunFd = tunFd,
+            environment = xrayAssetEnvironment(binDir),
+        )
+        return pid
+    }
+
+    override suspend fun isAlive(pid: Int): Boolean {
+        if (pid <= 0 || this.pid != pid) return false
+        return processLauncher.isAlive(pid)
+    }
+
+    suspend fun kill(pid: Int, signal: Int = 15): Boolean {
+        if (pid <= 0 || this.pid != pid) return false
+        return processLauncher.kill(pid, signal)
+    }
+
+    suspend fun stop() {
+        val stoppedPid = pid.takeIf { it > 0 } ?: return
+        processLauncher.kill(stoppedPid, signal = 15)
+        if (!waitUntilStopped(stoppedPid, STOP_GRACE_TIMEOUT_MS)) {
+            processLauncher.kill(stoppedPid, signal = 9)
+            waitUntilStopped(stoppedPid, KILL_GRACE_TIMEOUT_MS)
+        }
+        pid = -1
+    }
+
+    suspend fun readResidentMemoryMb(pid: Int): Long? {
+        val rssKb = File("/proc/$pid/status")
+            .takeIf { it.isFile }
+            ?.readLines()
+            ?.firstOrNull { it.startsWith("VmRSS:") }
+            ?.split(Regex("\\s+"))
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+            ?: return null
+        return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
+    }
+
+    suspend fun readCrashReason(lines: Int = 80): String =
+        logFile.takeIf { it.isFile }
+            ?.readLines()
+            ?.takeLast(lines)
+            ?.lastOrNull { it.isNotBlank() }
+            ?: "xray process exited"
+
+    private companion object {
+        private const val KILOBYTES_PER_MEGABYTE = 1024L
+        private const val STOP_GRACE_TIMEOUT_MS = 1_000L
+        private const val KILL_GRACE_TIMEOUT_MS = 500L
+        private const val STOP_POLL_INTERVAL_MS = 50L
+    }
+
+    private suspend fun waitUntilStopped(pid: Int, timeoutMs: Long): Boolean {
+        var elapsedMs = 0L
+        while (elapsedMs <= timeoutMs) {
+            if (!processLauncher.isAlive(pid)) return true
+            delay(STOP_POLL_INTERVAL_MS)
+            elapsedMs += STOP_POLL_INTERVAL_MS
+        }
+        return false
+    }
+}
+
+internal interface UserXrayProcessLauncher {
+    fun start(
+        binaryPath: String,
+        configPath: String,
+        workingDir: String,
+        logPath: String,
+        tunFd: Int,
+        environment: Map<String, String>,
+    ): Int
+
+    fun isAlive(pid: Int): Boolean
+
+    fun kill(pid: Int, signal: Int): Boolean
+}
+
+class AndroidUserXrayProcessLauncher : UserXrayProcessLauncher {
+    override fun start(
+        binaryPath: String,
+        configPath: String,
+        workingDir: String,
+        logPath: String,
+        tunFd: Int,
+        environment: Map<String, String>,
+    ): Int {
+        val env = (System.getenv() + environment)
+            .map { (key, value) -> "$key=$value" }
+            .toTypedArray()
+        return nativeStart(binaryPath, configPath, workingDir, logPath, tunFd, env)
+    }
+
+    override fun isAlive(pid: Int): Boolean = nativeIsAlive(pid)
+
+    override fun kill(pid: Int, signal: Int): Boolean = nativeKill(pid, signal)
+
+    private companion object {
+        init {
+            System.loadLibrary("xray_launcher")
+        }
+
+        @JvmStatic
+        external fun nativeStart(
+            binaryPath: String,
+            configPath: String,
+            workingDir: String,
+            logPath: String,
+            tunFd: Int,
+            environment: Array<String>,
+        ): Int
+
+        @JvmStatic
+        external fun nativeIsAlive(pid: Int): Boolean
+
+        @JvmStatic
+        external fun nativeKill(pid: Int, signal: Int): Boolean
+    }
+}
+
+private fun xrayAssetEnvironment(assetDir: String): Map<String, String> =
+    mapOf(
+        "xray.location.asset" to assetDir,
+        "XRAY_LOCATION_ASSET" to assetDir,
+    )
 
 internal fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"

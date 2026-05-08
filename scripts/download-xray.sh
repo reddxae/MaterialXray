@@ -3,27 +3,36 @@ set -euo pipefail
 
 VERSION="${1:-v26.3.27}"
 BASE_URL="https://github.com/XTLS/Xray-core/releases/download/${VERSION}"
+WORK_DIR="$(mktemp -d)"
 
-mkdir -p app/src/main/jniLibs/arm64-v8a
-mkdir -p app/src/main/jniLibs/armeabi-v7a
-mkdir -p app/src/main/jniLibs/x86_64
+cleanup() {
+  rm -rf "${WORK_DIR}"
+}
+trap cleanup EXIT
+
+download_xray() {
+  local archive_name="$1"
+  local destination="$2"
+  local unpack_dir="${WORK_DIR}/${archive_name%.zip}"
+
+  echo "Downloading ${archive_name}..."
+  curl -fL "${BASE_URL}/${archive_name}" -o "${WORK_DIR}/${archive_name}"
+  mkdir -p "${unpack_dir}"
+  unzip -qo "${WORK_DIR}/${archive_name}" xray -d "${unpack_dir}"
+  mkdir -p "$(dirname "${destination}")"
+  cp "${unpack_dir}/xray" "${destination}"
+  chmod 755 "${destination}"
+}
 
 echo "Downloading xray-core ${VERSION}..."
 
-curl -sL "${BASE_URL}/Xray-android-arm64-v8a.zip" -o /tmp/xray-arm64.zip
-unzip -o /tmp/xray-arm64.zip xray -d /tmp/xray-arm64
-mv /tmp/xray-arm64/xray app/src/main/jniLibs/arm64-v8a/libxray.so
-rm -rf /tmp/xray-arm64 /tmp/xray-arm64.zip
+# Root service mode needs the Linux binary: it creates and configures TUN from a root shell.
+download_xray "Xray-linux-arm64-v8a.zip" "app/src/main/assets/xray_arm64"
+chmod 644 "app/src/main/assets/xray_arm64"
 
-curl -sL "${BASE_URL}/Xray-android-arm32-v7a.zip" -o /tmp/xray-arm32.zip
-unzip -o /tmp/xray-arm32.zip xray -d /tmp/xray-arm32
-mv /tmp/xray-arm32/xray app/src/main/jniLibs/armeabi-v7a/libxray.so
-rm -rf /tmp/xray-arm32 /tmp/xray-arm32.zip
-
-curl -sL "${BASE_URL}/Xray-android-x86_64.zip" -o /tmp/xray-x86_64.zip
-unzip -o /tmp/xray-x86_64.zip xray -d /tmp/xray-x86_64
-mv /tmp/xray-x86_64/xray app/src/main/jniLibs/x86_64/libxray.so
-rm -rf /tmp/xray-x86_64 /tmp/xray-x86_64.zip
+# Rootless VpnService mode needs the Android binary: it consumes VpnService's tun fd via xray.tun.fd.
+download_xray "Xray-android-arm64-v8a.zip" "app/src/main/jniLibs/arm64-v8a/libxray.so"
 
 echo "Done."
-ls -lh app/src/main/jniLibs/*/libxray.so
+file app/src/main/assets/xray_arm64 app/src/main/jniLibs/arm64-v8a/libxray.so
+ls -lh app/src/main/assets/xray_arm64 app/src/main/jniLibs/arm64-v8a/libxray.so

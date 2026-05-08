@@ -52,6 +52,17 @@ android {
         targetSdk = 36
         versionCode = 200
         versionName = "0.2.0"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.31.6"
+        }
     }
 
     signingConfigs {
@@ -79,6 +90,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }

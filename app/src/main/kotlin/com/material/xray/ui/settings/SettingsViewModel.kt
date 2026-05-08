@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.material.xray.core.app.appKey
 import com.material.xray.core.app.parseAppKey
 import com.material.xray.core.launcher.LauncherIconManager
+import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.GeoDataAsset
 import com.material.xray.core.xray.GeoDataManager
 import com.material.xray.data.db.dao.AppBypassDao
@@ -52,12 +53,14 @@ class SettingsViewModel @Inject constructor(
     private val connectionStateHolder: ConnectionStateHolder,
     private val geoDataManager: GeoDataManager,
     private val launcherIconManager: LauncherIconManager,
+    private val rootShell: RootShell,
 ) : ViewModel() {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val _geoipUpdating = MutableStateFlow(false)
     private val _geositeUpdating = MutableStateFlow(false)
     private val _assetUpdateEvents = MutableSharedFlow<String>()
+    private val _rootAccessDeniedEvents = MutableSharedFlow<Unit>()
 
     val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
     val dnsServers =
@@ -79,6 +82,7 @@ class SettingsViewModel @Inject constructor(
             SettingsRepository.DEFAULT_LATENCY_DNS_SERVERS,
         )
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val useRootService = settingsRepo.useRootService.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val bypassLan = settingsRepo.bypassLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
         viewModelScope,
@@ -113,6 +117,7 @@ class SettingsViewModel @Inject constructor(
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
     val assetUpdateEvents: SharedFlow<String> = _assetUpdateEvents.asSharedFlow()
+    val rootAccessDeniedEvents: SharedFlow<Unit> = _rootAccessDeniedEvents.asSharedFlow()
 
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
     fun setDnsServers(servers: String) =
@@ -121,6 +126,23 @@ class SettingsViewModel @Inject constructor(
         updateXrayConfigStringSetting(servers, domesticDnsServers.value, settingsRepo::setDomesticDnsServers)
     fun setLatencyDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setLatencyDnsServers(servers) }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
+    fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == useRootService.value) return@launch
+        if (!enabled) {
+            settingsRepo.setUseRootService(false)
+            reloadActiveConnectionIfConnected()
+            return@launch
+        }
+
+        val rootAvailable = withContext(Dispatchers.IO) { rootShell.open() }
+        if (!rootAvailable) {
+            _rootAccessDeniedEvents.emit(Unit)
+            return@launch
+        }
+
+        settingsRepo.setUseRootService(true)
+        reloadActiveConnectionIfConnected()
+    }
     fun setBypassLan(enabled: Boolean) = viewModelScope.launch {
         if (enabled == bypassLan.value) return@launch
         settingsRepo.setBypassLan(enabled)

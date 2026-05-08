@@ -2,6 +2,9 @@ package com.material.xray.ui.home
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.net.VpnService
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -90,6 +93,7 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.endpointSummary
+import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,6 +102,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
+    val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
@@ -120,6 +125,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
     var autoUpdateSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
+    var showRootFallbackDialog by remember { mutableStateOf(false) }
     val selectedServerName = remember(selectedServer) { selectedServer?.name ?: "No server selected" }
     val selectedServerDetail = remember(selectedServer) {
         selectedServer?.endpointSummary() ?: "Select a server below"
@@ -130,9 +136,32 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val displayServerName = remember(connectionState, selectedServerName) {
         (connectionState as? ConnectionState.Connected)?.serverName ?: selectedServerName
     }
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.connect()
+        }
+    }
+    val startRootlessConnection = {
+        val vpnPermissionIntent = VpnService.prepare(context)
+        if (vpnPermissionIntent != null) {
+            vpnPermissionLauncher.launch(vpnPermissionIntent)
+        } else {
+            viewModel.connect()
+        }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.refreshTunnelInterfaceState()
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.connectionEvents.collect { event ->
+            when (event) {
+                ConnectionEvent.RootUnavailableFallback -> showRootFallbackDialog = true
+            }
+        }
     }
 
     DisposableEffect(lifecycleOwner, viewModel) {
@@ -178,7 +207,9 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     canStart = selectedServer != null,
                     onClick = {
                         if (isConnected) viewModel.disconnect()
-                        else if (!isTransitioning) viewModel.connect()
+                        else if (!isTransitioning) {
+                            if (useRootService) viewModel.connect() else startRootlessConnection()
+                        }
                     },
                     onViewConfig = { viewModel.showRunningConfig() },
                 )
@@ -240,6 +271,28 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             onConfirm = { name, url ->
                 viewModel.addSubscription(name, url)
                 showAddDialog = false
+            },
+        )
+    }
+
+    if (showRootFallbackDialog) {
+        AlertDialog(
+            onDismissRequest = { showRootFallbackDialog = false },
+            text = { Text("Unable to access root on device, falling back to rootless mode") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRootFallbackDialog = false
+                        startRootlessConnection()
+                    },
+                ) {
+                    Text("Continue")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRootFallbackDialog = false }) {
+                    Text("Cancel")
+                }
             },
         )
     }

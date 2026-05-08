@@ -1,8 +1,6 @@
 # Material Xray
 
-Material Xray is an Android proxy client for rooted devices. It runs xray-core with a native TUN inbound, manages the root-side process lifecycle, and routes device traffic through the selected outbound server using Linux policy routing.
-
-The current app mode is native/root mode. A rootless `VpnService` mode is planned, but is not implemented yet.
+Material Xray is an Android proxy client. It runs xray-core with a native TUN inbound, manages the process lifecycle, and routes device traffic through the selected outbound server using root-managed policy routing or Android `VpnService`.
 
 This project is AI-assisted.
 
@@ -24,13 +22,14 @@ This project is AI-assisted.
 ## Requirements
 
 - Android 8 or newer (actually tested on Android 14+). 
-- Root access with `su`.
+- Root access with `su` for root service mode.
 - Android SDK and a JDK compatible with the Gradle wrapper.
 - A connected Android device or emulator for install/debug flows.
 
 The app currently bundles:
 
-- `app/src/main/assets/xray_arm64`
+- `app/src/main/assets/xray_arm64` for root service mode.
+- `app/src/main/jniLibs/arm64-v8a/libxray.so` for rootless `VpnService` mode.
 
 Only arm64 is wired up at the moment.
 
@@ -70,7 +69,7 @@ When the pushed ref is a tag that starts with `v` such as `v1.3.2`, the workflow
 
 ## Runtime Notes
 
-Material Xray starts a root shell, extracts Xray into the app files directory, downloads `geoip.dat` and `geosite.dat` into the same runtime directory when needed, writes an Xray config, starts the Xray process, waits for the TUN interface, and then applies Android policy routing.
+Material Xray downloads `geoip.dat` and `geosite.dat` into the runtime directory when needed, writes an Xray config, starts the correct Xray build for the selected service mode, and then either applies Android policy routing in root service mode or passes the Android `VpnService` TUN fd to Xray in rootless mode.
 
 Xray's own outbound traffic is marked and bound to the detected physical interface so it does not get captured by the TUN route. When Android switches between Wi-Fi and cellular, the service debounces network callbacks, checks the live physical route, and reconnects Xray if the outbound interface changed.
 
@@ -82,7 +81,7 @@ The routing data download URLs are configurable in settings as direct file URLs 
 ```text
 app/src/main/kotlin/com/material/xray/
   core/root/      Root shell execution
-  core/xray/      Xray asset extraction, config, TUN and routing
+  core/xray/      Xray binary resolution, config, TUN and routing
   data/           Room database, repositories, subscription parsing
   model/          Server and connection state models
   service/        Foreground Xray service, logs, boot receiver
@@ -97,8 +96,13 @@ The repository includes a helper script for downloading Xray releases:
 ./scripts/download-xray.sh v26.3.27
 ```
 
-That script currently targets the older `jniLibs` layout, while the app uses `app/src/main/assets`. If you use it, copy or adapt the downloaded binary into the assets layout expected by `XrayBinary`.
+The script downloads two arm64 builds:
+
+- `Xray-linux-arm64-v8a.zip` -> `app/src/main/assets/xray_arm64` for root service mode.
+- `Xray-android-arm64-v8a.zip` -> `app/src/main/jniLibs/arm64-v8a/libxray.so` for rootless `VpnService` mode.
+
+The Android binary is stored under `jniLibs` so Android extracts it into the executable native library directory at install time.
 
 ## Status
 
-This is an early root-only implementation. Expect device-specific behavior around Android policy routing, root shell behavior, and network namespace handling.
+This is an early implementation. Expect device-specific behavior around Android policy routing, root shell behavior, `VpnService`, and network namespace handling.

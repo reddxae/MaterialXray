@@ -15,8 +15,13 @@ class XrayProcessSupervisorTest {
         val commands = FakeRootCommandRunner(
             resultForCommand = { command ->
                 assertTrue(command.contains("cd '/tmp/xray bin'"))
-                assertTrue(command.contains("'/tmp/xray bin/xray' run -c '/tmp/config dir/config.json'"))
-                assertTrue(command.contains("> '/tmp/runtime dir/xray.log' 2>&1 & printf '%s' ${'$'}!"))
+                assertTrue(command.contains("env 'xray.location.asset=/tmp/xray bin' 'XRAY_LOCATION_ASSET=/tmp/xray bin'"))
+                assertTrue(command.contains("sh -c 'exec \"\$@\"' xray"))
+                assertTrue(command.contains("config='/tmp/config dir/config.json'"))
+                assertTrue(command.contains("'/tmp/xray bin/xray' run -c \"\$config\""))
+                assertTrue(command.contains("> '/tmp/runtime dir/xray.log' 2>&1 & launcher=\$!"))
+                assertTrue(command.contains("pidof xray"))
+                assertTrue(command.contains("printf '%s' \"\${found:-\$launcher}\""))
                 RootShell.Result(exitCode = 0, output = "1234", error = "")
             }
         )
@@ -91,6 +96,32 @@ class XrayProcessSupervisorTest {
         assertTrue(log.entries.value.any { it.message.contains("background-data allowlist") })
     }
 
+    @Test
+    fun `user process stop waits for graceful exit`() = runTest {
+        val launcher = FakeUserXrayProcessLauncher(
+            alive = { pid, killedSignals -> pid == 42 && 15 !in killedSignals },
+        )
+        val supervisor = userSupervisor(processLauncher = launcher)
+        supervisor.start(binDir = "/tmp/xray bin", tunFd = 89)
+
+        supervisor.stop()
+
+        assertEquals(listOf(15), launcher.killedSignals)
+    }
+
+    @Test
+    fun `user process stop escalates to kill when process remains alive`() = runTest {
+        val launcher = FakeUserXrayProcessLauncher(
+            alive = { pid, killedSignals -> pid == 42 && 9 !in killedSignals },
+        )
+        val supervisor = userSupervisor(processLauncher = launcher)
+        supervisor.start(binDir = "/tmp/xray bin", tunFd = 89)
+
+        supervisor.stop()
+
+        assertEquals(listOf(15, 9), launcher.killedSignals)
+    }
+
     private fun supervisor(
         environment: XrayRuntimeEnvironment = FakeRuntimeEnvironment(),
         commandRunner: FakeRootCommandRunner = FakeRootCommandRunner(),
@@ -100,6 +131,15 @@ class XrayProcessSupervisorTest {
         commandRunner = commandRunner,
         xrayBinary = FakeXrayProcessBinary(),
         log = log,
+    )
+
+    private fun userSupervisor(
+        environment: XrayRuntimeEnvironment = FakeRuntimeEnvironment(),
+        processLauncher: UserXrayProcessLauncher = FakeUserXrayProcessLauncher(),
+    ) = UserXrayProcessSupervisor(
+        environment = environment,
+        xrayBinary = FakeXrayProcessBinary(),
+        processLauncher = processLauncher,
     )
 
     private class FakeRootCommandRunner(
@@ -116,7 +156,8 @@ class XrayProcessSupervisorTest {
     }
 
     private class FakeXrayProcessBinary : XrayProcessBinary {
-        override val binaryPath: String = "/tmp/xray bin/xray"
+        override val rootBinaryPath: String = "/tmp/xray bin/xray"
+        override val androidBinaryPath: String = "/tmp/android lib/libxray.so"
 
         override fun configPath(): String = "/tmp/config dir/config.json"
     }
@@ -131,5 +172,27 @@ class XrayProcessSupervisorTest {
         override fun isIgnoringBatteryOptimizations(): Boolean = ignoringBatteryOptimizations
 
         override fun isExemptFromLowPowerStandby(): Boolean = lowPowerStandbyExempt
+    }
+
+    private class FakeUserXrayProcessLauncher(
+        private val alive: (pid: Int, killedSignals: List<Int>) -> Boolean = { pid, _ -> pid == 42 },
+    ) : UserXrayProcessLauncher {
+        val killedSignals = mutableListOf<Int>()
+
+        override fun start(
+            binaryPath: String,
+            configPath: String,
+            workingDir: String,
+            logPath: String,
+            tunFd: Int,
+            environment: Map<String, String>,
+        ): Int = 42
+
+        override fun isAlive(pid: Int): Boolean = alive(pid, killedSignals)
+
+        override fun kill(pid: Int, signal: Int): Boolean {
+            killedSignals += signal
+            return true
+        }
     }
 }

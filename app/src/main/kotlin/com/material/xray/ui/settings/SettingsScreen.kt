@@ -47,6 +47,7 @@ import com.material.xray.model.LauncherIcon
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.components.ScrolledTopAppBar
+import androidx.compose.material3.AlertDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +57,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val domesticDnsServers by viewModel.domesticDnsServers.collectAsStateWithLifecycle()
     val latencyDnsServers by viewModel.latencyDnsServers.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
+    val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
     val bypassLan by viewModel.bypassLan.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
@@ -69,6 +71,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val scrollState = rememberScrollState()
     var defaultOutboundExpanded by remember { mutableStateOf(false) }
     var logLevelExpanded by remember { mutableStateOf(false) }
+    var showRootAccessDeniedDialog by remember { mutableStateOf(false) }
     val appVersion = remember(context) {
         runCatching {
             @Suppress("DEPRECATION")
@@ -112,6 +115,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         }
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.rootAccessDeniedEvents.collect {
+            showRootAccessDeniedDialog = true
+        }
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0.dp),
@@ -130,18 +139,36 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            Text("Service", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Use root service", style = MaterialTheme.typography.bodyLarge)
+                }
+                Switch(checked = useRootService, onCheckedChange = { viewModel.setUseRootService(it) })
+            }
+
+            HorizontalDivider()
             Text("Network", style = MaterialTheme.typography.titleMedium)
 
-            OutlinedTextField(
-                value = editingTunName,
-                onValueChange = { editingTunName = it },
-                label = { Text("TUN Interface Name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Default: xray0") },
-            )
-            if (hasTunNameChanges) {
-                Button(onClick = { viewModel.setTunName(editingTunName) }) { Text("Save") }
+            if (useRootService) {
+                OutlinedTextField(
+                    value = editingTunName,
+                    onValueChange = { editingTunName = it },
+                    label = { Text("TUN Interface Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Default: xray0") },
+                )
+                if (hasTunNameChanges) {
+                    Button(onClick = { viewModel.setTunName(editingTunName) }) { Text("Save") }
+                }
             }
 
             if (showAdvancedOptions) {
@@ -327,14 +354,28 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Auto-connect on boot", style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        "Reconnect to last server after device restart",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "Auto-connect on boot",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (useRootService) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
+                    if (!useRootService) {
+                        Text(
+                            "Root required",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
-                Switch(checked = autoConnect, onCheckedChange = { viewModel.setAutoConnect(it) })
+                Switch(
+                    checked = autoConnect,
+                    onCheckedChange = { viewModel.setAutoConnect(it) },
+                    enabled = useRootService,
+                )
             }
 
             HorizontalDivider()
@@ -392,5 +433,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Text("Material Xray v$appVersion", style = MaterialTheme.typography.bodyMedium)
             Text("xray-core v26.3.27", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+
+    if (showRootAccessDeniedDialog) {
+        AlertDialog(
+            onDismissRequest = { showRootAccessDeniedDialog = false },
+            text = { Text("Unable to access root on device") },
+            confirmButton = {
+                Button(onClick = { showRootAccessDeniedDialog = false }) {
+                    Text("OK")
+                }
+            },
+        )
     }
 }

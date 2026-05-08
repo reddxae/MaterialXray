@@ -27,6 +27,9 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                val useRootService = settingsRepo.useRootService.first()
+                if (!useRootService) return@launch
+
                 CleanupManager(context, rootShell).ensureCleanState()
 
                 val autoConnect = settingsRepo.autoConnect.first()

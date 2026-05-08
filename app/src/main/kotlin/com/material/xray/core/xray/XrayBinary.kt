@@ -7,6 +7,7 @@ import java.io.InputStream
 
 internal interface XrayBinaryEnvironment {
     val filesDir: File
+    val nativeLibraryDir: File?
     fun openAsset(name: String): InputStream
     fun appVersion(): String
 }
@@ -16,6 +17,9 @@ internal class AndroidXrayBinaryEnvironment(
 ) : XrayBinaryEnvironment {
     override val filesDir: File
         get() = context.filesDir
+
+    override val nativeLibraryDir: File?
+        get() = context.applicationInfo.nativeLibraryDir?.let(::File)
 
     override fun openAsset(name: String): InputStream = context.assets.open(name)
 
@@ -34,9 +38,14 @@ class XrayBinary internal constructor(
     )
 
     private val binaryDir = File(environment.filesDir, "bin")
-    val binaryPath: String get() = File(binaryDir, "xray").absolutePath
+    val rootBinaryPath: String get() = File(binaryDir, "xray").absolutePath
+    val androidBinaryPath: String?
+        get() = environment.nativeLibraryDir
+            ?.resolve("libxray.so")
+            ?.takeIf { it.isFile && it.canExecute() }
+            ?.absolutePath
 
-    fun ensureExtracted(): Boolean {
+    fun ensureRootBinaryExtracted(): Boolean {
         binaryDir.mkdirs()
 
         val assetName = when {
@@ -57,6 +66,11 @@ class XrayBinary internal constructor(
         }
 
         return File(binaryDir, "xray").let { it.exists() && it.canExecute() }
+    }
+
+    fun ensureAndroidBinaryAvailable(): Boolean {
+        binaryDir.mkdirs()
+        return androidBinaryPath != null
     }
 
     fun configPath(): String = File(environment.filesDir, "config.json").absolutePath

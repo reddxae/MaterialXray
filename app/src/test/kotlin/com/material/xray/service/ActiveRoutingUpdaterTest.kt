@@ -129,6 +129,7 @@ class ActiveRoutingUpdaterTest {
             baseTunName: String,
             baseRouteTable: Int,
             includeProxyRoutes: Boolean,
+            includeTunRoutes: Boolean,
             defaultProxyServer: com.material.xray.model.ServerConfig?,
         ): AppRoutingPlan = plan
     }

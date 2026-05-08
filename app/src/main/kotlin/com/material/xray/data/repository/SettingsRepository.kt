@@ -45,6 +45,7 @@ class SettingsRepository @Inject constructor(
         val LAST_SERVER_ID = longPreferencesKey("last_server_id")
         val GEOIP_URL = stringPreferencesKey("geoip_url")
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
+        val LATENCY_CHECK_URL = stringPreferencesKey("latency_check_url")
         val XRAY_LOG_LEVEL = stringPreferencesKey("xray_log_level")
         val LAST_XRAY_LOG_LEVEL = stringPreferencesKey("last_xray_log_level")
         val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
@@ -63,6 +64,7 @@ class SettingsRepository @Inject constructor(
             "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"
         const val DEFAULT_GEOSITE_URL =
             "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
+        const val DEFAULT_LATENCY_CHECK_URL = "https://gstatic.com/generate_204"
         const val DEFAULT_DNS_SERVERS = "1.1.1.1,1.0.0.1"
         const val DEFAULT_DOMESTIC_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         const val DEFAULT_LATENCY_DNS_SERVERS = "77.88.8.8,77.88.8.1"
@@ -110,6 +112,9 @@ class SettingsRepository @Inject constructor(
         prefs[GEOSITE_URL]
             ?: prefs[LEGACY_GEO_DATA_BASE_URL]?.let { legacyBaseUrl -> appendLegacyFileName(legacyBaseUrl, "geosite.dat") }
             ?: DEFAULT_GEOSITE_URL
+    }
+    val latencyCheckUrl: Flow<String> = store.data.map { prefs ->
+        prefs[LATENCY_CHECK_URL] ?: DEFAULT_LATENCY_CHECK_URL
     }
     val routingRules: Flow<List<RoutingRule>> = store.data.map { prefs ->
         decodeRoutingRules(
@@ -181,6 +186,10 @@ class SettingsRepository @Inject constructor(
         val trimmedUrl = url.trim()
         if (trimmedUrl.isEmpty()) prefs.remove(GEOSITE_URL) else prefs[GEOSITE_URL] = trimmedUrl
     }
+    suspend fun setLatencyCheckUrl(url: String) = store.edit { prefs ->
+        val trimmedUrl = url.trim()
+        if (trimmedUrl.isEmpty()) prefs.remove(LATENCY_CHECK_URL) else prefs[LATENCY_CHECK_URL] = trimmedUrl
+    }
     suspend fun setRoutingRule(rule: RoutingRule) = store.edit { prefs ->
         val updatedRules = decodeRoutingRules(
             rulesEncoded = prefs[ROUTING_RULES],
@@ -231,6 +240,7 @@ class SettingsRepository @Inject constructor(
             prefs[USE_ROOT_SERVICE] = map["use_root_service"]?.toBooleanStrictOrNull() ?: false
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
+            map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }
             map["routing_rules_version"]?.let { prefs[ROUTING_RULES_VERSION] = it.toIntOrNull() ?: CURRENT_ROUTING_RULES_VERSION }
             map["routing_rule_states"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULE_STATES] = it }

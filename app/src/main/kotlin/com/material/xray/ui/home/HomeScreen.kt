@@ -824,12 +824,14 @@ private fun ServerRow(
     onClick: () -> Unit,
     onTestLatency: () -> Unit,
 ) {
-    val latencyMs = server.latencyMs
-    val latencyText = latencyMs?.let {
+    val latency = server.latency
+    val latencyMs = latency?.latencyMs
+    val latencyText = latency?.let {
         when {
-            it == LATENCY_TESTING -> "Testing..."
-            it < 0 -> "Failed"
-            else -> "${it}ms"
+            it.latencyMs == LATENCY_TESTING -> "Testing..."
+            it.latencyMs < 0 -> "Failed"
+            it.usedTcpFallback -> "${it.latencyMs}ms (tcp)"
+            else -> "${it.latencyMs}ms"
         }
     }
     val latencyColor = when {

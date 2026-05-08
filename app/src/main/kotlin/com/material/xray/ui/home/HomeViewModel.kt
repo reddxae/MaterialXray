@@ -3,6 +3,7 @@ package com.material.xray.ui.home
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.material.xray.core.network.LatencyProbeResult
 import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
@@ -43,7 +44,12 @@ import javax.inject.Inject
 data class ServerListItem(
     val entity: ServerEntity,
     val endpointSummary: String,
-    val latencyMs: Int?,
+    val latency: ServerLatencyState?,
+)
+
+data class ServerLatencyState(
+    val latencyMs: Int,
+    val usedTcpFallback: Boolean = false,
 )
 
 const val LATENCY_TESTING = Int.MIN_VALUE
@@ -74,7 +80,7 @@ class HomeViewModel @Inject constructor(
 
     private val allServers: StateFlow<List<ServerEntity>> = serverRepo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    private val latencyByServerId = MutableStateFlow<Map<Long, Int>>(emptyMap())
+    private val latencyByServerId = MutableStateFlow<Map<Long, ServerLatencyState>>(emptyMap())
 
     val serverItems: StateFlow<List<ServerListItem>> = combine(allServers, latencyByServerId) { servers, latencies ->
         servers.map { it.toListItem(latencies[it.id]) }
@@ -257,7 +263,7 @@ class HomeViewModel @Inject constructor(
 
     fun testLatency(server: ServerEntity) {
         viewModelScope.launch {
-            latencyByServerId.update { it + (server.id to LATENCY_TESTING) }
+            latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING)) }
             val latency = measureLatency(server)
             latencyByServerId.update { it + (server.id to latency) }
         }
@@ -269,7 +275,7 @@ class HomeViewModel @Inject constructor(
                 .filter { it.subscriptionId == sub.id }
                 .forEach { server ->
                     launch {
-                        latencyByServerId.update { it + (server.id to LATENCY_TESTING) }
+                        latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING)) }
                         val latency = latencySemaphore.withPermit { measureLatency(server) }
                         latencyByServerId.update { it + (server.id to latency) }
                     }
@@ -281,7 +287,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             allServers.value.forEach { server ->
                 launch {
-                    latencyByServerId.update { it + (server.id to LATENCY_TESTING) }
+                    latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING)) }
                     val latency = latencySemaphore.withPermit { measureLatency(server) }
                     latencyByServerId.update { it + (server.id to latency) }
                 }
@@ -289,7 +295,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun ServerEntity.toListItem(latencyMs: Int?): ServerListItem {
+    private fun ServerEntity.toListItem(latency: ServerLatencyState?): ServerListItem {
         val summary = endpointSummaryCache.getOrPut(configJson) {
             runCatching {
                 val config = json.decodeFromString<ServerConfig>(configJson)
@@ -298,11 +304,24 @@ class HomeViewModel @Inject constructor(
                 "${protocol.lowercase()} • unknown • unknown"
             }
         }
-        return ServerListItem(entity = this, endpointSummary = summary, latencyMs = latencyMs)
+        return ServerListItem(entity = this, endpointSummary = summary, latency = latency)
     }
 
-    private suspend fun measureLatency(server: ServerEntity): Int =
-        serverLatencyTester.tcping(server.address, server.port)
+    private suspend fun measureLatency(server: ServerEntity): ServerLatencyState {
+        val config = runCatching { serverRepo.parseConfig(server) }.getOrNull()
+            ?: return ServerLatencyState(latencyMs = -1)
+        return serverLatencyTester.measure(
+            server = config,
+            probeUrl = settingsRepo.latencyCheckUrl.first(),
+            dnsServers = settingsRepo.latencyDnsServers.first(),
+        ).toUiState()
+    }
+
+    private fun LatencyProbeResult.toUiState(): ServerLatencyState =
+        ServerLatencyState(
+            latencyMs = latencyMs,
+            usedTcpFallback = usedTcpFallback,
+        )
 
     private suspend fun withRefreshTracking(block: suspend () -> Unit) {
         refreshOperations.update { it + 1 }
@@ -316,6 +335,6 @@ class HomeViewModel @Inject constructor(
     private companion object {
         const val DEFAULT_TUN_NAME = "xray0"
         const val AMBIGUOUS_TUN_NAME = "tun0"
-        const val MAX_PARALLEL_LATENCY_TESTS = 8
+        const val MAX_PARALLEL_LATENCY_TESTS = 1
     }
 }

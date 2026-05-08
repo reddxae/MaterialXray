@@ -114,6 +114,11 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         SettingsRepository.DEFAULT_GEOSITE_URL,
     )
+    val latencyCheckUrl = settingsRepo.latencyCheckUrl.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        SettingsRepository.DEFAULT_LATENCY_CHECK_URL,
+    )
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
     val assetUpdateEvents: SharedFlow<String> = _assetUpdateEvents.asSharedFlow()
@@ -171,6 +176,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }
     fun setGeositeUrl(url: String) = viewModelScope.launch { settingsRepo.setGeositeUrl(url) }
+    fun setLatencyCheckUrl(url: String) = viewModelScope.launch { settingsRepo.setLatencyCheckUrl(url) }
 
     fun updateGeoipAsset(url: String) {
         updateGeoDataAsset(

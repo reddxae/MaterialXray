@@ -65,6 +65,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
+    val latencyCheckUrl by viewModel.latencyCheckUrl.collectAsStateWithLifecycle()
     val geoipUpdating by viewModel.geoipUpdating.collectAsStateWithLifecycle()
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -85,6 +86,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var editingLatencyDns by remember(latencyDnsServers) { mutableStateOf(latencyDnsServers) }
     var editingGeoipUrl by remember(geoipUrl) { mutableStateOf(geoipUrl) }
     var editingGeositeUrl by remember(geositeUrl) { mutableStateOf(geositeUrl) }
+    var editingLatencyCheckUrl by remember(latencyCheckUrl) { mutableStateOf(latencyCheckUrl) }
     val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val hasTunNameChanges by remember(editingTunName, tunName) { derivedStateOf { editingTunName != tunName } }
     val hasDnsChanges by remember(editingDns, dnsServers) { derivedStateOf { editingDns != dnsServers } }
@@ -99,6 +101,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     }
     val hasGeositeUrlChanges by remember(editingGeositeUrl, geositeUrl) {
         derivedStateOf { editingGeositeUrl.trim() != geositeUrl }
+    }
+    val hasLatencyCheckUrlChanges by remember(editingLatencyCheckUrl, latencyCheckUrl) {
+        derivedStateOf { editingLatencyCheckUrl.trim() != latencyCheckUrl }
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -323,6 +328,22 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 enabled = !geositeUpdating,
             ) {
                 Text(if (geositeUpdating) "Updating..." else "Update")
+            }
+
+            if (showAdvancedOptions) {
+                OutlinedTextField(
+                    value = editingLatencyCheckUrl,
+                    onValueChange = { editingLatencyCheckUrl = it },
+                    label = { Text("Latency Check URL") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = {
+                        Text("HTTP endpoint used for node latency checks")
+                    },
+                )
+                if (hasLatencyCheckUrlChanges) {
+                    Button(onClick = { viewModel.setLatencyCheckUrl(editingLatencyCheckUrl) }) { Text("Save") }
+                }
             }
 
             Row(

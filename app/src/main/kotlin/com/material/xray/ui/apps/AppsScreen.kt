@@ -20,10 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +36,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -83,107 +83,116 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     }
     var editingApp by remember { mutableStateOf<AppItem?>(null) }
     var pendingSpecificServerRoute by remember { mutableStateOf<AppRouteSelection?>(null) }
+    val pullToRefreshState = rememberPullToRefreshState()
+    val showInitialLoading = isLoadingApps && apps.isEmpty()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (isLoadingApps) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-            return@Column
-        }
-
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { viewModel.setSearchQuery(it) },
-            label = { Text("Search apps") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 8.dp),
-        )
-
-        val fadeColor = MaterialTheme.colorScheme.surface
-        Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(
-                    items = apps,
-                    key = { it.appKey },
-                    contentType = { "app" },
-                ) { app ->
-                    ListItem(
-                        headlineContent = { Text(app.name) },
-                        supportingContent = {
-                            Text(
-                                text = if (app.workProfile) {
-                                    "${app.packageName} • ${app.profileLabel}"
-                                } else {
-                                    app.packageName
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        },
-                        leadingContent = {
-                            val iconBitmap = remember(app.appKey, app.icon, iconPixelSize) {
-                                app.icon?.toBitmap(iconPixelSize, iconPixelSize)?.asImageBitmap()
-                            }
-                            iconBitmap?.let { bitmap ->
-                                Image(
-                                    bitmap = bitmap,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(iconSize),
-                                )
-                            }
-                        },
-                        trailingContent = {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                                modifier = Modifier.width(176.dp),
-                            ) {
-                                Text(
-                                    text = app.routeTitle,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                        },
-                        modifier = Modifier.clickable { editingApp = app },
-                    )
+    PullToRefreshBox(
+        isRefreshing = isLoadingApps && !showInitialLoading,
+        onRefresh = { if (!isLoadingApps) viewModel.refreshApps() },
+        modifier = Modifier.fillMaxSize(),
+        state = pullToRefreshState,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showInitialLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
                 }
+                return@Column
             }
-            Box(
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
+                label = { Text("Search apps") },
+                singleLine = true,
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .height(8.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(fadeColor, fadeColor.copy(alpha = 0f)),
-                        ),
-                    ),
+                    .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 8.dp),
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(12.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(fadeColor.copy(alpha = 0f), fadeColor),
+
+            val fadeColor = MaterialTheme.colorScheme.surface
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(
+                        items = apps,
+                        key = { it.appKey },
+                        contentType = { "app" },
+                    ) { app ->
+                        ListItem(
+                            headlineContent = { Text(app.name) },
+                            supportingContent = {
+                                Text(
+                                    text = if (app.workProfile) {
+                                        "${app.packageName} • ${app.profileLabel}"
+                                    } else {
+                                        app.packageName
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            },
+                            leadingContent = {
+                                val iconBitmap = remember(app.appKey, app.icon, iconPixelSize) {
+                                    app.icon?.toBitmap(iconPixelSize, iconPixelSize)?.asImageBitmap()
+                                }
+                                iconBitmap?.let { bitmap ->
+                                    Image(
+                                        bitmap = bitmap,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(iconSize),
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                    modifier = Modifier.width(176.dp),
+                                ) {
+                                    Text(
+                                        text = app.routeTitle,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.End,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            },
+                            modifier = Modifier.clickable { editingApp = app },
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(fadeColor, fadeColor.copy(alpha = 0f)),
+                            ),
                         ),
-                    ),
-            )
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(12.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(fadeColor.copy(alpha = 0f), fadeColor),
+                            ),
+                        ),
+                )
+            }
         }
     }
 
@@ -219,6 +228,8 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
 @Composable
 fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
     val showSystemApps by viewModel.showSystemApps.collectAsStateWithLifecycle()
+    val showWorkProfileApps by viewModel.showWorkProfileApps.collectAsStateWithLifecycle()
+    val hasWorkProfileApps by viewModel.hasWorkProfileApps.collectAsStateWithLifecycle()
     val isLoadingApps by viewModel.isLoadingApps.collectAsStateWithLifecycle()
     var pendingBulkAction by remember { mutableStateOf<BulkAppRouteAction?>(null) }
     var appRoutingMenuExpanded by remember { mutableStateOf(false) }
@@ -239,19 +250,17 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
                 onDismissRequest = { appRoutingMenuExpanded = false },
             ) {
                 DropdownMenuItem(
-                    text = { Text("Clear proxied apps list") },
-                    leadingIcon = { Icon(Icons.Default.Deselect, contentDescription = null) },
+                    text = { Text("Reset to defaults") },
                     onClick = {
                         appRoutingMenuExpanded = false
-                        pendingBulkAction = BulkAppRouteAction.ClearProxiedApps
+                        pendingBulkAction = BulkAppRouteAction.ResetToDefaults
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("Proxy all apps") },
-                    leadingIcon = { Icon(Icons.Default.SelectAll, contentDescription = null) },
+                    text = { Text("Bypass all apps") },
                     onClick = {
                         appRoutingMenuExpanded = false
-                        pendingBulkAction = BulkAppRouteAction.ProxyAllApps
+                        pendingBulkAction = BulkAppRouteAction.BypassAllApps
                     },
                 )
                 HorizontalDivider()
@@ -267,6 +276,20 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
                         viewModel.setShowSystemApps(!showSystemApps)
                     },
                 )
+                if (hasWorkProfileApps) {
+                    DropdownMenuItem(
+                        text = { Text("Show work profile apps") },
+                        trailingIcon = {
+                            Checkbox(
+                                checked = showWorkProfileApps,
+                                onCheckedChange = null,
+                            )
+                        },
+                        onClick = {
+                            viewModel.setShowWorkProfileApps(!showWorkProfileApps)
+                        },
+                    )
+                }
             }
         }
     }
@@ -277,8 +300,8 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
             onDismiss = { pendingBulkAction = null },
             onConfirm = {
                 when (action) {
-                    BulkAppRouteAction.ClearProxiedApps -> viewModel.routeAllDirect()
-                    BulkAppRouteAction.ProxyAllApps -> viewModel.resetAllToDefault()
+                    BulkAppRouteAction.ResetToDefaults -> viewModel.resetAllToDefault()
+                    BulkAppRouteAction.BypassAllApps -> viewModel.bypassAllApps()
                 }
                 pendingBulkAction = null
             },
@@ -287,8 +310,8 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
 }
 
 private enum class BulkAppRouteAction {
-    ClearProxiedApps,
-    ProxyAllApps,
+    ResetToDefaults,
+    BypassAllApps,
 }
 
 private data class AppRouteSelection(
@@ -330,17 +353,17 @@ private fun BulkAppRouteConfirmationDialog(
     onConfirm: () -> Unit,
 ) {
     val title = when (action) {
-        BulkAppRouteAction.ClearProxiedApps -> "Clear proxied apps list?"
-        BulkAppRouteAction.ProxyAllApps -> "Proxy all apps?"
+        BulkAppRouteAction.ResetToDefaults -> "Reset to defaults?"
+        BulkAppRouteAction.BypassAllApps -> "Bypass all apps?"
     }
     val description = when (action) {
-        BulkAppRouteAction.ClearProxiedApps -> buildBulkActionDescription(
-            prefix = "All manual app routing settings will be ",
-            emphasized = "reset to \"Not proxied\"",
+        BulkAppRouteAction.ResetToDefaults -> buildBulkActionDescription(
+            prefix = "All apps routing settings will be ",
+            emphasized = "reset to the default selected config.",
         )
-        BulkAppRouteAction.ProxyAllApps -> buildBulkActionDescription(
-            prefix = "All manual app routing settings will be ",
-            emphasized = "reset to the default selected config",
+        BulkAppRouteAction.BypassAllApps -> buildBulkActionDescription(
+            prefix = "All apps routing settings will be ",
+            emphasized = "set to \"Not proxied\".",
         )
     }
 
@@ -369,7 +392,6 @@ private fun buildBulkActionDescription(
     pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
     append(emphasized)
     pop()
-    append(".")
 }
 
 @Composable

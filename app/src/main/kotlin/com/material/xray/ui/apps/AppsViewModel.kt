@@ -63,6 +63,12 @@ data class AppRouteOption(
     val serverId: Long? = null,
 )
 
+private data class AppListFilters(
+    val searchQuery: String,
+    val showSystemApps: Boolean,
+    val showWorkProfileApps: Boolean,
+)
+
 @HiltViewModel
 class AppsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -79,6 +85,9 @@ class AppsViewModel @Inject constructor(
     private val _showSystemApps = MutableStateFlow(false)
     val showSystemApps: StateFlow<Boolean> = _showSystemApps
 
+    private val _showWorkProfileApps = MutableStateFlow(true)
+    val showWorkProfileApps: StateFlow<Boolean> = _showWorkProfileApps
+
     private val _isLoadingApps = MutableStateFlow(true)
     val isLoadingApps: StateFlow<Boolean> = _isLoadingApps
 
@@ -89,11 +98,17 @@ class AppsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _installedApps = MutableStateFlow<List<AppItem>>(emptyList())
+    private val _hasWorkProfileApps = MutableStateFlow(false)
+    val hasWorkProfileApps: StateFlow<Boolean> = _hasWorkProfileApps
 
     val routeOptions: StateFlow<List<AppRouteOption>> = combine(
         serverRepository.observeAll(),
         settingsRepository.showAdvancedOptions,
-    ) { servers, showAdvancedOptions ->
+        settingsRepository.useRootService,
+    ) { servers, showAdvancedOptions, useRootService ->
+            if (!useRootService) {
+                return@combine listOf(DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION)
+            }
             buildList {
                 if (showAdvancedOptions) add(INHERIT_ROUTE_OPTION)
                 add(DEFAULT_ROUTE_OPTION)
@@ -108,13 +123,25 @@ class AppsViewModel @Inject constructor(
             listOf(DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION),
         )
 
+    private val appListFilters = combine(
+        _searchQuery,
+        _showSystemApps,
+        _showWorkProfileApps,
+    ) { searchQuery, showSystemApps, showWorkProfileApps ->
+        AppListFilters(
+            searchQuery = searchQuery,
+            showSystemApps = showSystemApps,
+            showWorkProfileApps = showWorkProfileApps,
+        )
+    }
+
     val apps: StateFlow<List<AppItem>> = combine(
         _installedApps,
         bypassedApps,
-        _searchQuery,
-        _showSystemApps,
+        appListFilters,
         routeOptions,
-    ) { installed, assignments, query, showSystemApps, options ->
+        settingsRepository.useRootService,
+    ) { installed, assignments, filters, options, useRootService ->
         val assignmentByApp = assignments.associateBy { appKey(it.profileId, it.packageName) }
         val serverOptionsById = options
             .filter { it.kind == AppRouteKind.SERVER && it.serverId != null }
@@ -122,7 +149,7 @@ class AppsViewModel @Inject constructor(
         installed
             .map { app ->
                 val assignment = assignmentByApp[app.appKey]
-                val option = app.resolveRouteOption(assignment, serverOptionsById)
+                val option = app.resolveRouteOption(assignment, serverOptionsById, useRootService)
                 app.copy(
                     routeKey = option.key,
                     routeKind = option.kind,
@@ -131,12 +158,13 @@ class AppsViewModel @Inject constructor(
                     routeDescription = option.description,
                 )
             }
-            .filter { showSystemApps || !it.systemApp }
+            .filter { filters.showSystemApps || !it.systemApp }
+            .filter { filters.showWorkProfileApps || !it.workProfile }
             .filter {
-                query.isEmpty() ||
-                    it.name.contains(query, ignoreCase = true) ||
-                    it.packageName.contains(query, ignoreCase = true) ||
-                    it.profileLabel.contains(query, ignoreCase = true)
+                filters.searchQuery.isEmpty() ||
+                    it.name.contains(filters.searchQuery, ignoreCase = true) ||
+                    it.packageName.contains(filters.searchQuery, ignoreCase = true) ||
+                    it.profileLabel.contains(filters.searchQuery, ignoreCase = true)
             }
             .sortedWith(
                 compareBy<AppItem> { !it.manuallyRouted }
@@ -155,31 +183,34 @@ class AppsViewModel @Inject constructor(
     private fun loadApps() {
         viewModelScope.launch {
             _isLoadingApps.value = true
-            val apps = runCatching {
+            val snapshot = runCatching {
                 withContext(Dispatchers.IO) {
-                    appInventory.loadInstalledApps()
-                        .filterNot { it.packageName == context.packageName }
-                        .map { app ->
-                            AppItem(
-                                appKey = app.appKey,
-                                packageName = app.packageName,
-                                name = app.name,
-                                uid = app.uid,
-                                icon = app.icon,
-                                systemApp = app.systemApp,
-                                profileId = app.profileId,
-                                profileLabel = app.profileLabel,
-                                workProfile = app.workProfile,
-                                routeKey = DEFAULT_ROUTE_OPTION.key,
-                                routeKind = DEFAULT_ROUTE_OPTION.kind,
-                                manuallyRouted = false,
-                                routeTitle = DEFAULT_ROUTE_OPTION.title,
-                                routeDescription = DEFAULT_ROUTE_OPTION.description,
-                            )
-                        }
-                        .sortedBy { it.name.lowercase() }
+                    appInventory.loadSnapshot()
                 }
-            }.getOrDefault(emptyList())
+            }.getOrNull()
+            _hasWorkProfileApps.value = snapshot?.profileIds.orEmpty().size > 1
+            val apps = snapshot?.apps
+                .orEmpty()
+                .filterNot { it.packageName == context.packageName }
+                .map { app ->
+                    AppItem(
+                        appKey = app.appKey,
+                        packageName = app.packageName,
+                        name = app.name,
+                        uid = app.uid,
+                        icon = app.icon,
+                        systemApp = app.systemApp,
+                        profileId = app.profileId,
+                        profileLabel = app.profileLabel,
+                        workProfile = app.workProfile,
+                        routeKey = DEFAULT_ROUTE_OPTION.key,
+                        routeKind = DEFAULT_ROUTE_OPTION.kind,
+                        manuallyRouted = false,
+                        routeTitle = DEFAULT_ROUTE_OPTION.title,
+                        routeDescription = DEFAULT_ROUTE_OPTION.description,
+                    )
+                }
+                .sortedBy { it.name.lowercase() }
             _installedApps.value = apps
             _isLoadingApps.value = false
         }
@@ -206,13 +237,17 @@ class AppsViewModel @Inject constructor(
         _showSystemApps.value = show
     }
 
+    fun setShowWorkProfileApps(show: Boolean) {
+        _showWorkProfileApps.value = show
+    }
+
     fun setAppSpecificServerNoteShown() {
         viewModelScope.launch {
             settingsRepository.setAppSpecificServerNoteShown(true)
         }
     }
 
-    fun routeAllDirect() {
+    fun bypassAllApps() {
         viewModelScope.launch {
             _installedApps.value.forEach {
                 appBypassDao.upsert(
@@ -247,8 +282,16 @@ class AppsViewModel @Inject constructor(
     private fun AppItem.resolveRouteOption(
         assignment: AppBypassEntity?,
         serverOptionsById: Map<Long, AppRouteOption>,
+        useRootService: Boolean,
     ): AppRouteOption {
         if (assignment == null) return DEFAULT_ROUTE_OPTION
+        if (!useRootService) {
+            return when (assignment.routeAssignment()) {
+                AppRouteAssignment(AppRouteMode.Direct),
+                AppRouteAssignment(AppRouteMode.Bypass) -> DIRECT_ROUTE_OPTION
+                else -> DEFAULT_ROUTE_OPTION
+            }
+        }
         return when (val routeAssignment = assignment.routeAssignment()) {
             AppRouteAssignment(AppRouteMode.Direct) -> DIRECT_ROUTE_OPTION
             AppRouteAssignment(AppRouteMode.Bypass) -> BYPASS_ROUTE_OPTION

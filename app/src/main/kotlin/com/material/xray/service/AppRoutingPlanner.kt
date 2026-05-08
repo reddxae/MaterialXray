@@ -28,6 +28,7 @@ internal interface RoutingPlanBuilder {
         includeProxyRoutes: Boolean,
         includeTunRoutes: Boolean = true,
         defaultProxyServer: ServerConfig? = null,
+        allowIpv6: Boolean = false,
     ): AppRoutingPlan
 }
 
@@ -44,6 +45,7 @@ internal class AppRoutingPlanner(
         includeProxyRoutes: Boolean,
         includeTunRoutes: Boolean,
         defaultProxyServer: ServerConfig?,
+        allowIpv6: Boolean,
     ): AppRoutingPlan {
         val assignments = appBypassDao.getAll()
         val appSnapshot = appInventory.loadRoutingSnapshot()
@@ -177,7 +179,7 @@ internal class AppRoutingPlanner(
                 log.append(LogSource.APP, "Using raw outbound from ${parsedServer.name} for app routing")
                 parsedServer
             } else {
-                val resolvedServer = serverAddressResolver.resolve(parsedServer)
+                val resolvedServer = serverAddressResolver.resolve(parsedServer, allowIpv6)
                 if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
                     error("Could not resolve ${parsedServer.address} for app route ${parsedServer.name}")
                 }

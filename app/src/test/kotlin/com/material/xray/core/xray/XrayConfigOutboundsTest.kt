@@ -34,12 +34,15 @@ class XrayConfigOutboundsTest {
     fun `buildSockopt includes fwmark domain strategy and optional physical interface`() {
         val withInterface = buildSockopt(fwmark = 255, physicalInterface = "wlan0")
         assertEquals("255", withInterface.getValue("mark").jsonPrimitive.content)
-        assertEquals("UseIP", withInterface.getValue("domainStrategy").jsonPrimitive.content)
+        assertEquals("UseIPv4", withInterface.getValue("domainStrategy").jsonPrimitive.content)
         assertEquals("wlan0", withInterface.getValue("interface").jsonPrimitive.content)
 
         val withoutInterface = buildSockopt(fwmark = 7, physicalInterface = "")
         assertEquals("7", withoutInterface.getValue("mark").jsonPrimitive.content)
         assertFalse("interface" in withoutInterface)
+
+        val withIpv6 = buildSockopt(fwmark = 0, physicalInterface = null, allowIpv6 = true)
+        assertEquals("UseIP", withIpv6.getValue("domainStrategy").jsonPrimitive.content)
     }
 
     @Test

@@ -27,9 +27,12 @@ class ServerAddressResolver {
 
     private val directExecutor = Executor { it.run() }
 
-    suspend fun resolve(server: ServerConfig): Result = withContext(Dispatchers.IO) {
+    suspend fun resolve(server: ServerConfig, allowIpv6: Boolean = false): Result = withContext(Dispatchers.IO) {
         val host = server.address.trim()
         if (host.isEmpty() || isNumericAddress(host)) {
+            if (!allowIpv6 && isIpv6Address(host)) {
+                return@withContext Result(server, attempted = true, selectedAddress = null, candidates = emptyList())
+            }
             return@withContext Result(server, attempted = false, selectedAddress = null, candidates = emptyList())
         }
 
@@ -43,7 +46,7 @@ class ServerAddressResolver {
             }
             val okHttpDns = async { resolveWithOkHttpDns(host) }
             (androidDns.await() + okHttpDns.await()).distinct()
-        }
+        }.filter { allowIpv6 || !isIpv6Address(it) }
         if (candidates.isEmpty()) {
             return@withContext Result(server, attempted = true, selectedAddress = null, candidates = emptyList())
         }
@@ -79,6 +82,11 @@ class ServerAddressResolver {
             return runCatching { InetAddress.getByName(value) }.isSuccess
         }
         return ipv4Pattern.matches(value) && value.split('.').all { it.toIntOrNull() in 0..255 }
+    }
+
+    private fun isIpv6Address(host: String): Boolean {
+        val value = host.trim('[', ']')
+        return value.contains(':') && runCatching { InetAddress.getByName(value) }.isSuccess
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)

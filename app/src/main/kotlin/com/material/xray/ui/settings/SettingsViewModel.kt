@@ -84,6 +84,7 @@ class SettingsViewModel @Inject constructor(
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val useRootService = settingsRepo.useRootService.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val bypassLan = settingsRepo.bypassLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val allowIpv6 = settingsRepo.allowIpv6.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -151,6 +152,11 @@ class SettingsViewModel @Inject constructor(
     fun setBypassLan(enabled: Boolean) = viewModelScope.launch {
         if (enabled == bypassLan.value) return@launch
         settingsRepo.setBypassLan(enabled)
+        reloadActiveConnectionIfConnected()
+    }
+    fun setAllowIpv6(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == allowIpv6.value) return@launch
+        settingsRepo.setAllowIpv6(enabled)
         reloadActiveConnectionIfConnected()
     }
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {

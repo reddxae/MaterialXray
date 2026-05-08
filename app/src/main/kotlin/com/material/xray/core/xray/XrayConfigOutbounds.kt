@@ -42,31 +42,36 @@ internal fun buildProxyOutbound(
     fwmark: Int,
     physicalInterface: String?,
     tag: String,
+    allowIpv6: Boolean = false,
 ): JsonObject {
     if (server.rawConfigJson.isNotBlank()) {
-        return buildRawProxyOutbound(server.rawConfigJson, fwmark, physicalInterface, tag)
+        return buildRawProxyOutbound(server.rawConfigJson, fwmark, physicalInterface, tag, allowIpv6)
     }
 
     return buildJsonObject {
         put("tag", tag)
         put("protocol", server.protocol.scheme)
         put("settings", buildOutboundSettings(server))
-        put("streamSettings", buildStreamSettings(server, fwmark, physicalInterface))
+        put("streamSettings", buildStreamSettings(server, fwmark, physicalInterface, allowIpv6))
     }
 }
 
-internal fun buildDirectOutbound(fwmark: Int, physicalInterface: String?) = buildJsonObject {
+internal fun buildDirectOutbound(fwmark: Int, physicalInterface: String?, allowIpv6: Boolean = false) = buildJsonObject {
     put("tag", "direct")
     put("protocol", "freedom")
-    put("settings", buildJsonObject {})
-    put("streamSettings", buildJsonObject { put("sockopt", buildSockopt(fwmark, physicalInterface)) })
+    put("settings", buildJsonObject {
+        if (!allowIpv6) {
+            put("domainStrategy", "UseIPv4")
+        }
+    })
+    put("streamSettings", buildJsonObject { put("sockopt", buildSockopt(fwmark, physicalInterface, allowIpv6)) })
 }
 
-internal fun buildDnsOutbound(fwmark: Int, physicalInterface: String?) = buildJsonObject {
+internal fun buildDnsOutbound(fwmark: Int, physicalInterface: String?, allowIpv6: Boolean = false) = buildJsonObject {
     put("tag", "dns-out")
     put("protocol", "dns")
     put("settings", buildJsonObject {})
-    put("streamSettings", buildJsonObject { put("sockopt", buildSockopt(fwmark, physicalInterface)) })
+    put("streamSettings", buildJsonObject { put("sockopt", buildSockopt(fwmark, physicalInterface, allowIpv6)) })
 }
 
 internal fun buildBlockOutbound() = buildJsonObject {
@@ -97,11 +102,11 @@ internal fun buildCoreOutbounds(
     }
 }
 
-internal fun buildSockopt(fwmark: Int, physicalInterface: String?) = buildJsonObject {
+internal fun buildSockopt(fwmark: Int, physicalInterface: String?, allowIpv6: Boolean = false) = buildJsonObject {
     if (fwmark > 0) {
         put("mark", fwmark)
     }
-    put("domainStrategy", "UseIP")
+    put("domainStrategy", if (allowIpv6) "UseIP" else "UseIPv4")
     if (!physicalInterface.isNullOrBlank()) {
         put("interface", physicalInterface)
     }
@@ -112,6 +117,7 @@ private fun buildRawProxyOutbound(
     fwmark: Int,
     physicalInterface: String?,
     tag: String,
+    allowIpv6: Boolean,
 ): JsonObject {
     val rawObject = Json.parseToJsonElement(rawJson).jsonObject
     val outbounds = rawObject["outbounds"]?.jsonArray?.mapNotNull { it as? JsonObject }.orEmpty()
@@ -124,7 +130,7 @@ private fun buildRawProxyOutbound(
 
     val outbound = candidate.toMutableMap()
     val stream = (outbound["streamSettings"] as? JsonObject)?.toMutableMap() ?: mutableMapOf()
-    stream["sockopt"] = buildSockopt(fwmark, physicalInterface)
+    stream["sockopt"] = buildSockopt(fwmark, physicalInterface, allowIpv6)
     outbound["tag"] = JsonPrimitive(tag)
     outbound["streamSettings"] = JsonObject(stream)
     return JsonObject(outbound)
@@ -187,10 +193,15 @@ private fun buildOutboundSettings(server: ServerConfig): JsonObject = when (serv
     Protocol.RAW -> error("Raw JSON configs must be handled before outbound generation")
 }
 
-private fun buildStreamSettings(server: ServerConfig, fwmark: Int, physicalInterface: String?) = buildJsonObject {
+private fun buildStreamSettings(
+    server: ServerConfig,
+    fwmark: Int,
+    physicalInterface: String?,
+    allowIpv6: Boolean,
+) = buildJsonObject {
     put("network", server.transport.type)
     put("security", server.security.type)
-    put("sockopt", buildSockopt(fwmark, physicalInterface))
+    put("sockopt", buildSockopt(fwmark, physicalInterface, allowIpv6))
     putSecuritySettings(server)
     putTransportSettings(server)
 }

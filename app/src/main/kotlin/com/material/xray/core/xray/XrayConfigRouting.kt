@@ -18,9 +18,13 @@ internal fun buildDns(
     domesticServers: String = "",
     routingRules: List<RoutingRule> = emptyList(),
     bypassLan: Boolean = false,
+    allowIpv6: Boolean = false,
 ) = buildJsonObject {
     val domesticDomains = directDomains(routingRules, bypassLan)
     val defaultServers = servers.commaSeparatedValues()
+    if (!allowIpv6) {
+        put("queryStrategy", "UseIPv4")
+    }
     put("servers", buildJsonArray {
         if (defaultServers.isEmpty()) {
             add(SYSTEM_DNS_SERVER)

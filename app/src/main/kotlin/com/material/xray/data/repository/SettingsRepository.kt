@@ -42,6 +42,7 @@ class SettingsRepository @Inject constructor(
         val ROUTE_TABLE = intPreferencesKey("route_table")
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
         val BYPASS_LAN = booleanPreferencesKey("bypass_lan")
+        val ALLOW_IPV6 = booleanPreferencesKey("allow_ipv6")
         val LAST_SERVER_ID = longPreferencesKey("last_server_id")
         val GEOIP_URL = stringPreferencesKey("geoip_url")
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
@@ -80,6 +81,7 @@ class SettingsRepository @Inject constructor(
     val routeTable: Flow<Int> = store.data.map { it[ROUTE_TABLE] ?: 100 }
     val autoConnect: Flow<Boolean> = store.data.map { it[AUTO_CONNECT] ?: false }
     val bypassLan: Flow<Boolean> = store.data.map { it[BYPASS_LAN] ?: true }
+    val allowIpv6: Flow<Boolean> = store.data.map { it[ALLOW_IPV6] ?: false }
     val lastServerId: Flow<Long> = store.data.map { it[LAST_SERVER_ID] ?: -1L }
     val xrayLogLevel: Flow<XrayLogLevel> = store.data.map { prefs ->
         if (prefs[SHOW_ADVANCED_OPTIONS] == true) {
@@ -136,6 +138,7 @@ class SettingsRepository @Inject constructor(
             logLevel = xrayLogLevel.first(),
             defaultOutbound = defaultOutbound.first(),
             bypassLan = bypassLan.first(),
+            allowIpv6 = allowIpv6.first(),
             routingRules = routingRules.first(),
         )
 
@@ -147,6 +150,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setRouteTable(table: Int) = store.edit { it[ROUTE_TABLE] = table }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
     suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
+    suspend fun setAllowIpv6(enabled: Boolean) = store.edit { it[ALLOW_IPV6] = enabled }
     suspend fun setLastServerId(id: Long) = store.edit { it[LAST_SERVER_ID] = id }
     suspend fun setXrayLogLevel(level: XrayLogLevel) = store.edit { prefs ->
         prefs[XRAY_LOG_LEVEL] = level.value
@@ -227,6 +231,7 @@ class SettingsRepository @Inject constructor(
             map["route_table"]?.let { prefs[ROUTE_TABLE] = it.toIntOrNull() ?: 100 }
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
             prefs[BYPASS_LAN] = map["bypass_lan"]?.toBooleanStrictOrNull() ?: true
+            prefs[ALLOW_IPV6] = map["allow_ipv6"]?.toBooleanStrictOrNull() ?: false
             map["last_server_id"]?.let { prefs[LAST_SERVER_ID] = it.toLongOrNull() ?: -1L }
             val showAdvancedOptions = map["show_advanced_options"]?.toBooleanStrictOrNull() ?: false
             val lastXrayLogLevel = XrayLogLevel.fromValue(map["last_xray_log_level"] ?: map["xray_log_level"])

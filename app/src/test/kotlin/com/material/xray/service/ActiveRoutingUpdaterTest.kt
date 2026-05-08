@@ -131,6 +131,7 @@ class ActiveRoutingUpdaterTest {
             includeProxyRoutes: Boolean,
             includeTunRoutes: Boolean,
             defaultProxyServer: com.material.xray.model.ServerConfig?,
+            allowIpv6: Boolean,
         ): AppRoutingPlan = plan
     }
 

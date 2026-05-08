@@ -22,6 +22,7 @@ class ConfigGenerator {
         logLevel: XrayLogLevel = XrayLogLevel.default,
         defaultOutbound: XrayOutbound = XrayOutbound.default,
         bypassLan: Boolean = true,
+        allowIpv6: Boolean = false,
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
@@ -36,6 +37,7 @@ class ConfigGenerator {
                 logLevel = logLevel,
                 defaultOutbound = defaultOutbound,
                 bypassLan = bypassLan,
+                allowIpv6 = allowIpv6,
                 routingRules = routingRules,
                 appProxyRoutes = appProxyRoutes,
                 physicalInterface = physicalInterface,
@@ -44,7 +46,7 @@ class ConfigGenerator {
 
         val config = buildJsonObject {
             put("log", buildLogConfig(logLevel))
-            put("dns", buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan))
+            put("dns", buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6))
             put("inbounds", buildJsonArray {
                 add(buildTunInbound(tunName, "tun-in"))
                 appProxyRoutes.forEach { route ->
@@ -54,12 +56,12 @@ class ConfigGenerator {
             put("outbounds", buildJsonArray {
                 buildCoreOutbounds(
                     defaultOutbound = defaultOutbound,
-                    proxyOutbound = buildProxyOutbound(server, fwmark, physicalInterface, tag = "proxy"),
-                    directOutbound = buildDirectOutbound(fwmark, physicalInterface),
-                    dnsOutbound = buildDnsOutbound(fwmark, physicalInterface),
+                    proxyOutbound = buildProxyOutbound(server, fwmark, physicalInterface, tag = "proxy", allowIpv6 = allowIpv6),
+                    directOutbound = buildDirectOutbound(fwmark, physicalInterface, allowIpv6),
+                    dnsOutbound = buildDnsOutbound(fwmark, physicalInterface, allowIpv6),
                     blockOutbound = buildBlockOutbound(),
                     appProxyOutbounds = appProxyRoutes.filterNot { it.applyRoutingRules }.map { route ->
-                        buildProxyOutbound(route.server, fwmark, physicalInterface, tag = route.outboundTag)
+                        buildProxyOutbound(route.server, fwmark, physicalInterface, tag = route.outboundTag, allowIpv6 = allowIpv6)
                     },
                 ).forEach { add(it) }
             })
@@ -77,6 +79,7 @@ class ConfigGenerator {
         logLevel: XrayLogLevel = XrayLogLevel.default,
         defaultOutbound: XrayOutbound = XrayOutbound.default,
         bypassLan: Boolean = true,
+        allowIpv6: Boolean = false,
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
@@ -89,6 +92,7 @@ class ConfigGenerator {
         logLevel = logLevel,
         defaultOutbound = defaultOutbound,
         bypassLan = bypassLan,
+        allowIpv6 = allowIpv6,
         routingRules = routingRules,
         appProxyRoutes = appProxyRoutes,
         physicalInterface = physicalInterface,

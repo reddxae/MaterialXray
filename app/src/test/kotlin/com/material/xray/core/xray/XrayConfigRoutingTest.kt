@@ -23,6 +23,7 @@ class XrayConfigRoutingTest {
             bypassLan = true,
         )
 
+        assertEquals("UseIPv4", dns.getValue("queryStrategy").jsonPrimitive.content)
         val servers = dns.getValue("servers").jsonArray
         assertEquals("localhost", servers.first().jsonPrimitive.content)
         val domesticServers = servers.drop(1).map { it.jsonObject }
@@ -33,6 +34,13 @@ class XrayConfigRoutingTest {
             assertTrue("domain:example" in domains)
             assertEquals("domestic-dns", server.getValue("tag").jsonPrimitive.content)
         }
+    }
+
+    @Test
+    fun `buildDns omits ipv4-only query strategy when ipv6 is allowed`() {
+        val dns = buildDns(servers = "1.1.1.1", allowIpv6 = true)
+
+        assertTrue("queryStrategy" !in dns)
     }
 
     @Test

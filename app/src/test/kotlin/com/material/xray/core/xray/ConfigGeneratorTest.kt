@@ -87,7 +87,7 @@ class ConfigGeneratorTest {
             if (ob.jsonObject["protocol"]?.jsonPrimitive?.content == "blackhole") continue
             val domainStrategy = ob.jsonObject["streamSettings"]?.jsonObject
                 ?.get("sockopt")?.jsonObject?.get("domainStrategy")?.jsonPrimitive?.content
-            assertEquals("All outbounds must resolve domains through xray DNS", "UseIP", domainStrategy)
+            assertEquals("All outbounds must resolve domains through xray DNS", "UseIPv4", domainStrategy)
         }
     }
 

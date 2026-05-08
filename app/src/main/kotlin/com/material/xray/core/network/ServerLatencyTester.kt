@@ -51,12 +51,15 @@ class ServerLatencyTester @Inject constructor(
         server: ServerConfig,
         probeUrl: String,
         dnsServers: String,
+        allowIpv6: Boolean,
     ): LatencyProbeResult = withContext(Dispatchers.IO) {
         withTimeoutOrNull(TEST_TIMEOUT_MS) {
             val e2eLatency = measureHttpProbeThroughXray(
-                server = resolveServerForProbe(server) ?: return@withTimeoutOrNull LatencyProbeResult(latencyMs = -1),
+                server = resolveServerForProbe(server, allowIpv6)
+                    ?: return@withTimeoutOrNull LatencyProbeResult(latencyMs = -1),
                 probeUrl = probeUrl.trim().ifBlank { DEFAULT_PROBE_URL },
                 dnsServers = dnsServers.ifBlank { DEFAULT_DNS_SERVERS },
+                allowIpv6 = allowIpv6,
             )
             if (e2eLatency >= 0) {
                 LatencyProbeResult(latencyMs = e2eLatency)
@@ -71,10 +74,10 @@ class ServerLatencyTester @Inject constructor(
         } ?: LatencyProbeResult(latencyMs = -1)
     }
 
-    private suspend fun resolveServerForProbe(server: ServerConfig): ServerConfig? {
+    private suspend fun resolveServerForProbe(server: ServerConfig, allowIpv6: Boolean): ServerConfig? {
         if (server.rawConfigJson.isNotBlank()) return server
 
-        val resolved = serverAddressResolver.resolve(server)
+        val resolved = serverAddressResolver.resolve(server, allowIpv6)
         if (resolved.attempted && resolved.selectedAddress == null) {
             Log.d(TAG, "Could not resolve ${server.address} before latency probe")
             return null
@@ -86,6 +89,7 @@ class ServerLatencyTester @Inject constructor(
         server: ServerConfig,
         probeUrl: String,
         dnsServers: String,
+        allowIpv6: Boolean,
     ): Int {
         if (!xrayBinary.ensureAndroidBinaryAvailable()) return -1
 
@@ -95,7 +99,7 @@ class ServerLatencyTester @Inject constructor(
         val proxyPort = reserveLocalPort()
         val configFile = probeDir.resolve("xray-latency-$probeId.json")
         val logFile = probeDir.resolve("xray-latency-$probeId.log")
-        val configJson = runCatching { buildLatencyConfig(server, proxyPort, dnsServers) }.getOrElse { return -1 }
+        val configJson = runCatching { buildLatencyConfig(server, proxyPort, dnsServers, allowIpv6) }.getOrElse { return -1 }
         configFile.writeText(configJson)
 
         val process = runCatching {
@@ -132,13 +136,18 @@ class ServerLatencyTester @Inject constructor(
         }
     }
 
-    private fun buildLatencyConfig(server: ServerConfig, proxyPort: Int, dnsServers: String): String {
+    private fun buildLatencyConfig(
+        server: ServerConfig,
+        proxyPort: Int,
+        dnsServers: String,
+        allowIpv6: Boolean,
+    ): String {
         val config = buildJsonObject {
             put("log", buildJsonObject {
                 put("access", "none")
                 put("loglevel", "error")
             })
-            put("dns", buildDns(dnsServers))
+            put("dns", buildDns(dnsServers, allowIpv6 = allowIpv6))
             put("inbounds", buildJsonArray {
                 add(buildJsonObject {
                     put("tag", "latency-socks")
@@ -152,7 +161,7 @@ class ServerLatencyTester @Inject constructor(
                 })
             })
             put("outbounds", buildJsonArray {
-                add(buildProxyOutbound(server, fwmark = 0, physicalInterface = null, tag = "proxy"))
+                add(buildProxyOutbound(server, fwmark = 0, physicalInterface = null, tag = "proxy", allowIpv6 = allowIpv6))
             })
             put("routing", buildJsonObject {
                 put("rules", buildJsonArray {

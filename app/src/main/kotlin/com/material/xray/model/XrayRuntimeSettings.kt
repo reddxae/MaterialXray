@@ -10,5 +10,6 @@ data class XrayRuntimeSettings(
     val logLevel: XrayLogLevel,
     val defaultOutbound: XrayOutbound,
     val bypassLan: Boolean,
+    val allowIpv6: Boolean,
     val routingRules: List<RoutingRule>,
 )

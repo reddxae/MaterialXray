@@ -314,6 +314,7 @@ class HomeViewModel @Inject constructor(
             server = config,
             probeUrl = settingsRepo.latencyCheckUrl.first(),
             dnsServers = settingsRepo.latencyDnsServers.first(),
+            allowIpv6 = settingsRepo.allowIpv6.first(),
         ).toUiState()
     }
 

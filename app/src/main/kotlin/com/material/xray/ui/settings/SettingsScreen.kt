@@ -59,6 +59,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
     val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
     val bypassLan by viewModel.bypassLan.collectAsStateWithLifecycle()
+    val allowIpv6 by viewModel.allowIpv6.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
@@ -362,6 +363,19 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     )
                 }
                 Switch(checked = bypassLan, onCheckedChange = { viewModel.setBypassLan(it) })
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Allow IPv6 connections", style = MaterialTheme.typography.bodyLarge)
+                }
+                Switch(checked = allowIpv6, onCheckedChange = { viewModel.setAllowIpv6(it) })
             }
 
             HorizontalDivider()

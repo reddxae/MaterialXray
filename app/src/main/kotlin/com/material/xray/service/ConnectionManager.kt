@@ -201,7 +201,7 @@ class ConnectionManager(
                 )
             } else {
                 timedStep("Server address resolution") {
-                    serverAddressResolver.resolve(server)
+                    serverAddressResolver.resolve(server, runtimeSettings.allowIpv6)
                 }
             }
             val xrayServer = resolvedServer.server
@@ -222,6 +222,7 @@ class ConnectionManager(
                 includeProxyRoutes = useRootService,
                 includeTunRoutes = useRootService,
                 defaultProxyServer = xrayServer,
+                allowIpv6 = runtimeSettings.allowIpv6,
             )
             if (appRoutingPlan.proxyRoutes.isNotEmpty() || appRoutingPlan.directUids.isNotEmpty()) {
                 log.append(
@@ -241,6 +242,7 @@ class ConnectionManager(
                 logLevel = runtimeSettings.logLevel,
                 defaultOutbound = runtimeSettings.defaultOutbound,
                 bypassLan = runtimeSettings.bypassLan,
+                allowIpv6 = runtimeSettings.allowIpv6,
                 routingRules = runtimeSettings.routingRules,
                 appProxyRoutes = appRoutingPlan.proxyRoutes,
                 physicalInterface = physicalRoute?.dev,

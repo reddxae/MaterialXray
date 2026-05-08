@@ -23,6 +23,7 @@ internal class RawConfigTunInjector(
         logLevel: XrayLogLevel,
         defaultOutbound: XrayOutbound,
         bypassLan: Boolean,
+        allowIpv6: Boolean = false,
         routingRules: List<RoutingRule>,
         appProxyRoutes: List<AppProxyRoute>,
         physicalInterface: String?,
@@ -30,13 +31,13 @@ internal class RawConfigTunInjector(
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
         original["inbounds"] = injectTunInbounds(original["inbounds"] as? JsonArray, tunName, appProxyRoutes)
 
-        val normalizedOutbounds = normalizeOutbounds(original["outbounds"] as? JsonArray, fwmark, physicalInterface)
+        val normalizedOutbounds = normalizeOutbounds(original["outbounds"] as? JsonArray, fwmark, physicalInterface, allowIpv6)
         val proxyOutbound = normalizedOutbounds.firstOrNull { outbound ->
             outbound["tag"]?.jsonPrimitive?.contentOrNull.equals("proxy", ignoreCase = true)
         } ?: error("Raw JSON config has no proxy outbound")
 
         val appProxyOutbounds = appProxyRoutes.filterNot { it.applyRoutingRules }.map { route ->
-            buildProxyOutbound(route.server, fwmark, physicalInterface, route.outboundTag)
+            buildProxyOutbound(route.server, fwmark, physicalInterface, route.outboundTag, allowIpv6)
         }
         val unmanagedOutbounds = normalizedOutbounds.filterNot { outbound ->
             outbound["tag"]?.jsonPrimitive?.contentOrNull?.let { it in managedOutboundTags(appProxyRoutes) } == true
@@ -46,14 +47,14 @@ internal class RawConfigTunInjector(
             buildCoreOutbounds(
                 defaultOutbound = defaultOutbound,
                 proxyOutbound = proxyOutbound,
-                directOutbound = buildDirectOutbound(fwmark, physicalInterface),
-                dnsOutbound = buildDnsOutbound(fwmark, physicalInterface),
+                directOutbound = buildDirectOutbound(fwmark, physicalInterface, allowIpv6),
+                dnsOutbound = buildDnsOutbound(fwmark, physicalInterface, allowIpv6),
                 blockOutbound = buildBlockOutbound(),
                 appProxyOutbounds = appProxyOutbounds,
             ) + unmanagedOutbounds
         )
         original["log"] = buildLogConfig(logLevel)
-        original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan)
+        original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6)
         original["routing"] = buildRouting(routingRules, appProxyRoutes, bypassLan, domesticDnsServers)
 
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))
@@ -88,13 +89,14 @@ internal class RawConfigTunInjector(
         outbounds: JsonArray?,
         fwmark: Int,
         physicalInterface: String?,
+        allowIpv6: Boolean,
     ): List<JsonObject> {
         val existingOutbounds = outbounds?.mapNotNull { it as? JsonObject }.orEmpty()
         val firstProxyCandidateIndex = firstProxyCandidateIndex(existingOutbounds)
         return existingOutbounds.mapIndexed { index, outbound ->
             val obj = outbound.toMutableMap()
             val stream = (obj["streamSettings"] as? JsonObject)?.toMutableMap() ?: mutableMapOf()
-            stream["sockopt"] = buildSockopt(fwmark, physicalInterface)
+            stream["sockopt"] = buildSockopt(fwmark, physicalInterface, allowIpv6)
             obj["streamSettings"] = JsonObject(stream)
             if (index == firstProxyCandidateIndex) {
                 obj["tag"] = JsonPrimitive("proxy")

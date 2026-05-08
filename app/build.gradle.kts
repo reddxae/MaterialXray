@@ -48,7 +48,7 @@ android {
 
     defaultConfig {
         applicationId = "com.material.xray"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 36
         versionCode = 200
         versionName = "0.2.0"

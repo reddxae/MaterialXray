@@ -36,16 +36,16 @@ class TunManager(private val shell: RootShell) {
         isProcessAlive: suspend () -> Boolean = { true },
     ): TunSetupResult {
         var attempts = 0
-        while (attempts < 30) {
+        while (attempts < TUN_WAIT_ATTEMPTS) {
             val result = shell.execute("ip link show $tunName 2>/dev/null")
             if (result.isSuccess && result.output.contains(tunName)) break
             if (!isProcessAlive()) {
                 return TunSetupResult(success = false, processExited = true)
             }
-            delay(200)
+            delay(TUN_WAIT_POLL_INTERVAL_MS)
             attempts++
         }
-        if (attempts >= 30) {
+        if (attempts >= TUN_WAIT_ATTEMPTS) {
             return if (isProcessAlive()) {
                 TunSetupResult(success = false, error = "TUN interface $tunName did not come up within timeout")
             } else {
@@ -334,6 +334,8 @@ class TunManager(private val shell: RootShell) {
         private const val APP_UID_RULE_PRIORITY = 12000
         private const val DEFAULT_UID_RULE_PRIORITY = 12010
         private const val DEFAULT_TUN_ADDRESS_CIDR = "10.0.0.1/30"
+        private const val TUN_WAIT_ATTEMPTS = 120
+        private const val TUN_WAIT_POLL_INTERVAL_MS = 50L
 
         fun appTunName(baseTunName: String, index: Int): String {
             val suffix = "a$index"

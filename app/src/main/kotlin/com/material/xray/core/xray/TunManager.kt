@@ -53,12 +53,12 @@ class TunManager(private val shell: RootShell) {
             }
         }
 
-        shell.execute("ip addr add $addressCidr dev $tunName 2>/dev/null")
-        val upResult = shell.execute("ip link set $tunName up")
+        val upCommand = "ip addr add $addressCidr dev $tunName 2>/dev/null; ip link set $tunName up"
+        val upResult = shell.execute(upCommand)
         return if (upResult.isSuccess) {
             TunSetupResult(success = true)
         } else {
-            TunSetupResult(success = false, error = upResult.toCommandError("ip link set $tunName up"))
+            TunSetupResult(success = false, error = upResult.toCommandError(upCommand))
         }
     }
 
@@ -107,54 +107,49 @@ class TunManager(private val shell: RootShell) {
         val managedAppTables = appRouteTables(routeTable, managedAppRouteCount)
             .plus(appTunRoutes.map { it.routeTable })
             .distinct()
-        shell.execute("ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null")
-        removeManagedRoutingTables(routeTable, listOf(bypassTable) + managedAppTables)
-        flushRouteTables(listOf(bypassTable, routeTable) + managedAppTables)
 
         val bypassRoute = if (physicalRoute.gateway != null) {
             "ip route replace default via ${physicalRoute.gateway} dev ${physicalRoute.dev} table $bypassTable"
         } else {
             "ip route replace default dev ${physicalRoute.dev} table $bypassTable"
         }
-        val bypassRouteResult = shell.execute(bypassRoute)
-        if (!bypassRouteResult.isSuccess) return bypassRouteResult.toRoutingError(bypassRoute)
-
         val bypassRule = "ip rule add fwmark $fwmark table $bypassTable prio 10"
-        val bypassRuleResult = shell.execute(bypassRule)
-        if (!bypassRuleResult.isSuccess) return bypassRuleResult.toRoutingError(bypassRule)
-
         val tunRoute = "ip route replace default dev $tunName table $routeTable"
-        val tunRouteResult = shell.execute(tunRoute)
-        if (!tunRouteResult.isSuccess) return tunRouteResult.toRoutingError(tunRoute)
-
-        appTunRoutes.forEach { route ->
-            val appTunRoute = "ip route replace default dev ${route.tunName} table ${route.routeTable}"
-            val appTunRouteResult = shell.execute(appTunRoute)
-            if (!appTunRouteResult.isSuccess) return appTunRouteResult.toRoutingError(appTunRoute)
+        val routeTables = listOf(bypassTable, routeTable) + managedAppTables
+        val setupCommands = buildList {
+            add("ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null || true")
+            add(removeManagedRoutingTablesCommand(routeTables))
+            add(flushRouteTablesCommand(routeTables))
+            add(bypassRoute)
+            add(bypassRule)
+            add(tunRoute)
+            appTunRoutes.forEach { route ->
+                add("ip route replace default dev ${route.tunName} table ${route.routeTable}")
+            }
         }
+        val setupCommand = setupCommands.joinToString(" && ")
+        val setupResult = shell.execute(setupCommand)
+        if (!setupResult.isSuccess) return setupResult.toRoutingError("initial IP routing setup")
 
         val appUids = appTunRoutes.flatMap { it.uids }.toSet()
         val routedProfileIds = (routeProfileIds + (bypassUids + appUids).map(::profileIdForUid))
             .filter { it >= 0 }
             .toSet()
             .ifEmpty { setOf(0) }
-        val defaultRoutingResult = addUidRoutingRules(
+        val uidRoutingCommands = defaultUidRoutingRuleCommands(
             routeTable = routeTable,
             bypassUids = bypassUids + appUids,
             profileIds = routedProfileIds,
-        )
-        if (!defaultRoutingResult.success) return defaultRoutingResult
-
+        ).toMutableList()
         appTunRoutes.forEach { route ->
-            val appRoutingResult = addIncludedUidRoutingRules(
+            uidRoutingCommands += includedUidRoutingRuleCommands(
                 routeTable = route.routeTable,
                 uids = route.uids,
                 priority = APP_UID_RULE_PRIORITY,
             )
-            if (!appRoutingResult.success) return appRoutingResult
         }
 
-        return RoutingResult(success = true)
+        return executeRoutingCommands(uidRoutingCommands)
     }
 
     suspend fun removeRouting(
@@ -184,11 +179,11 @@ class TunManager(private val shell: RootShell) {
         shell.execute(linkDeleteCommands.joinToString("; "))
     }
 
-    private suspend fun addUidRoutingRules(
+    private fun defaultUidRoutingRuleCommands(
         routeTable: Int,
         bypassUids: Set<Int>,
         profileIds: Set<Int>,
-    ): RoutingResult {
+    ): List<String> {
         val commands = mutableListOf<String>()
         profileIds.toSortedSet().forEach { profileId ->
             val profileRange = appUidRangeForProfile(profileId)
@@ -206,27 +201,25 @@ class TunManager(private val shell: RootShell) {
                 commands += uidRoutingRuleCommand(start, profileRange.last, routeTable)
             }
         }
-        return executeRoutingCommands(commands)
+        return commands
     }
 
-    private suspend fun addIncludedUidRoutingRules(
+    private fun includedUidRoutingRuleCommands(
         routeTable: Int,
         uids: Set<Int>,
         priority: Int,
-    ): RoutingResult {
+    ): List<String> {
         val included = uids.filter(::isApplicationUid).toSortedSet()
-        if (included.isEmpty()) return RoutingResult(success = true)
+        if (included.isEmpty()) return emptyList()
 
-        return executeRoutingCommands(
-            uidRoutingRuleCommands(
-                routeTable = routeTable,
-                uids = included,
-                priority = priority,
-            )
+        return contiguousUidRoutingRuleCommands(
+            routeTable = routeTable,
+            uids = included,
+            priority = priority,
         )
     }
 
-    private fun uidRoutingRuleCommands(
+    private fun contiguousUidRoutingRuleCommands(
         routeTable: Int,
         uids: Set<Int>,
         priority: Int,
@@ -263,10 +256,7 @@ class TunManager(private val shell: RootShell) {
 
     private suspend fun flushRouteTables(routeTables: List<Int>) {
         if (routeTables.isEmpty()) return
-        val command = routeTables.distinct().joinToString("; ") { table ->
-            "ip route flush table $table 2>/dev/null"
-        }
-        shell.execute(command)
+        shell.execute(flushRouteTablesCommand(routeTables))
     }
 
     private suspend fun removeManagedRoutingTables(routeTable: Int, appRouteTables: List<Int>) {
@@ -284,6 +274,26 @@ class TunManager(private val shell: RootShell) {
             "while ip rule del pref $pref 2>/dev/null; do :; done"
         }
         shell.execute(command)
+    }
+
+    private fun flushRouteTablesCommand(routeTables: List<Int>): String =
+        routeTables.distinct().joinToString("; ") { table ->
+            "ip route flush table $table 2>/dev/null || true"
+        }
+
+    private fun removeManagedRoutingTablesCommand(routeTables: List<Int>): String {
+        val tables = routeTables.distinct().joinToString(" ")
+        if (tables.isBlank()) return "true"
+        return "tables='$tables'; " +
+            "ip rule show 2>/dev/null | while IFS= read -r line; do " +
+            "pref=\${line%%:*}; " +
+            "case \"\$pref\" in ''|*[!0-9]*) continue;; esac; " +
+            "for table in \$tables; do " +
+            "case \" \$line \" in *\" lookup \$table \"*) " +
+            "while ip rule del pref \"\$pref\" 2>/dev/null; do :; done; break;; " +
+            "esac; " +
+            "done; " +
+            "done || true"
     }
 
     private fun parseDefaultRoute(line: String): PhysicalRoute? {

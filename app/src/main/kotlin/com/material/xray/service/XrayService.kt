@@ -18,7 +18,6 @@ import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.material.xray.R
 import com.material.xray.core.app.AppInventory
-import com.material.xray.core.network.CaptivePortalDetector
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.ConfigGenerator
 import com.material.xray.core.xray.GeoDataManager
@@ -47,7 +46,6 @@ import javax.inject.Inject
 class XrayService : VpnService() {
 
     @Inject lateinit var rootShell: RootShell
-    @Inject lateinit var captivePortalDetector: CaptivePortalDetector
     @Inject lateinit var appBypassDao: AppBypassDao
     @Inject lateinit var serverRepository: ServerRepository
     @Inject lateinit var settingsRepo: SettingsRepository
@@ -80,7 +78,6 @@ class XrayService : VpnService() {
         connectionManager = ConnectionManager(
             context = this,
             shell = rootShell,
-            captivePortalDetector = captivePortalDetector,
             configGenerator = ConfigGenerator(),
             geoDataManager = geoDataManager,
             appBypassDao = appBypassDao,

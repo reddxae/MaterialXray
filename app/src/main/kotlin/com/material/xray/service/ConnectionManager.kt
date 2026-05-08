@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import com.material.xray.core.app.AppInventory
-import com.material.xray.core.network.CaptivePortalDetector
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.CleanupManager
 import com.material.xray.core.xray.ConfigGenerator
@@ -23,7 +22,6 @@ import com.material.xray.model.XrayRuntimeSettings
 class ConnectionManager(
     private val context: Context,
     private val shell: RootShell,
-    private val captivePortalDetector: CaptivePortalDetector,
     private val configGenerator: ConfigGenerator,
     private val geoDataManager: GeoDataManager,
     private val appBypassDao: AppBypassDao,
@@ -93,15 +91,6 @@ class ConnectionManager(
                 timedStep("Cleanup") {
                     cleanupManager.ensureCleanState(fallbackTunName = tunName)
                 }
-            }
-
-            if (fastReconnect) {
-                log.append(LogSource.APP, "Captive portal check skipped for fast reconnect")
-            } else {
-                val captivePortalAccess = timedStep("Captive portal check") {
-                    verifyCaptivePortalAccess()
-                }
-                if (!captivePortalAccess) return
             }
 
             if (useRootService) {
@@ -446,27 +435,6 @@ class ConnectionManager(
         if (updateState) {
             log.append(LogSource.APP, "Disconnected")
             stateHolder.update(ConnectionState.Disconnected)
-        }
-    }
-
-    private suspend fun verifyCaptivePortalAccess(): Boolean {
-        log.append(LogSource.APP, "Checking for captive portal...")
-        return when (val result = captivePortalDetector.check()) {
-            CaptivePortalDetector.Result.Clear -> {
-                log.append(LogSource.APP, "Captive portal check passed")
-                true
-            }
-            is CaptivePortalDetector.Result.Captive -> {
-                fail(
-                    "Captive portal detected. Sign in to the network before starting VPN. ${result.reason}",
-                    cleanState = false,
-                )
-                false
-            }
-            is CaptivePortalDetector.Result.Unavailable -> {
-                log.append(LogSource.APP, "Captive portal check skipped: ${result.reason}")
-                true
-            }
         }
     }
 

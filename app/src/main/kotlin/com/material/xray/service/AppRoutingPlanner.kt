@@ -46,7 +46,7 @@ internal class AppRoutingPlanner(
         defaultProxyServer: ServerConfig?,
     ): AppRoutingPlan {
         val assignments = appBypassDao.getAll()
-        val appSnapshot = appInventory.loadSnapshot()
+        val appSnapshot = appInventory.loadRoutingSnapshot()
         val installedAppsByKey = appSnapshot.apps.associateBy { it.appKey }
         val assignmentsWithUid = assignments.mapNotNull { assignment ->
             val currentUid = installedAppsByKey[appKey(assignment.profileId, assignment.packageName)]?.uid

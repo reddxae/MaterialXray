@@ -32,6 +32,7 @@ data class AppInventorySnapshot(
 
 interface AppInventorySource {
     suspend fun loadSnapshot(): AppInventorySnapshot
+    suspend fun loadRoutingSnapshot(): AppInventorySnapshot = loadSnapshot()
 }
 
 @Singleton
@@ -40,7 +41,13 @@ class AppInventory @Inject constructor(
 ) : AppInventorySource {
     suspend fun loadInstalledApps(): List<InstalledApp> = loadSnapshot().apps
 
-    override suspend fun loadSnapshot(): AppInventorySnapshot = withContext(Dispatchers.IO) {
+    override suspend fun loadSnapshot(): AppInventorySnapshot =
+        loadSnapshot(includeUiMetadata = true)
+
+    override suspend fun loadRoutingSnapshot(): AppInventorySnapshot =
+        loadSnapshot(includeUiMetadata = false)
+
+    private suspend fun loadSnapshot(includeUiMetadata: Boolean): AppInventorySnapshot = withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val currentProfileId = profileIdForUid(context.applicationInfo.uid)
         val profiles = userProfiles()
@@ -52,9 +59,10 @@ class AppInventory @Inject constructor(
             .filterNot { it.packageName == context.packageName }
             .map { info ->
                 info.toInstalledApp(
-                    rawLabel = info.loadLabel(pm),
-                    icon = runCatching { info.loadIcon(pm) }.getOrNull(),
+                    rawLabel = if (includeUiMetadata) info.loadLabel(pm) else info.packageName,
+                    icon = if (includeUiMetadata) runCatching { info.loadIcon(pm) }.getOrNull() else null,
                     currentProfileId = currentProfileId,
+                    includeUiMetadata = includeUiMetadata,
                 )
             }
             .forEach { app -> appsByKey[app.appKey] = app }
@@ -70,10 +78,11 @@ class AppInventory @Inject constructor(
                             val info = activity.applicationInfo
                             if (info.packageName == context.packageName) return@forEach
                             val app = info.toInstalledApp(
-                                rawLabel = activity.label,
-                                icon = runCatching { activity.getIcon(0) }.getOrNull(),
+                                rawLabel = if (includeUiMetadata) activity.label else info.packageName,
+                                icon = if (includeUiMetadata) runCatching { activity.getIcon(0) }.getOrNull() else null,
                                 userHandle = profile,
                                 currentProfileId = currentProfileId,
+                                includeUiMetadata = includeUiMetadata,
                             )
                             appsByKey.putIfAbsent(app.appKey, app)
                         }
@@ -95,13 +104,22 @@ class AppInventory @Inject constructor(
         icon: Drawable?,
         userHandle: UserHandle = Process.myUserHandle(),
         currentProfileId: Int,
+        includeUiMetadata: Boolean,
     ): InstalledApp {
         val profileId = userHandle.identifierOrNull() ?: profileIdForUid(uid)
         val profileUid = uidForProfile(profileId, uid)
         val workProfile = profileId != currentProfileId
-        val label = context.packageManager.getUserBadgedLabel(rawLabel, userHandle).toString()
-            .ifBlank { packageName }
-        val badgedIcon = icon?.let { context.packageManager.getUserBadgedIcon(it, userHandle) }
+        val label = if (includeUiMetadata) {
+            context.packageManager.getUserBadgedLabel(rawLabel, userHandle).toString()
+                .ifBlank { packageName }
+        } else {
+            packageName
+        }
+        val badgedIcon = if (includeUiMetadata) {
+            icon?.let { context.packageManager.getUserBadgedIcon(it, userHandle) }
+        } else {
+            null
+        }
         return InstalledApp(
             appKey = appKey(profileId, packageName),
             packageName = packageName,

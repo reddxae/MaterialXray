@@ -765,6 +765,7 @@ class XrayService : VpnService() {
     }
 
     private fun updateNotification(overrideText: String? = null) {
+        XrayTileService.requestStateRefresh(this)
         val state = connectionStateHolder.state.value
         if (state is ConnectionState.Disconnected) {
             getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)

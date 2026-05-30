@@ -45,6 +45,9 @@ fun AppBypassEntity.routeAssignment(): AppRouteAssignment =
         }
     }
 
+fun AppBypassEntity.isManualRouteOverride(): Boolean =
+    manual && routeAssignment().mode != AppRouteMode.DefaultSelected
+
 fun AppRouteAssignment.toAppBypassEntity(
     packageName: String,
     profileId: Int,

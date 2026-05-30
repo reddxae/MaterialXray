@@ -16,6 +16,10 @@ class AppRouteAssignmentTest {
             entity(routeMode = "default_outbound").routeAssignment(),
         )
         assertEquals(AppRouteAssignment(AppRouteMode.Server, 42), entity(serverId = 42).routeAssignment())
+        assertEquals(
+            AppRouteAssignment(AppRouteMode.DefaultSelected),
+            entity(routeMode = "default_selected").routeAssignment(),
+        )
         assertEquals(AppRouteAssignment(AppRouteMode.DefaultSelected), entity(routeMode = null).routeAssignment())
     }
 
@@ -37,10 +41,21 @@ class AppRouteAssignmentTest {
         assertFalse(bypass.manual)
     }
 
+    @Test
+    fun isManualRouteOverrideIgnoresDefaultSelectedAssignments() {
+        assertTrue(entity(routeMode = "direct", manual = true).isManualRouteOverride())
+        assertTrue(entity(serverId = 42, routeMode = "server", manual = true).isManualRouteOverride())
+
+        assertFalse(entity(routeMode = "direct", manual = false).isManualRouteOverride())
+        assertFalse(entity(routeMode = "default_selected", manual = true).isManualRouteOverride())
+        assertFalse(entity(routeMode = null, manual = true).isManualRouteOverride())
+    }
+
     private fun entity(
         excluded: Boolean = false,
         serverId: Long? = null,
         routeMode: String? = null,
+        manual: Boolean = true,
     ): AppBypassEntity =
         AppBypassEntity(
             packageName = "pkg",
@@ -48,5 +63,6 @@ class AppRouteAssignmentTest {
             excluded = excluded,
             serverId = serverId,
             routeMode = routeMode,
+            manual = manual,
         )
 }

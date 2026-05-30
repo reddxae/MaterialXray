@@ -11,6 +11,7 @@ import com.material.xray.data.db.entity.AppRouteAssignment
 import com.material.xray.data.db.entity.AppRouteMode
 import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.ServerEntity
+import com.material.xray.data.db.entity.isManualRouteOverride
 import com.material.xray.data.db.entity.routeAssignment
 import com.material.xray.data.db.entity.toAppBypassEntity
 import com.material.xray.data.repository.ServerRepository
@@ -153,7 +154,7 @@ class AppsViewModel @Inject constructor(
                 app.copy(
                     routeKey = option.key,
                     routeKind = option.kind,
-                    manuallyRouted = assignment?.manual == true,
+                    manuallyRouted = assignment?.isManualRouteOverride() == true,
                     routeTitle = option.title,
                     routeDescription = option.description,
                 )
@@ -224,7 +225,7 @@ class AppsViewModel @Inject constructor(
                     packageName = app.packageName,
                     profileId = app.profileId,
                     uid = app.uid,
-                    manual = true,
+                    manual = option.kind != AppRouteKind.DEFAULT,
                 )
             )
             routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)

@@ -77,10 +77,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -622,11 +627,7 @@ private fun SubscriptionMetadataSection(
             enter = fadeIn(animationSpec = tween(durationMillis = 120)),
             exit = fadeOut(animationSpec = tween(durationMillis = 90)),
         ) {
-            Text(
-                text = metadata.announcement,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            SubscriptionDescriptionText(description = metadata.announcement)
         }
 
         if (metadata.traffic != null || metadata.expiry != null || metadata.updateIntervalText.isNotBlank()) {
@@ -917,6 +918,57 @@ private fun PingMethodRow(
     }
 }
 
+@Composable
+private fun SubscriptionDescriptionText(description: String) {
+    val linkColor = MaterialTheme.colorScheme.primary
+    val textColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val uriHandler = LocalUriHandler.current
+    var pendingUrl by remember(description) { mutableStateOf<String?>(null) }
+    val annotatedDescription = remember(description, linkColor) {
+        description.withUrlLinks(linkColor) { url ->
+            pendingUrl = url
+        }
+    }
+
+    SelectionContainer {
+        Text(
+            text = annotatedDescription,
+            style = MaterialTheme.typography.bodySmall,
+            color = textColor,
+        )
+    }
+
+    pendingUrl?.let { url ->
+        AlertDialog(
+            onDismissRequest = { pendingUrl = null },
+            title = { Text("Open link?") },
+            text = {
+                SelectionContainer {
+                    Text(
+                        text = url,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingUrl = null
+                        uriHandler.openUri(url)
+                    },
+                ) {
+                    Text("Open")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUrl = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ServerRow(
@@ -1032,6 +1084,70 @@ private fun String.withMetadataEmphasis() = buildAnnotatedString {
         }
     }
 }
+
+private fun String.withUrlLinks(
+    linkColor: androidx.compose.ui.graphics.Color,
+    onUrlClick: (String) -> Unit,
+): AnnotatedString =
+    buildAnnotatedString {
+        var cursor = 0
+        val linkStyles = TextLinkStyles(
+            style = SpanStyle(
+                color = linkColor,
+                textDecoration = TextDecoration.Underline,
+            ),
+        )
+
+        subscriptionUrlRegex.findAll(this@withUrlLinks).forEach { match ->
+            val start = match.range.first
+            val end = this@withUrlLinks.trimmedUrlEnd(match)
+            if (end <= start) return@forEach
+
+            if (cursor < start) {
+                append(this@withUrlLinks.substring(cursor, start))
+            }
+
+            val url = this@withUrlLinks.substring(start, end)
+            val linkStart = length
+            append(url)
+            addLink(
+                LinkAnnotation.Clickable(
+                    tag = url.normalizedSubscriptionUrl(),
+                    styles = linkStyles,
+                    linkInteractionListener = LinkInteractionListener { link ->
+                        (link as? LinkAnnotation.Clickable)?.tag?.let(onUrlClick)
+                    },
+                ),
+                start = linkStart,
+                end = length,
+            )
+            cursor = end
+        }
+
+        if (cursor < this@withUrlLinks.length) {
+            append(this@withUrlLinks.substring(cursor))
+        }
+    }
+
+private fun String.trimmedUrlEnd(match: MatchResult): Int {
+    var end = match.range.last + 1
+    while (end > match.range.first && this[end - 1] in trailingUrlPunctuation) {
+        end--
+    }
+    return end
+}
+
+private fun String.normalizedSubscriptionUrl(): String =
+    if (startsWith("http://", ignoreCase = true) || startsWith("https://", ignoreCase = true)) {
+        this
+    } else {
+        "https://$this"
+    }
+
+private val subscriptionUrlRegex = Regex(
+    pattern = """(?i)(?<![@\w])(?:https?://[^\s<>"']+|(?:www\.|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})(?:/[^\s<>"']*)?)""",
+)
+private val trailingUrlPunctuation = setOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
 
 private data class AutoUpdateIntervalOption(
     val label: String,

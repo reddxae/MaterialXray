@@ -14,6 +14,7 @@ import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionRefreshCoordinator
 import com.material.xray.data.repository.SubscriptionRepository
 import com.material.xray.model.ConnectionState
+import com.material.xray.model.PingMethod
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionStateHolder
@@ -49,7 +50,7 @@ data class ServerListItem(
 
 data class ServerLatencyState(
     val latencyMs: Int,
-    val usedTcpFallback: Boolean = false,
+    val method: PingMethod? = null,
 )
 
 const val LATENCY_TESTING = Int.MIN_VALUE
@@ -96,6 +97,9 @@ class HomeViewModel @Inject constructor(
 
     val useRootService: StateFlow<Boolean> = settingsRepo.useRootService
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val defaultPingMethod: StateFlow<PingMethod> = settingsRepo.defaultPingMethod
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PingMethod.default)
 
     val selectedServer: StateFlow<ServerConfig?> = combine(selectedServerId, allServers) { id, list ->
         list.find { it.id == id }?.let { runCatching { serverRepo.parseConfig(it) }.getOrNull() }
@@ -261,22 +265,32 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun setDefaultPingMethod(method: PingMethod) {
+        viewModelScope.launch {
+            settingsRepo.setDefaultPingMethod(method)
+        }
+    }
+
     fun testLatency(server: ServerEntity) {
         viewModelScope.launch {
-            latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING)) }
-            val latency = measureLatency(server)
+            val pingMethod = defaultPingMethod.value
+            latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod)) }
+            val latency = measureLatency(server, pingMethod)
             latencyByServerId.update { it + (server.id to latency) }
         }
     }
 
     fun testSubscriptionLatencies(sub: SubscriptionEntity) {
         viewModelScope.launch {
+            val pingMethod = defaultPingMethod.value
             allServers.value
                 .filter { it.subscriptionId == sub.id }
                 .forEach { server ->
                     launch {
-                        latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING)) }
-                        val latency = latencySemaphore.withPermit { measureLatency(server) }
+                        latencyByServerId.update {
+                            it + (server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod))
+                        }
+                        val latency = latencySemaphore.withPermit { measureLatency(server, pingMethod) }
                         latencyByServerId.update { it + (server.id to latency) }
                     }
                 }
@@ -285,10 +299,13 @@ class HomeViewModel @Inject constructor(
 
     fun testAllLatencies() {
         viewModelScope.launch {
+            val pingMethod = defaultPingMethod.value
             allServers.value.forEach { server ->
                 launch {
-                    latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING)) }
-                    val latency = latencySemaphore.withPermit { measureLatency(server) }
+                    latencyByServerId.update {
+                        it + (server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod))
+                    }
+                    val latency = latencySemaphore.withPermit { measureLatency(server, pingMethod) }
                     latencyByServerId.update { it + (server.id to latency) }
                 }
             }
@@ -307,11 +324,12 @@ class HomeViewModel @Inject constructor(
         return ServerListItem(entity = this, endpointSummary = summary, latency = latency)
     }
 
-    private suspend fun measureLatency(server: ServerEntity): ServerLatencyState {
+    private suspend fun measureLatency(server: ServerEntity, method: PingMethod): ServerLatencyState {
         val config = runCatching { serverRepo.parseConfig(server) }.getOrNull()
-            ?: return ServerLatencyState(latencyMs = -1)
+            ?: return ServerLatencyState(latencyMs = -1, method = method)
         return serverLatencyTester.measure(
             server = config,
+            method = method,
             probeUrl = settingsRepo.latencyCheckUrl.first(),
             dnsServers = settingsRepo.latencyDnsServers.first(),
             allowIpv6 = settingsRepo.allowIpv6.first(),
@@ -321,7 +339,7 @@ class HomeViewModel @Inject constructor(
     private fun LatencyProbeResult.toUiState(): ServerLatencyState =
         ServerLatencyState(
             latencyMs = latencyMs,
-            usedTcpFallback = usedTcpFallback,
+            method = method,
         )
 
     private suspend fun withRefreshTracking(block: suspend () -> Unit) {

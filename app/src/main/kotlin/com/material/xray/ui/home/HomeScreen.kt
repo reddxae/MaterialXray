@@ -92,6 +92,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.model.ConnectionState
+import com.material.xray.model.PingMethod
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
@@ -107,6 +108,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val runningConfig by viewModel.runningConfig.collectAsStateWithLifecycle()
+    val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
 
     val isConnected = connectionState is ConnectionState.Connected
     val isRestartRequired = connectionState is ConnectionState.RestartRequired
@@ -241,10 +243,12 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                         subscription = subscription,
                         servers = serversBySubscription[subscription.id].orEmpty(),
                         selectedServerId = selectedServerId,
+                        defaultPingMethod = defaultPingMethod,
                         onDelete = { viewModel.deleteSubscription(subscription) },
                         onEdit = { editingSubscription = subscription },
                         onRefresh = { viewModel.refreshSubscription(subscription) },
                         onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
+                        onDefaultPingMethodSelected = { viewModel.setDefaultPingMethod(it) },
                         onAutoUpdateIntervalClick = { autoUpdateSubscription = subscription },
                         onDescriptionHiddenChange = { hidden ->
                             viewModel.setSubscriptionDescriptionHidden(subscription.id, hidden)
@@ -530,10 +534,12 @@ private fun SubscriptionCard(
     subscription: SubscriptionEntity,
     servers: List<ServerListItem>,
     selectedServerId: Long,
+    defaultPingMethod: PingMethod,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
+    onDefaultPingMethodSelected: (PingMethod) -> Unit,
     onAutoUpdateIntervalClick: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
     onServerSelected: (Long) -> Unit,
@@ -547,8 +553,10 @@ private fun SubscriptionCard(
             SubscriptionHeader(
                 subscription = subscription,
                 serverCount = servers.size,
+                defaultPingMethod = defaultPingMethod,
                 onRefresh = onRefresh,
                 onTestAll = onTestAll,
+                onDefaultPingMethodSelected = onDefaultPingMethodSelected,
                 onDelete = onDelete,
                 onEdit = onEdit,
                 onAutoUpdateIntervalClick = onAutoUpdateIntervalClick,
@@ -710,18 +718,22 @@ private fun SubscriptionTrafficProgress(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SubscriptionHeader(
     subscription: SubscriptionEntity,
     serverCount: Int,
+    defaultPingMethod: PingMethod,
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
+    onDefaultPingMethodSelected: (PingMethod) -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onAutoUpdateIntervalClick: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var showPingMethodDialog by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val webPageUrl = subscription.profileWebPageUrl?.trim().orEmpty()
     val supportUrl = subscription.supportUrl?.trim().orEmpty()
@@ -753,8 +765,21 @@ private fun SubscriptionHeader(
         IconButton(onClick = onRefresh) {
             Icon(Icons.Default.Refresh, contentDescription = "Refresh ${subscription.name}")
         }
-        IconButton(onClick = onTestAll) {
-            Icon(Icons.Default.Speed, contentDescription = "Test ${subscription.name}")
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = onTestAll,
+                    onLongClick = { showPingMethodDialog = true },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Default.Speed,
+                contentDescription = "Test ${subscription.name} with ${defaultPingMethod.value}",
+            )
         }
         Box {
             IconButton(onClick = { showMenu = true }) {
@@ -814,6 +839,82 @@ private fun SubscriptionHeader(
             }
         }
     }
+
+    if (showPingMethodDialog) {
+        PingMethodDialog(
+            selectedMethod = defaultPingMethod,
+            onDismiss = { showPingMethodDialog = false },
+            onSelected = { method ->
+                onDefaultPingMethodSelected(method)
+                showPingMethodDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun PingMethodDialog(
+    selectedMethod: PingMethod,
+    onDismiss: () -> Unit,
+    onSelected: (PingMethod) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        },
+        title = { Text("Choose method") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PingMethod.entries.forEach { method ->
+                    PingMethodRow(
+                        method = method,
+                        selected = method == selectedMethod,
+                        onSelected = { onSelected(method) },
+                    )
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun PingMethodRow(
+    method: PingMethod,
+    selected: Boolean,
+    onSelected: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .selectable(
+                selected = selected,
+                onClick = onSelected,
+                role = Role.RadioButton,
+            )
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AutoUpdateIntervalIndicator(selected = selected)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = method.label,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            )
+            Text(
+                text = method.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -830,7 +931,6 @@ private fun ServerRow(
         when {
             it.latencyMs == LATENCY_TESTING -> "Testing..."
             it.latencyMs < 0 -> "Failed"
-            it.usedTcpFallback -> "${it.latencyMs}ms (tcp)"
             else -> "${it.latencyMs}ms"
         }
     }

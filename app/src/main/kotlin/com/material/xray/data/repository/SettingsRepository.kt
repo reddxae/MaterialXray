@@ -14,6 +14,7 @@ import com.material.xray.model.RoutingRuleCatalog
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.LauncherIcon
+import com.material.xray.model.PingMethod
 import com.material.xray.model.XrayRuntimeSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -47,6 +48,7 @@ class SettingsRepository @Inject constructor(
         val GEOIP_URL = stringPreferencesKey("geoip_url")
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
         val LATENCY_CHECK_URL = stringPreferencesKey("latency_check_url")
+        val DEFAULT_PING_METHOD = stringPreferencesKey("default_ping_method")
         val XRAY_LOG_LEVEL = stringPreferencesKey("xray_log_level")
         val LAST_XRAY_LOG_LEVEL = stringPreferencesKey("last_xray_log_level")
         val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
@@ -117,6 +119,9 @@ class SettingsRepository @Inject constructor(
     }
     val latencyCheckUrl: Flow<String> = store.data.map { prefs ->
         prefs[LATENCY_CHECK_URL] ?: DEFAULT_LATENCY_CHECK_URL
+    }
+    val defaultPingMethod: Flow<PingMethod> = store.data.map { prefs ->
+        PingMethod.fromValue(prefs[DEFAULT_PING_METHOD])
     }
     val routingRules: Flow<List<RoutingRule>> = store.data.map { prefs ->
         decodeRoutingRules(
@@ -194,6 +199,9 @@ class SettingsRepository @Inject constructor(
         val trimmedUrl = url.trim()
         if (trimmedUrl.isEmpty()) prefs.remove(LATENCY_CHECK_URL) else prefs[LATENCY_CHECK_URL] = trimmedUrl
     }
+    suspend fun setDefaultPingMethod(method: PingMethod) = store.edit { prefs ->
+        prefs[DEFAULT_PING_METHOD] = method.value
+    }
     suspend fun setRoutingRule(rule: RoutingRule) = store.edit { prefs ->
         val updatedRules = decodeRoutingRules(
             rulesEncoded = prefs[ROUTING_RULES],
@@ -246,6 +254,7 @@ class SettingsRepository @Inject constructor(
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }
+            prefs[DEFAULT_PING_METHOD] = PingMethod.fromValue(map["default_ping_method"]).value
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }
             map["routing_rules_version"]?.let { prefs[ROUTING_RULES_VERSION] = it.toIntOrNull() ?: CURRENT_ROUTING_RULES_VERSION }
             map["routing_rule_states"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULE_STATES] = it }

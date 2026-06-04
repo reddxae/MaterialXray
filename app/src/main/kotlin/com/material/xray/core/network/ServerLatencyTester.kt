@@ -2,11 +2,11 @@ package com.material.xray.core.network
 
 import android.content.Context
 import android.os.SystemClock
-import android.util.Log
 import com.material.xray.core.xray.ServerAddressResolver
 import com.material.xray.core.xray.XrayBinary
 import com.material.xray.core.xray.buildDns
 import com.material.xray.core.xray.buildProxyOutbound
+import com.material.xray.model.PingMethod
 import com.material.xray.model.ServerConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +35,7 @@ import javax.inject.Singleton
 
 data class LatencyProbeResult(
     val latencyMs: Int,
-    val usedTcpFallback: Boolean = false,
+    val method: PingMethod,
 )
 
 @Singleton
@@ -49,29 +49,35 @@ class ServerLatencyTester @Inject constructor(
 
     suspend fun measure(
         server: ServerConfig,
+        method: PingMethod,
         probeUrl: String,
         dnsServers: String,
         allowIpv6: Boolean,
     ): LatencyProbeResult = withContext(Dispatchers.IO) {
         withTimeoutOrNull(TEST_TIMEOUT_MS) {
-            val e2eLatency = measureHttpProbeThroughXray(
-                server = resolveServerForProbe(server, allowIpv6)
-                    ?: return@withTimeoutOrNull LatencyProbeResult(latencyMs = -1),
-                probeUrl = probeUrl.trim().ifBlank { DEFAULT_PROBE_URL },
-                dnsServers = dnsServers.ifBlank { DEFAULT_DNS_SERVERS },
-                allowIpv6 = allowIpv6,
-            )
-            if (e2eLatency >= 0) {
-                LatencyProbeResult(latencyMs = e2eLatency)
-            } else {
-                Log.d(TAG, "E2E latency probe failed for ${server.name}; falling back to TCP connect")
-                val tcpLatency = measureTcpConnect(server.address, server.port)
-                LatencyProbeResult(
-                    latencyMs = tcpLatency,
-                    usedTcpFallback = tcpLatency >= 0,
+            when (method) {
+                PingMethod.Httping -> {
+                    val e2eLatency = measureHttpProbeThroughXray(
+                        server = resolveServerForProbe(server, allowIpv6)
+                            ?: return@withTimeoutOrNull LatencyProbeResult(
+                                latencyMs = -1,
+                                method = PingMethod.Httping,
+                            ),
+                        probeUrl = probeUrl.trim().ifBlank { DEFAULT_PROBE_URL },
+                        dnsServers = dnsServers.ifBlank { DEFAULT_DNS_SERVERS },
+                        allowIpv6 = allowIpv6,
+                    )
+                    LatencyProbeResult(
+                        latencyMs = e2eLatency,
+                        method = PingMethod.Httping,
+                    )
+                }
+                PingMethod.Tcping -> LatencyProbeResult(
+                    latencyMs = measureTcpConnect(server.address, server.port),
+                    method = PingMethod.Tcping,
                 )
             }
-        } ?: LatencyProbeResult(latencyMs = -1)
+        } ?: LatencyProbeResult(latencyMs = -1, method = method)
     }
 
     private suspend fun resolveServerForProbe(server: ServerConfig, allowIpv6: Boolean): ServerConfig? {
@@ -79,7 +85,6 @@ class ServerLatencyTester @Inject constructor(
 
         val resolved = serverAddressResolver.resolve(server, allowIpv6)
         if (resolved.attempted && resolved.selectedAddress == null) {
-            Log.d(TAG, "Could not resolve ${server.address} before latency probe")
             return null
         }
         return resolved.server
@@ -124,12 +129,6 @@ class ServerLatencyTester @Inject constructor(
         } finally {
             withContext(NonCancellable) {
                 stopProcess(process)
-                if (process.exitValueOrNull() != 0 && logFile.isFile) {
-                    logFile.readText()
-                        .lines()
-                        .lastOrNull { it.isNotBlank() }
-                        ?.let { Log.d(TAG, "Latency probe xray exited: $it") }
-                }
                 configFile.delete()
                 logFile.delete()
             }
@@ -218,8 +217,6 @@ class ServerLatencyTester @Inject constructor(
                 val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
                 elapsedMs.toInt().coerceAtLeast(1)
             }
-        }.onFailure { error ->
-            Log.d(TAG, "E2E latency request failed: ${error.message}")
         }.getOrDefault(-1)
     }
 
@@ -273,9 +270,6 @@ class ServerLatencyTester @Inject constructor(
         process.waitForExit()
     }
 
-    private fun Process.exitValueOrNull(): Int? =
-        runCatching { exitValue() }.getOrNull()
-
     private fun Process.waitForExit() {
         runCatching {
             waitFor(PROCESS_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -283,7 +277,6 @@ class ServerLatencyTester @Inject constructor(
     }
 
     private companion object {
-        const val TAG = "MXray.Latency"
         const val DEFAULT_PROBE_URL = "https://gstatic.com/generate_204"
         const val DEFAULT_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         val HTTP_SUCCESS_CODES = 200..399

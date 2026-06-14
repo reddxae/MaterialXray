@@ -24,7 +24,9 @@ import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,8 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -71,7 +72,9 @@ class HomeViewModel @Inject constructor(
     private val endpointSummaryCache = mutableMapOf<String, String>()
     private val activeConfigFile = context.filesDir.resolve("config.json")
     private val stateFile = StateFile(context)
-    private val latencySemaphore = Semaphore(MAX_PARALLEL_LATENCY_TESTS)
+    private var latencyJob: Job? = null
+    private var latencyRunId = 0L
+    private var activeLatencyServerIds = emptySet<Long>()
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
     val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateHolder.events
@@ -272,42 +275,65 @@ class HomeViewModel @Inject constructor(
     }
 
     fun testLatency(server: ServerEntity) {
-        viewModelScope.launch {
-            val pingMethod = defaultPingMethod.value
-            latencyByServerId.update { it + (server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod)) }
-            val latency = measureLatency(server, pingMethod)
-            latencyByServerId.update { it + (server.id to latency) }
-        }
+        restartLatencyTests(listOf(server))
     }
 
     fun testSubscriptionLatencies(sub: SubscriptionEntity) {
-        viewModelScope.launch {
-            val pingMethod = defaultPingMethod.value
-            allServers.value
-                .filter { it.subscriptionId == sub.id }
-                .forEach { server ->
-                    launch {
-                        latencyByServerId.update {
-                            it + (server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod))
-                        }
-                        val latency = latencySemaphore.withPermit { measureLatency(server, pingMethod) }
-                        latencyByServerId.update { it + (server.id to latency) }
-                    }
-                }
-        }
+        restartLatencyTests(allServers.value.filter { it.subscriptionId == sub.id })
     }
 
     fun testAllLatencies() {
-        viewModelScope.launch {
-            val pingMethod = defaultPingMethod.value
-            allServers.value.forEach { server ->
-                launch {
-                    latencyByServerId.update {
-                        it + (server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod))
+        restartLatencyTests(allServers.value)
+    }
+
+    private fun restartLatencyTests(servers: List<ServerEntity>) {
+        latencyJob?.cancel()
+
+        val runId = ++latencyRunId
+        val pingMethod = defaultPingMethod.value
+        val targetServers = servers.distinctBy { it.id }
+        val targetServerIds = targetServers.map { it.id }.toSet()
+        val canceledOnlyServerIds = activeLatencyServerIds - targetServerIds
+        activeLatencyServerIds = targetServerIds
+
+        latencyByServerId.update { current ->
+            (current - canceledOnlyServerIds) + targetServers.associate { server ->
+                server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod)
+            }
+        }
+
+        if (targetServers.isEmpty()) {
+            latencyJob = null
+            return
+        }
+
+        latencyJob = viewModelScope.launch {
+            supervisorScope {
+                targetServers.forEach { server ->
+                    launch {
+                        runLatencyProbe(runId, server, pingMethod)
                     }
-                    val latency = latencySemaphore.withPermit { measureLatency(server, pingMethod) }
-                    latencyByServerId.update { it + (server.id to latency) }
                 }
+            }
+        }
+    }
+
+    private suspend fun runLatencyProbe(runId: Long, server: ServerEntity, method: PingMethod) {
+        try {
+            val latency = try {
+                measureLatency(server, method)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                ServerLatencyState(latencyMs = -1, method = method)
+            }
+
+            if (latencyRunId == runId) {
+                latencyByServerId.update { it + (server.id to latency) }
+            }
+        } finally {
+            if (latencyRunId == runId) {
+                activeLatencyServerIds = activeLatencyServerIds - server.id
             }
         }
     }
@@ -354,6 +380,5 @@ class HomeViewModel @Inject constructor(
     private companion object {
         const val DEFAULT_TUN_NAME = "xray0"
         const val AMBIGUOUS_TUN_NAME = "tun0"
-        const val MAX_PARALLEL_LATENCY_TESTS = 1
     }
 }

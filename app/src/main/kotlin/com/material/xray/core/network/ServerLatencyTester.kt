@@ -13,7 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -32,6 +33,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
 
 data class LatencyProbeResult(
     val latencyMs: Int,
@@ -96,6 +98,7 @@ class ServerLatencyTester @Inject constructor(
         dnsServers: String,
         allowIpv6: Boolean,
     ): Int {
+        currentCoroutineContext().ensureActive()
         if (!xrayBinary.ensureAndroidBinaryAvailable()) return -1
 
         val binDir = context.filesDir.resolve("bin").also { it.mkdirs() }
@@ -105,6 +108,7 @@ class ServerLatencyTester @Inject constructor(
         val configFile = probeDir.resolve("xray-latency-$probeId.json")
         val logFile = probeDir.resolve("xray-latency-$probeId.log")
         val configJson = runCatching { buildLatencyConfig(server, proxyPort, dnsServers, allowIpv6) }.getOrElse { return -1 }
+        currentCoroutineContext().ensureActive()
         configFile.writeText(configJson)
 
         val process = runCatching {
@@ -178,6 +182,7 @@ class ServerLatencyTester @Inject constructor(
     private suspend fun waitForLocalPort(port: Int, process: Process): Boolean {
         var elapsedMs = 0L
         while (elapsedMs <= LOCAL_PROXY_START_TIMEOUT_MS) {
+            currentCoroutineContext().ensureActive()
             if (!process.isAlive) return false
             if (canConnectLocalPort(port)) return true
             delay(LOCAL_PROXY_POLL_INTERVAL_MS)
@@ -198,7 +203,7 @@ class ServerLatencyTester @Inject constructor(
         }
     }
 
-    private fun requestProbeThroughProxy(proxyPort: Int, probeUrl: String): Int {
+    private suspend fun requestProbeThroughProxy(proxyPort: Int, probeUrl: String): Int {
         val client = baseClient.newBuilder()
             .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress(LOCAL_PROXY_HOST, proxyPort)))
             .connectTimeout(HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -206,18 +211,38 @@ class ServerLatencyTester @Inject constructor(
             .callTimeout(HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(false)
             .build()
-        return runCatching {
-            val request = Request.Builder()
+        val request = runCatching {
+            Request.Builder()
                 .url(probeUrl)
                 .header("Cache-Control", "no-cache")
                 .build()
-            val startedAt = SystemClock.elapsedRealtimeNanos()
-            client.newCall(request).execute().use { response ->
-                if (response.code !in HTTP_SUCCESS_CODES) return -1
-                val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
-                elapsedMs.toInt().coerceAtLeast(1)
+        }.getOrElse { return -1 }
+
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation {
+                call.cancel()
             }
-        }.getOrDefault(-1)
+
+            try {
+                val startedAt = SystemClock.elapsedRealtimeNanos()
+                val latency = call.execute().use { response ->
+                    if (response.code !in HTTP_SUCCESS_CODES) {
+                        -1
+                    } else {
+                        val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
+                        elapsedMs.toInt().coerceAtLeast(1)
+                    }
+                }
+                if (continuation.isActive) {
+                    continuation.resume(latency)
+                }
+            } catch (_: Exception) {
+                if (continuation.isActive) {
+                    continuation.resume(-1)
+                }
+            }
+        }
     }
 
     private suspend fun measureTcpConnect(address: String, port: Int): Int {
@@ -226,8 +251,9 @@ class ServerLatencyTester @Inject constructor(
 
         var best = -1
         repeat(TCPING_ATTEMPTS) {
+            currentCoroutineContext().ensureActive()
             val latency = socketConnectTime(host, port)
-            if (!currentCoroutineContext().isActive) return best
+            currentCoroutineContext().ensureActive()
             if (latency >= 0 && (best == -1 || latency < best)) {
                 best = latency
             }
@@ -235,21 +261,31 @@ class ServerLatencyTester @Inject constructor(
         return best
     }
 
-    private fun socketConnectTime(host: String, port: Int): Int {
-        val socket = Socket()
-        return try {
-            socket.tcpNoDelay = true
+    private suspend fun socketConnectTime(host: String, port: Int): Int =
+        suspendCancellableCoroutine { continuation ->
+            val socket = Socket()
+            continuation.invokeOnCancellation {
+                runCatching { socket.close() }
+            }
 
-            val startedAt = SystemClock.elapsedRealtimeNanos()
-            socket.connect(InetSocketAddress(host, port), TCP_CONNECT_TIMEOUT_MS)
-            val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
-            elapsedMs.toInt().coerceAtLeast(1)
-        } catch (_: Exception) {
-            -1
-        } finally {
-            runCatching { socket.close() }
+            try {
+                socket.tcpNoDelay = true
+
+                val startedAt = SystemClock.elapsedRealtimeNanos()
+                socket.connect(InetSocketAddress(host, port), TCP_CONNECT_TIMEOUT_MS)
+                val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
+                val latency = elapsedMs.toInt().coerceAtLeast(1)
+                if (continuation.isActive) {
+                    continuation.resume(latency)
+                }
+            } catch (_: Exception) {
+                if (continuation.isActive) {
+                    continuation.resume(-1)
+                }
+            } finally {
+                runCatching { socket.close() }
+            }
         }
-    }
 
     private fun reserveLocalPort(): Int =
         ServerSocket(0).use { socket ->

@@ -982,7 +982,7 @@ private fun ServerRow(
     val latencyText = latency?.let {
         when {
             it.latencyMs == LATENCY_TESTING -> "Testing..."
-            it.latencyMs < 0 -> "Failed"
+            it.latencyMs < 0 -> "N/A"
             else -> "${it.latencyMs}ms"
         }
     }

@@ -44,7 +44,7 @@ val hasReleaseSigning = listOf(
 
 android {
     namespace = "com.material.xray"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.material.xray"

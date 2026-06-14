@@ -231,10 +231,33 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { subscriptionRepo.delete(sub) }
     }
 
-    fun updateSubscription(sub: SubscriptionEntity, name: String, url: String) {
+    fun updateSubscription(
+        sub: SubscriptionEntity,
+        name: String,
+        url: String,
+        autoUpdateIntervalHours: Int,
+    ) {
         viewModelScope.launch {
-            withRefreshTracking {
-                runCatching { subscriptionRefreshCoordinator.updateSubscription(sub, name, url) }
+            val normalizedIntervalHours = autoUpdateIntervalHours.coerceAtLeast(0)
+            val hasSubscriptionChanges = name.trim() != sub.name || url.trim() != sub.url
+            val hasIntervalChanges = normalizedIntervalHours != sub.autoUpdateIntervalHours
+
+            if (hasSubscriptionChanges) {
+                withRefreshTracking {
+                    runCatching {
+                        subscriptionRefreshCoordinator.updateSubscription(
+                            sub.copy(autoUpdateIntervalHours = normalizedIntervalHours),
+                            name,
+                            url,
+                        )
+                    }
+                }
+            } else if (hasIntervalChanges) {
+                subscriptionRepo.setAutoUpdateInterval(sub.id, normalizedIntervalHours)
+            }
+
+            if (hasIntervalChanges) {
+                subscriptionUpdateScheduler.enqueueDueCheckNow()
             }
         }
     }

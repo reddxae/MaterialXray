@@ -38,9 +38,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -131,7 +137,6 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
-    var autoUpdateSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
     var showRootFallbackDialog by remember { mutableStateOf(false) }
     val selectedServerName = remember(selectedServer) { selectedServer?.name ?: "No server selected" }
     val selectedServerDetail = remember(selectedServer) {
@@ -254,7 +259,6 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                         onRefresh = { viewModel.refreshSubscription(subscription) },
                         onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
                         onDefaultPingMethodSelected = { viewModel.setDefaultPingMethod(it) },
-                        onAutoUpdateIntervalClick = { autoUpdateSubscription = subscription },
                         onDescriptionHiddenChange = { hidden ->
                             viewModel.setSubscriptionDescriptionHidden(subscription.id, hidden)
                         },
@@ -310,20 +314,9 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         EditSubscriptionDialog(
             subscription = subscription,
             onDismiss = { editingSubscription = null },
-            onConfirm = { name, url ->
-                viewModel.updateSubscription(subscription, name, url)
+            onConfirm = { name, url, autoUpdateIntervalHours ->
+                viewModel.updateSubscription(subscription, name, url, autoUpdateIntervalHours)
                 editingSubscription = null
-            },
-        )
-    }
-
-    autoUpdateSubscription?.let { subscription ->
-        AutoUpdateIntervalDialog(
-            subscription = subscription,
-            onDismiss = { autoUpdateSubscription = null },
-            onSelected = { intervalHours ->
-                viewModel.setSubscriptionAutoUpdateInterval(subscription.id, intervalHours)
-                autoUpdateSubscription = null
             },
         )
     }
@@ -545,7 +538,6 @@ private fun SubscriptionCard(
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
     onDefaultPingMethodSelected: (PingMethod) -> Unit,
-    onAutoUpdateIntervalClick: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
     onServerSelected: (Long) -> Unit,
     onTestLatency: (ServerEntity) -> Unit,
@@ -564,7 +556,6 @@ private fun SubscriptionCard(
                 onDefaultPingMethodSelected = onDefaultPingMethodSelected,
                 onDelete = onDelete,
                 onEdit = onEdit,
-                onAutoUpdateIntervalClick = onAutoUpdateIntervalClick,
                 onDescriptionHiddenChange = onDescriptionHiddenChange,
             )
             SubscriptionMetadataSection(subscription = subscription)
@@ -608,12 +599,14 @@ private fun SubscriptionMetadataSection(
         subscription.subscriptionDownloadBytes,
         subscription.subscriptionTotalBytes,
         subscription.subscriptionExpireAt,
-        subscription.autoUpdateIntervalHours,
     ) {
         buildSubscriptionMetadataUiState(subscription)
     }
 
-    if (!metadata.hasMetadata) return
+    val hasVisibleMetadata = metadata.announcement.isNotEmpty() ||
+        metadata.traffic != null ||
+        metadata.expiry != null
+    if (!hasVisibleMetadata) return
 
     Column(
         modifier = Modifier
@@ -630,7 +623,7 @@ private fun SubscriptionMetadataSection(
             SubscriptionDescriptionText(description = metadata.announcement)
         }
 
-        if (metadata.traffic != null || metadata.expiry != null || metadata.updateIntervalText.isNotBlank()) {
+        if (metadata.traffic != null || metadata.expiry != null) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
@@ -667,11 +660,6 @@ private fun SubscriptionMetadataSection(
                         )
                     }
 
-                    Text(
-                        text = metadata.updateIntervalText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
@@ -730,7 +718,6 @@ private fun SubscriptionHeader(
     onDefaultPingMethodSelected: (PingMethod) -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
-    onAutoUpdateIntervalClick: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -787,9 +774,22 @@ private fun SubscriptionHeader(
                 Icon(Icons.Default.MoreVert, contentDescription = "Subscription menu")
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Edit, contentDescription = null)
+                    },
+                    onClick = {
+                        showMenu = false
+                        onEdit()
+                    },
+                )
                 if (webPageUrl.isNotEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Web Page") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Public, contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             uriHandler.openUri(webPageUrl)
@@ -799,23 +799,29 @@ private fun SubscriptionHeader(
                 if (supportUrl.isNotEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Support") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Person, contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             uriHandler.openUri(supportUrl)
                         },
                     )
                 }
-                DropdownMenuItem(
-                    text = { Text("Edit") },
-                    onClick = {
-                        showMenu = false
-                        onEdit()
-                    },
-                )
                 if (hasDescription) {
                     DropdownMenuItem(
                         text = {
                             Text(if (subscription.descriptionHidden) "Show description" else "Hide description")
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (subscription.descriptionHidden) {
+                                    Icons.Default.Visibility
+                                } else {
+                                    Icons.Default.VisibilityOff
+                                },
+                                contentDescription = null,
+                            )
                         },
                         onClick = {
                             showMenu = false
@@ -824,14 +830,10 @@ private fun SubscriptionHeader(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("Auto update") },
-                    onClick = {
-                        showMenu = false
-                        onAutoUpdateIntervalClick()
-                    },
-                )
-                DropdownMenuItem(
                     text = { Text("Delete") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Delete, contentDescription = null)
+                    },
                     onClick = {
                         showMenu = false
                         onDelete()
@@ -1164,35 +1166,6 @@ private val autoUpdateIntervalOptions = listOf(
 )
 
 @Composable
-private fun AutoUpdateIntervalDialog(
-    subscription: SubscriptionEntity,
-    onDismiss: () -> Unit,
-    onSelected: (Int) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Auto update") },
-        text = {
-            Column {
-                autoUpdateIntervalOptions.forEach { option ->
-                    val selected = option.intervalHours == subscription.autoUpdateIntervalHours
-                    AutoUpdateIntervalRow(
-                        option = option,
-                        selected = selected,
-                        onSelected = { onSelected(option.intervalHours) },
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
-}
-
-@Composable
 private fun AutoUpdateIntervalRow(
     option: AutoUpdateIntervalOption,
     selected: Boolean,
@@ -1245,16 +1218,24 @@ private fun AutoUpdateIntervalIndicator(selected: Boolean) {
 private fun EditSubscriptionDialog(
     subscription: SubscriptionEntity,
     onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit,
+    onConfirm: (String, String, Int) -> Unit,
 ) {
     var name by remember(subscription.id) { mutableStateOf(subscription.name) }
     var url by remember(subscription.id) { mutableStateOf(subscription.url) }
+    var autoUpdateIntervalHours by remember(subscription.id) {
+        mutableStateOf(subscription.autoUpdateIntervalHours)
+    }
+    val hasChanges = name.trim() != subscription.name ||
+        url.trim() != subscription.url ||
+        autoUpdateIntervalHours != subscription.autoUpdateIntervalHours
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Subscription") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -1271,13 +1252,25 @@ private fun EditSubscriptionDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Auto update",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                autoUpdateIntervalOptions.forEach { option ->
+                    AutoUpdateIntervalRow(
+                        option = option,
+                        selected = option.intervalHours == autoUpdateIntervalHours,
+                        onSelected = { autoUpdateIntervalHours = option.intervalHours },
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(name.trim(), url.trim()) },
-                enabled = url.isNotBlank() &&
-                    (name.trim() != subscription.name || url.trim() != subscription.url),
+                onClick = { onConfirm(name.trim(), url.trim(), autoUpdateIntervalHours) },
+                enabled = url.isNotBlank() && hasChanges,
             ) {
                 Text("Save")
             }

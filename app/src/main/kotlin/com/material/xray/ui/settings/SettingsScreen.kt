@@ -58,6 +58,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val latencyDnsServers by viewModel.latencyDnsServers.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
     val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
+    val rootAvailable by viewModel.rootAvailable.collectAsStateWithLifecycle()
     val bypassLan by viewModel.bypassLan.collectAsStateWithLifecycle()
     val allowIpv6 by viewModel.allowIpv6.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
@@ -74,6 +75,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var defaultOutboundExpanded by remember { mutableStateOf(false) }
     var logLevelExpanded by remember { mutableStateOf(false) }
     var showRootAccessDeniedDialog by remember { mutableStateOf(false) }
+    val rootServiceAvailable = rootAvailable == true
+    val rootServiceActive = useRootService && rootServiceAvailable
     val appVersion = remember(context) {
         runCatching {
             @Suppress("DEPRECATION")
@@ -155,15 +158,151 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Use root service", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Use root service",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (rootAvailable == false) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                    Text(
+                        text = when (rootAvailable) {
+                            null -> "Checking root access..."
+                            true -> "Root access available"
+                            false -> "Root unavailable on this device"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Switch(checked = useRootService, onCheckedChange = { viewModel.setUseRootService(it) })
+                Switch(
+                    checked = useRootService && rootAvailable != false,
+                    onCheckedChange = { viewModel.setUseRootService(it) },
+                    enabled = rootServiceAvailable,
+                )
+            }
+
+            HorizontalDivider()
+            Text("Settings", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Show advanced options", style = MaterialTheme.typography.bodyLarge)
+                }
+                Switch(
+                    checked = showAdvancedOptions,
+                    onCheckedChange = { viewModel.setShowAdvancedOptions(it) },
+                )
+            }
+
+            HorizontalDivider()
+            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                LauncherIcon.entries.forEach { icon ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(icon.label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                        RadioButton(
+                            selected = icon == launcherIcon,
+                            onClick = { viewModel.setLauncherIcon(icon) },
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            Text("Startup", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Auto-connect on boot",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (rootServiceActive) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    if (!rootServiceActive) {
+                        Text(
+                            when (rootAvailable) {
+                                null -> "Checking root access..."
+                                true -> "Root service required"
+                                false -> "Root unavailable"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Switch(
+                    checked = autoConnect,
+                    onCheckedChange = { viewModel.setAutoConnect(it) },
+                    enabled = rootServiceActive,
+                )
+            }
+
+            HorizontalDivider()
+            Text("Routing", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Bypass LAN", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Route private IPs and LAN domains directly",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = bypassLan, onCheckedChange = { viewModel.setBypassLan(it) })
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Allow IPv6 connections", style = MaterialTheme.typography.bodyLarge)
+                }
+                Switch(checked = allowIpv6, onCheckedChange = { viewModel.setAllowIpv6(it) })
             }
 
             HorizontalDivider()
             Text("Network", style = MaterialTheme.typography.titleMedium)
 
-            if (useRootService) {
+            if (rootServiceActive) {
                 OutlinedTextField(
                     value = editingTunName,
                     onValueChange = { editingTunName = it },
@@ -347,120 +486,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Bypass LAN", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Route private IPs and LAN domains directly",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = bypassLan, onCheckedChange = { viewModel.setBypassLan(it) })
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Allow IPv6 connections", style = MaterialTheme.typography.bodyLarge)
-                }
-                Switch(checked = allowIpv6, onCheckedChange = { viewModel.setAllowIpv6(it) })
-            }
-
-            HorizontalDivider()
-            Text("Startup", style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Auto-connect on boot",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (useRootService) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                    if (!useRootService) {
-                        Text(
-                            "Root required",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Switch(
-                    checked = autoConnect,
-                    onCheckedChange = { viewModel.setAutoConnect(it) },
-                    enabled = useRootService,
-                )
-            }
-
-            HorizontalDivider()
-            Text("Settings", style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Show advanced options", style = MaterialTheme.typography.bodyLarge)
-                }
-                Switch(
-                    checked = showAdvancedOptions,
-                    onCheckedChange = { viewModel.setShowAdvancedOptions(it) },
-                )
-            }
-
             HorizontalDivider()
             Text("Data", style = MaterialTheme.typography.titleMedium)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { exportLauncher.launch("material-xray-backup.json") }) { Text("Export") }
                 OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) { Text("Import") }
-            }
-
-            HorizontalDivider()
-            Text("Appearance", style = MaterialTheme.typography.titleMedium)
-
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                LauncherIcon.entries.forEach { icon ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(icon.label, style = MaterialTheme.typography.bodyLarge)
-                        }
-                        RadioButton(
-                            selected = icon == launcherIcon,
-                            onClick = { viewModel.setLauncherIcon(icon) },
-                        )
-                    }
-                }
             }
 
             HorizontalDivider()

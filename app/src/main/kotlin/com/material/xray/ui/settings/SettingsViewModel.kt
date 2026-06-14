@@ -61,6 +61,7 @@ class SettingsViewModel @Inject constructor(
     private val _geositeUpdating = MutableStateFlow(false)
     private val _assetUpdateEvents = MutableSharedFlow<String>()
     private val _rootAccessDeniedEvents = MutableSharedFlow<Unit>()
+    private val _rootAvailable = MutableStateFlow<Boolean?>(null)
 
     val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
     val dnsServers =
@@ -124,6 +125,11 @@ class SettingsViewModel @Inject constructor(
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
     val assetUpdateEvents: SharedFlow<String> = _assetUpdateEvents.asSharedFlow()
     val rootAccessDeniedEvents: SharedFlow<Unit> = _rootAccessDeniedEvents.asSharedFlow()
+    val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
+
+    init {
+        checkRootAvailability()
+    }
 
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
     fun setDnsServers(servers: String) =
@@ -140,12 +146,19 @@ class SettingsViewModel @Inject constructor(
             return@launch
         }
 
-        val rootAvailable = withContext(Dispatchers.IO) { rootShell.open() }
-        if (!rootAvailable) {
+        if (_rootAvailable.value == false) {
             _rootAccessDeniedEvents.emit(Unit)
             return@launch
         }
 
+        val rootAvailable = withContext(Dispatchers.IO) { rootShell.open() }
+        if (!rootAvailable) {
+            _rootAvailable.value = false
+            _rootAccessDeniedEvents.emit(Unit)
+            return@launch
+        }
+
+        _rootAvailable.value = true
         settingsRepo.setUseRootService(true)
         reloadActiveConnectionIfConnected()
     }
@@ -313,6 +326,17 @@ class SettingsViewModel @Inject constructor(
     private fun reloadActiveConnectionIfConnected() {
         if (connectionStateHolder.state.value is ConnectionState.Connected) {
             XrayService.reload(context)
+        }
+    }
+
+    private fun checkRootAvailability() {
+        viewModelScope.launch {
+            val available = withContext(Dispatchers.IO) { rootShell.open() }
+            _rootAvailable.value = available
+            if (!available && useRootService.value) {
+                settingsRepo.setUseRootService(false)
+                reloadActiveConnectionIfConnected()
+            }
         }
     }
 }

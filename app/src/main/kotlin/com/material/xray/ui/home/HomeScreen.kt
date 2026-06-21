@@ -542,6 +542,16 @@ private fun SubscriptionCard(
     onServerSelected: (Long) -> Unit,
     onTestLatency: (ServerEntity) -> Unit,
 ) {
+    val metadata = remember(
+        subscription.announce,
+        subscription.subscriptionUploadBytes,
+        subscription.subscriptionDownloadBytes,
+        subscription.subscriptionTotalBytes,
+        subscription.subscriptionExpireAt,
+    ) {
+        buildSubscriptionMetadataUiState(subscription)
+    }
+
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -549,7 +559,7 @@ private fun SubscriptionCard(
         Column(modifier = Modifier.fillMaxWidth()) {
             SubscriptionHeader(
                 subscription = subscription,
-                serverCount = servers.size,
+                metadata = metadata,
                 defaultPingMethod = defaultPingMethod,
                 onRefresh = onRefresh,
                 onTestAll = onTestAll,
@@ -558,7 +568,10 @@ private fun SubscriptionCard(
                 onEdit = onEdit,
                 onDescriptionHiddenChange = onDescriptionHiddenChange,
             )
-            SubscriptionMetadataSection(subscription = subscription)
+            SubscriptionMetadataSection(
+                subscription = subscription,
+                metadata = metadata,
+            )
 
             if (servers.isEmpty()) {
                 Text(
@@ -592,19 +605,12 @@ private fun SubscriptionCard(
 @Composable
 private fun SubscriptionMetadataSection(
     subscription: SubscriptionEntity,
+    metadata: SubscriptionMetadataUiState,
 ) {
-    val metadata = remember(
-        subscription.announce,
-        subscription.subscriptionUploadBytes,
-        subscription.subscriptionDownloadBytes,
-        subscription.subscriptionTotalBytes,
-        subscription.subscriptionExpireAt,
-    ) {
-        buildSubscriptionMetadataUiState(subscription)
-    }
+    val limitedTraffic = metadata.traffic?.takeUnless { it.quotaText == null }
 
     val hasVisibleMetadata = metadata.announcement.isNotEmpty() ||
-        metadata.traffic != null ||
+        limitedTraffic != null ||
         metadata.expiry != null
     if (!hasVisibleMetadata) return
 
@@ -623,7 +629,7 @@ private fun SubscriptionMetadataSection(
             SubscriptionDescriptionText(description = metadata.announcement)
         }
 
-        if (metadata.traffic != null || metadata.expiry != null) {
+        if (limitedTraffic != null || metadata.expiry != null) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
@@ -637,17 +643,11 @@ private fun SubscriptionMetadataSection(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    metadata.traffic?.let { trafficState ->
-                        if (trafficState.quotaText == null) {
-                            SubscriptionTrafficText(
-                                text = trafficState.summaryText(metadata.expiry),
-                            )
-                        } else {
-                            SubscriptionTrafficProgress(state = trafficState)
-                        }
+                    limitedTraffic?.let { trafficState ->
+                        SubscriptionTrafficProgress(state = trafficState)
                     }
 
-                    val detailText = metadata.traffic?.detailText(metadata.expiry)
+                    val detailText = limitedTraffic?.detailText(metadata.expiry)
                     if (!detailText.isNullOrBlank()) {
                         SubscriptionTrafficText(
                             text = detailText,
@@ -711,7 +711,7 @@ private fun SubscriptionTrafficProgress(
 @Composable
 private fun SubscriptionHeader(
     subscription: SubscriptionEntity,
-    serverCount: Int,
+    metadata: SubscriptionMetadataUiState,
     defaultPingMethod: PingMethod,
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
@@ -726,6 +726,9 @@ private fun SubscriptionHeader(
     val webPageUrl = subscription.profileWebPageUrl?.trim().orEmpty()
     val supportUrl = subscription.supportUrl?.trim().orEmpty()
     val hasDescription = subscription.announce?.trim()?.isNotEmpty() == true
+    val consumedTrafficText = metadata.traffic
+        ?.takeIf { it.quotaText == null }
+        ?.downloadText
 
     Row(
         modifier = Modifier
@@ -742,13 +745,15 @@ private fun SubscriptionHeader(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = "$serverCount servers",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (!consumedTrafficText.isNullOrBlank()) {
+                Text(
+                    text = consumedTrafficText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         IconButton(onClick = onRefresh) {
             Icon(Icons.Default.Refresh, contentDescription = "Refresh ${subscription.name}")

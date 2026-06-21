@@ -62,13 +62,6 @@ internal fun buildSubscriptionMetadataUiState(
         updateIntervalText = formatAutoUpdateInterval(subscription.autoUpdateIntervalHours),
     )
 
-internal fun SubscriptionTrafficUiState.summaryText(expiry: SubscriptionExpiryUiState?): String =
-    if (quotaText == null && expiry != null) {
-        "$summary, ${expiry.inlineText}"
-    } else {
-        summary
-    }
-
 internal fun SubscriptionTrafficUiState.detailText(expiry: SubscriptionExpiryUiState?): String? {
     val downloaded = downloadText
     return when {

@@ -2,6 +2,9 @@ package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
+import com.material.xray.model.SERVER_EXTRA_SPIDER_X
+import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import java.net.URI
 import java.net.URLDecoder
 
@@ -39,6 +42,9 @@ object VlessParser {
             extra = buildMap {
                 params["encryption"]?.let { put("encryption", it) }
                 params["flow"]?.let { put("flow", it) }
+                params["extra"]?.let { put(SERVER_EXTRA_XHTTP_EXTRA, URLDecoder.decode(it, "UTF-8")) }
+                params["pqv"]?.let { put(SERVER_EXTRA_MLDSA65_VERIFY, URLDecoder.decode(it, "UTF-8")) }
+                params["spx"]?.let { put(SERVER_EXTRA_SPIDER_X, URLDecoder.decode(it, "UTF-8")) }
             },
             rawUri = uri,
         )

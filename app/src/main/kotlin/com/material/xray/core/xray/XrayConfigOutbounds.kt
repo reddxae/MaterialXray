@@ -2,6 +2,9 @@ package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
+import com.material.xray.model.SERVER_EXTRA_SPIDER_X
+import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -15,6 +18,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import java.net.URI
+import java.net.URLDecoder
 
 internal val SPECIAL_OUTBOUND_PROTOCOLS = setOf("freedom", "dns", "blackhole")
 
@@ -221,6 +226,8 @@ private fun JsonObjectBuilder.putSecuritySettings(server: ServerConfig) {
             if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
             if (server.security.publicKey.isNotEmpty()) put("publicKey", server.security.publicKey)
             if (server.security.shortId.isNotEmpty()) put("shortId", server.security.shortId)
+            server.extraOrRawUri(SERVER_EXTRA_MLDSA65_VERIFY, "pqv")?.let { put("mldsa65Verify", it) }
+            server.extraOrRawUri(SERVER_EXTRA_SPIDER_X, "spx")?.let { put("spiderX", it) }
         })
     }
 }
@@ -242,6 +249,9 @@ private fun JsonObjectBuilder.putTransportSettings(server: ServerConfig) {
             if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
             if (server.transport.host.isNotEmpty()) put("host", server.transport.host)
             if (server.transport.mode.isNotEmpty()) put("mode", server.transport.mode)
+            server.extraOrRawUri(SERVER_EXTRA_XHTTP_EXTRA, "extra")
+                ?.let { rawExtra -> runCatching { Json.parseToJsonElement(rawExtra) }.getOrNull() }
+                ?.let { put("extra", it) }
         })
 
         "httpupgrade" -> put("httpupgradeSettings", buildJsonObject {
@@ -250,3 +260,22 @@ private fun JsonObjectBuilder.putTransportSettings(server: ServerConfig) {
         })
     }
 }
+
+private fun ServerConfig.extraOrRawUri(extraKey: String, rawUriParam: String): String? =
+    extra[extraKey]?.takeIf { it.isNotBlank() }
+        ?: rawUriQueryParam(rawUriParam)
+
+private fun ServerConfig.rawUriQueryParam(name: String): String? = runCatching {
+    val query = URI(rawUri).rawQuery ?: return@runCatching null
+    query.split("&")
+        .asSequence()
+        .mapNotNull { part ->
+            val values = part.split("=", limit = 2)
+            if (values.size == 2 && values[0] == name) {
+                URLDecoder.decode(values[1], "UTF-8")
+            } else {
+                null
+            }
+        }
+        .firstOrNull { it.isNotBlank() }
+}.getOrNull()

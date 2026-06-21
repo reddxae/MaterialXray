@@ -11,7 +11,9 @@ class VlessParserTest {
     fun `parse VLESS link with reality xhttp and extras`() {
         val uri = "vless://uuid@example.com:443?encryption=none&flow=xtls-rprx-vision" +
             "&type=xhttp&path=%2Fapi%2Fv1&host=edge.example&mode=auto&serviceName=svc" +
-            "&security=reality&sni=sni.example&fp=chrome&pbk=publicKey&sid=shortId&alpn=h2,http/1.1" +
+            "&extra=%7B%22xPaddingBytes%22%3A%2231-68%22%7D" +
+            "&security=reality&sni=sni.example&fp=chrome&pbk=publicKey&sid=shortId" +
+            "&pqv=verifyKey&spx=%2Fcrawler&alpn=h2,http/1.1" +
             "#VLESS%20Server"
 
         val config = VlessParser.parse(uri)!!
@@ -34,6 +36,9 @@ class VlessParserTest {
         assertEquals(listOf("h2", "http/1.1"), config.security.alpn)
         assertEquals("none", config.extra["encryption"])
         assertEquals("xtls-rprx-vision", config.extra["flow"])
+        assertEquals("{\"xPaddingBytes\":\"31-68\"}", config.extra["xhttpExtra"])
+        assertEquals("verifyKey", config.extra["mldsa65Verify"])
+        assertEquals("/crawler", config.extra["spiderX"])
         assertEquals(uri, config.rawUri)
     }
 

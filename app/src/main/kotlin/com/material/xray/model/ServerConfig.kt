@@ -41,3 +41,7 @@ fun ServerConfig.endpointSummary(): String =
         transport.type.lowercase(),
         security.type.lowercase(),
     ).joinToString(" • ")
+
+internal const val SERVER_EXTRA_XHTTP_EXTRA = "xhttpExtra"
+internal const val SERVER_EXTRA_MLDSA65_VERIFY = "mldsa65Verify"
+internal const val SERVER_EXTRA_SPIDER_X = "spiderX"

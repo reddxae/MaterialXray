@@ -246,28 +246,13 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     Text(
                         "Auto-connect on boot",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = if (rootServiceActive) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
-                    if (!rootServiceActive) {
-                        Text(
-                            when (rootAvailable) {
-                                null -> "Checking root access..."
-                                true -> "Root service required"
-                                false -> "Root unavailable"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
                 Switch(
                     checked = autoConnect,
                     onCheckedChange = { viewModel.setAutoConnect(it) },
-                    enabled = rootServiceActive,
+                    enabled = !useRootService || rootServiceActive,
                 )
             }
 

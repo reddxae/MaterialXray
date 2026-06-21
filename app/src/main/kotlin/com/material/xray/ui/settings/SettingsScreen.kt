@@ -70,6 +70,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val latencyCheckUrl by viewModel.latencyCheckUrl.collectAsStateWithLifecycle()
     val geoipUpdating by viewModel.geoipUpdating.collectAsStateWithLifecycle()
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
+    val xrayCoreVersion by viewModel.xrayCoreVersion.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     var defaultOutboundExpanded by remember { mutableStateOf(false) }
@@ -108,6 +109,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     }
     val hasLatencyCheckUrlChanges by remember(editingLatencyCheckUrl, latencyCheckUrl) {
         derivedStateOf { editingLatencyCheckUrl.trim() != latencyCheckUrl }
+    }
+    val xrayCoreVersionText = when (xrayCoreVersion) {
+        null -> "xray-core version detecting..."
+        "unknown" -> "xray-core version unknown"
+        else -> "xray-core v$xrayCoreVersion"
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -497,7 +503,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             HorizontalDivider()
             Text("About", style = MaterialTheme.typography.titleMedium)
             Text("Material Xray v$appVersion", style = MaterialTheme.typography.bodyMedium)
-            Text("xray-core v26.3.27", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(xrayCoreVersionText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 

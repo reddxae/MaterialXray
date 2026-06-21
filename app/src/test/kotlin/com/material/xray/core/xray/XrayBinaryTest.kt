@@ -2,6 +2,7 @@ package com.material.xray.core.xray
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
@@ -84,6 +85,26 @@ class XrayBinaryTest {
 
         assertEquals(File(dir, "config.json").absolutePath, xrayBinary.configPath())
         assertEquals("""{"log":{}}""", File(dir, "config.json").readText())
+    }
+
+    @Test
+    fun `readVersion returns version from bundled executable`() = withTempDir { dir ->
+        val nativeDir = File(dir, "lib").apply { mkdirs() }
+        File(nativeDir, "libxray.so").apply {
+            writeText("#!/bin/sh\nprintf 'Xray 26.6.7 (Xray, Penetrates Everything.)\\n'")
+            setExecutable(true, false)
+        }
+        val environment = FakeEnvironment(
+            filesDir = dir,
+            nativeLibraryDir = nativeDir,
+        )
+
+        assertEquals("26.6.7", XrayBinary(environment, supportedAbis = { arrayOf("arm64-v8a") }).readVersion())
+    }
+
+    @Test
+    fun `parseXrayVersion returns null for unrecognized output`() {
+        assertNull(parseXrayVersion("not xray"))
     }
 
     private class FakeEnvironment(

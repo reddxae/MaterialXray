@@ -10,6 +10,7 @@ import com.material.xray.core.launcher.LauncherIconManager
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.GeoDataAsset
 import com.material.xray.core.xray.GeoDataManager
+import com.material.xray.core.xray.XrayBinary
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.dao.ServerDao
 import com.material.xray.data.db.dao.SubscriptionDao
@@ -62,6 +63,7 @@ class SettingsViewModel @Inject constructor(
     private val _assetUpdateEvents = MutableSharedFlow<String>()
     private val _rootAccessDeniedEvents = MutableSharedFlow<Unit>()
     private val _rootAvailable = MutableStateFlow<Boolean?>(null)
+    private val _xrayCoreVersion = MutableStateFlow<String?>(null)
 
     val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
     val dnsServers =
@@ -126,9 +128,11 @@ class SettingsViewModel @Inject constructor(
     val assetUpdateEvents: SharedFlow<String> = _assetUpdateEvents.asSharedFlow()
     val rootAccessDeniedEvents: SharedFlow<Unit> = _rootAccessDeniedEvents.asSharedFlow()
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
+    val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
 
     init {
         checkRootAvailability()
+        loadXrayCoreVersion()
     }
 
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
@@ -336,6 +340,14 @@ class SettingsViewModel @Inject constructor(
             if (!available && useRootService.value) {
                 settingsRepo.setUseRootService(false)
                 reloadActiveConnectionIfConnected()
+            }
+        }
+    }
+
+    private fun loadXrayCoreVersion() {
+        viewModelScope.launch {
+            _xrayCoreVersion.value = withContext(Dispatchers.IO) {
+                XrayBinary(context).readVersion() ?: "unknown"
             }
         }
     }

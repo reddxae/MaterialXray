@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import java.io.File
 import java.io.InputStream
+import java.util.concurrent.TimeUnit
 
 internal interface XrayBinaryEnvironment {
     val filesDir: File
@@ -73,6 +74,30 @@ class XrayBinary internal constructor(
         return androidBinaryPath != null
     }
 
+    fun readVersion(): String? {
+        binaryDir.mkdirs()
+        val binaryPath = androidBinaryPath ?: rootBinaryPath.takeIf { ensureRootBinaryExtracted() } ?: return null
+
+        return runCatching {
+            val process = ProcessBuilder(binaryPath, "version")
+                .directory(binaryDir)
+                .redirectErrorStream(true)
+                .apply {
+                    environment()["xray.location.asset"] = binaryDir.absolutePath
+                    environment()["XRAY_LOCATION_ASSET"] = binaryDir.absolutePath
+                }
+                .start()
+
+            if (!process.waitFor(VERSION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return@runCatching null
+            }
+
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            if (process.exitValue() == 0) parseXrayVersion(output) else null
+        }.getOrNull()
+    }
+
     fun configPath(): String = File(environment.filesDir, "config.json").absolutePath
 
     fun writeConfig(configJson: String) {
@@ -90,4 +115,15 @@ class XrayBinary internal constructor(
         }.getOrDefault(false)
 
     private fun getAppVersion(): String = environment.appVersion()
+
+    private companion object {
+        private const val VERSION_TIMEOUT_SECONDS = 2L
+    }
 }
+
+private val XRAY_VERSION_REGEX = Regex("^Xray\\s+v?([^\\s]+)")
+
+internal fun parseXrayVersion(output: String): String? =
+    output.lineSequence()
+        .mapNotNull { line -> XRAY_VERSION_REGEX.find(line.trim())?.groupValues?.getOrNull(1) }
+        .firstOrNull()

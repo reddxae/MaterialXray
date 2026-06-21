@@ -2,8 +2,11 @@ package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
+import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -59,6 +62,71 @@ class XrayConfigOutboundsTest {
         val stream = outbound.getValue("streamSettings").jsonObject
         assertEquals("tcp", stream.getValue("network").jsonPrimitive.content)
         assertEquals("rmnet0", stream.getValue("sockopt").jsonObject.getValue("interface").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `buildProxyOutbound includes VLESS Reality pqv and XHTTP extra settings`() {
+        val outbound = buildProxyOutbound(
+            server = server("XHTTP").copy(
+                transport = ServerConfig.Transport(
+                    type = "xhttp",
+                    path = "/playlist-256000.m3u8",
+                    mode = "auto",
+                ),
+                security = ServerConfig.Security(
+                    type = "reality",
+                    sni = "aud-stream.example",
+                    fingerprint = "firefox",
+                    publicKey = "publicKey",
+                    shortId = "b73f4612c9a9",
+                ),
+                extra = mapOf(
+                    SERVER_EXTRA_XHTTP_EXTRA to """{"xPaddingBytes":"31-68","scMaxBufferedPosts":30}""",
+                    SERVER_EXTRA_MLDSA65_VERIFY to "verifyKey",
+                ),
+            ),
+            fwmark = 100,
+            physicalInterface = null,
+            tag = "proxy",
+        )
+
+        val stream = outbound.getValue("streamSettings").jsonObject
+        val reality = stream.getValue("realitySettings").jsonObject
+        assertEquals("verifyKey", reality.getValue("mldsa65Verify").jsonPrimitive.content)
+
+        val xhttp = stream.getValue("xhttpSettings").jsonObject
+        assertEquals("/playlist-256000.m3u8", xhttp.getValue("path").jsonPrimitive.content)
+        assertEquals("auto", xhttp.getValue("mode").jsonPrimitive.content)
+        val extra = xhttp.getValue("extra").jsonObject
+        assertEquals("31-68", extra.getValue("xPaddingBytes").jsonPrimitive.content)
+        assertEquals(30, extra.getValue("scMaxBufferedPosts").jsonPrimitive.int)
+    }
+
+    @Test
+    fun `buildProxyOutbound falls back to raw VLESS uri for newer share params`() {
+        val outbound = buildProxyOutbound(
+            server = server("Stored").copy(
+                transport = ServerConfig.Transport(type = "xhttp", mode = "auto"),
+                security = ServerConfig.Security(type = "reality", publicKey = "publicKey"),
+                rawUri = "vless://uuid@example.com:443?" +
+                    "extra=%7B%22scMaxBufferedPosts%22%3A30%7D&pqv=verifyKey",
+            ),
+            fwmark = 100,
+            physicalInterface = null,
+            tag = "proxy",
+        )
+
+        val stream = outbound.getValue("streamSettings").jsonObject
+        assertEquals(
+            "verifyKey",
+            stream.getValue("realitySettings").jsonObject.getValue("mldsa65Verify").jsonPrimitive.content,
+        )
+        assertEquals(
+            30,
+            stream.getValue("xhttpSettings").jsonObject
+                .getValue("extra").jsonObject
+                .getValue("scMaxBufferedPosts").jsonPrimitive.int,
+        )
     }
 
     @Test

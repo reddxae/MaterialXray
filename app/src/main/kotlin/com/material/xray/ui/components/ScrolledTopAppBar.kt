@@ -3,7 +3,6 @@ package com.material.xray.ui.components
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.graphics.Color
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,14 +38,11 @@ fun ScrolledTopAppBar(
     if (window != null && !view.isInEditMode) {
         val useDarkIcons = containerColor.luminance() > 0.5f
         SideEffect {
-            window.statusBarColor = Color.TRANSPARENT
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = useDarkIcons
         }
         DisposableEffect(window, view) {
-            val previousStatusBarColor = window.statusBarColor
             val previousLightStatusBars = WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars
             onDispose {
-                window.statusBarColor = previousStatusBarColor
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = previousLightStatusBars
             }
         }

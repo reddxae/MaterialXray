@@ -47,7 +47,7 @@ class ServerLatencyTester @Inject constructor(
 ) {
     private val json = Json { prettyPrint = true }
     private val xrayBinary = XrayBinary(context)
-    private val serverAddressResolver = ServerAddressResolver()
+    private val serverAddressResolver = ServerAddressResolver(context)
 
     suspend fun measure(
         server: ServerConfig,

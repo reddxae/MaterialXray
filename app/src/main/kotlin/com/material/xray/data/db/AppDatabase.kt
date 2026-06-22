@@ -14,6 +14,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 @Database(
     entities = [ServerEntity::class, SubscriptionEntity::class, AppBypassEntity::class],
     version = 8,
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun serverDao(): ServerDao
@@ -22,55 +23,55 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN contentDisposition TEXT")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN contentType TEXT")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN profileTitle TEXT")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN profileUpdateIntervalHours INTEGER")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionUploadBytes INTEGER")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionDownloadBytes INTEGER")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionTotalBytes INTEGER")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionExpireAt INTEGER")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN profileWebPageUrl TEXT")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN announce TEXT")
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN supportUrl TEXT")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN contentDisposition TEXT")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN contentType TEXT")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN profileTitle TEXT")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN profileUpdateIntervalHours INTEGER")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionUploadBytes INTEGER")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionDownloadBytes INTEGER")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionTotalBytes INTEGER")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN subscriptionExpireAt INTEGER")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN profileWebPageUrl TEXT")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN announce TEXT")
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN supportUrl TEXT")
             }
         }
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE app_bypass ADD COLUMN serverId INTEGER")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_bypass ADD COLUMN serverId INTEGER")
             }
         }
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE app_bypass ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("UPDATE app_bypass SET manual = 1 WHERE excluded = 0 AND serverId IS NOT NULL")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_bypass ADD COLUMN manual INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE app_bypass SET manual = 1 WHERE excluded = 0 AND serverId IS NOT NULL")
             }
         }
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN autoUpdateIntervalHours INTEGER NOT NULL DEFAULT 1")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN autoUpdateIntervalHours INTEGER NOT NULL DEFAULT 1")
             }
         }
 
         val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE app_bypass ADD COLUMN routeMode TEXT")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE app_bypass ADD COLUMN routeMode TEXT")
             }
         }
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE subscriptions ADD COLUMN descriptionHidden INTEGER NOT NULL DEFAULT 0")
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN descriptionHidden INTEGER NOT NULL DEFAULT 0")
             }
         }
 
         val MIGRATION_7_8 = object : Migration(7, 8) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL(
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
                     """
                     CREATE TABLE app_bypass_new (
                         packageName TEXT NOT NULL,
@@ -84,7 +85,7 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
-                database.execSQL(
+                db.execSQL(
                     """
                     INSERT INTO app_bypass_new (packageName, profileId, uid, excluded, serverId, manual, routeMode)
                     SELECT packageName,
@@ -97,8 +98,8 @@ abstract class AppDatabase : RoomDatabase() {
                     FROM app_bypass
                     """.trimIndent()
                 )
-                database.execSQL("DROP TABLE app_bypass")
-                database.execSQL("ALTER TABLE app_bypass_new RENAME TO app_bypass")
+                db.execSQL("DROP TABLE app_bypass")
+                db.execSQL("ALTER TABLE app_bypass_new RENAME TO app_bypass")
             }
         }
     }

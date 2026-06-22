@@ -1,8 +1,10 @@
 package com.material.xray.core.xray
 
+import android.content.Context
 import android.net.DnsResolver
-import android.os.CancellationSignal
 import android.os.Build
+import android.os.CancellationSignal
+import android.os.Looper
 import androidx.annotation.RequiresApi
 import com.material.xray.model.ServerConfig
 import kotlinx.coroutines.async
@@ -17,7 +19,9 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.random.Random
 
-class ServerAddressResolver {
+class ServerAddressResolver(
+    private val context: Context? = null,
+) {
     data class Result(
         val server: ServerConfig,
         val attempted: Boolean,
@@ -94,7 +98,7 @@ class ServerAddressResolver {
         val cancellation = CancellationSignal()
         continuation.invokeOnCancellation { cancellation.cancel() }
 
-        DnsResolver.getInstance().query(
+        dnsResolver().query(
             null,
             host,
             DnsResolver.FLAG_NO_CACHE_LOOKUP,
@@ -115,6 +119,15 @@ class ServerAddressResolver {
             },
         )
     }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun dnsResolver(): DnsResolver =
+        if (Build.VERSION.SDK_INT >= 37 && context != null) {
+            DnsResolver(context, Looper.getMainLooper())
+        } else {
+            @Suppress("DEPRECATION")
+            DnsResolver.getInstance()
+        }
 
     private fun resolveWithOkHttpDns(host: String): List<String> = runCatching {
         Dns.SYSTEM.lookup(host).mapNotNull { it.hostAddress }

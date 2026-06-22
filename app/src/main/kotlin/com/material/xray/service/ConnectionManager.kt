@@ -36,7 +36,7 @@ class ConnectionManager(
     private val onXrayLogReady: () -> Unit = {},
 ) {
     private val xrayBinary = XrayBinary(context)
-    private val serverAddressResolver = ServerAddressResolver()
+    private val serverAddressResolver = ServerAddressResolver(context)
     private val tunManager = TunManager(shell)
     private val cleanupManager = CleanupManager(context, shell)
     private val stateFile = StateFile(context)

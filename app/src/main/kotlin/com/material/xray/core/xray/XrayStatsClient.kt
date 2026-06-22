@@ -48,8 +48,9 @@ internal class XrayStatsClient(
     }
 
     private fun <T> withBlockingStub(block: (StatsServiceGrpc.StatsServiceBlockingStub) -> T): Result<T> {
-        val channel = buildChannel()
+        var channel: ManagedChannel? = null
         return try {
+            channel = buildChannel()
             val stub = StatsServiceGrpc.newBlockingStub(channel)
                 .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
             Result.success(block(stub))
@@ -58,8 +59,8 @@ internal class XrayStatsClient(
         } catch (e: RuntimeException) {
             Result.failure(e)
         } finally {
-            channel.shutdownNow()
-            channel.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)
+            channel?.shutdownNow()
+            channel?.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)
         }
     }
 

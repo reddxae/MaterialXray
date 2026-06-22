@@ -22,6 +22,8 @@ import com.material.xray.data.repository.withSubscriptionMetadata
 import com.material.xray.model.BackupData
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
+import com.material.xray.model.NotificationField
+import com.material.xray.model.NotificationStyle
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.service.ConnectionStateHolder
@@ -107,6 +109,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         false,
+    )
+    val notificationSettings = settingsRepo.notificationSettings.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        com.material.xray.model.NotificationSettings(),
     )
     val geoipUrl = settingsRepo.geoipUrl.stateIn(
         viewModelScope,
@@ -195,6 +202,33 @@ class SettingsViewModel @Inject constructor(
         if (enabled == showAdvancedOptions.value) return@launch
         settingsRepo.setShowAdvancedOptions(enabled)
         reloadActiveConnectionIfConnected()
+    }
+
+    fun setNotificationEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setNotificationEnabled(enabled)
+    }
+    fun setNotificationUpdateIntervalMs(intervalMs: Int) = viewModelScope.launch {
+        settingsRepo.setNotificationUpdateIntervalMs(intervalMs)
+    }
+    fun setNotificationStyle(style: NotificationStyle) = viewModelScope.launch {
+        settingsRepo.setNotificationStyle(style)
+    }
+    fun setNotificationShowTrafficSpeed(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setNotificationShowTrafficSpeed(enabled)
+    }
+    fun setNotificationShowRamUsage(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setNotificationShowRamUsage(enabled)
+    }
+    fun setNotificationShowConnectionCount(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setNotificationShowConnectionCount(enabled)
+    }
+    fun setNotificationFieldEnabled(field: NotificationField, enabled: Boolean) = when (field) {
+        NotificationField.TrafficSpeed -> setNotificationShowTrafficSpeed(enabled)
+        NotificationField.RamUsage -> setNotificationShowRamUsage(enabled)
+        NotificationField.ConnectionCount -> setNotificationShowConnectionCount(enabled)
+    }
+    fun setNotificationFieldOrder(order: List<NotificationField>) = viewModelScope.launch {
+        settingsRepo.setNotificationFieldOrder(order)
     }
 
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }

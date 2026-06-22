@@ -15,6 +15,9 @@ import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.PingMethod
+import com.material.xray.model.NotificationField
+import com.material.xray.model.NotificationSettings
+import com.material.xray.model.NotificationStyle
 import com.material.xray.model.XrayRuntimeSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -60,6 +63,13 @@ class SettingsRepository @Inject constructor(
         val ROUTING_RULE_STATES = stringPreferencesKey("routing_rule_states")
         val DELETED_DEFAULT_ROUTING_RULE_IDS = stringSetPreferencesKey("deleted_default_routing_rule_ids")
         val USE_ROOT_SERVICE = booleanPreferencesKey("use_root_service")
+        val NOTIFICATION_ENABLED = booleanPreferencesKey("notification_enabled")
+        val NOTIFICATION_UPDATE_INTERVAL_MS = intPreferencesKey("notification_update_interval_ms")
+        val NOTIFICATION_STYLE = stringPreferencesKey("notification_style")
+        val NOTIFICATION_SHOW_TRAFFIC_SPEED = booleanPreferencesKey("notification_show_traffic_speed")
+        val NOTIFICATION_SHOW_RAM_USAGE = booleanPreferencesKey("notification_show_ram_usage")
+        val NOTIFICATION_SHOW_CONNECTION_COUNT = booleanPreferencesKey("notification_show_connection_count")
+        val NOTIFICATION_FIELD_ORDER = stringPreferencesKey("notification_field_order")
         private val LEGACY_GEO_DATA_BASE_URL = stringPreferencesKey("geo_data_base_url")
         private const val CURRENT_ROUTING_RULES_VERSION = 2
 
@@ -131,6 +141,18 @@ class SettingsRepository @Inject constructor(
             deletedDefaultRuleIds = prefs[DELETED_DEFAULT_ROUTING_RULE_IDS].orEmpty(),
         )
     }
+    val notificationSettings: Flow<NotificationSettings> = store.data.map { prefs ->
+        NotificationSettings(
+            enabled = prefs[NOTIFICATION_ENABLED] ?: true,
+            updateIntervalMs = (prefs[NOTIFICATION_UPDATE_INTERVAL_MS] ?: NotificationSettings.DEFAULT_UPDATE_INTERVAL_MS)
+                .coerceIn(NotificationSettings.MIN_UPDATE_INTERVAL_MS, NotificationSettings.MAX_UPDATE_INTERVAL_MS),
+            style = NotificationStyle.fromValue(prefs[NOTIFICATION_STYLE]),
+            showTrafficSpeed = prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] ?: false,
+            showRamUsage = prefs[NOTIFICATION_SHOW_RAM_USAGE] ?: false,
+            showConnectionCount = prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] ?: false,
+            fieldOrder = decodeNotificationFieldOrder(prefs[NOTIFICATION_FIELD_ORDER]),
+        )
+    }
 
     suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings =
         XrayRuntimeSettings(
@@ -184,6 +206,30 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setUseRootService(enabled: Boolean) = store.edit { prefs ->
         prefs[USE_ROOT_SERVICE] = enabled
+    }
+    suspend fun setNotificationEnabled(enabled: Boolean) = store.edit { prefs ->
+        prefs[NOTIFICATION_ENABLED] = enabled
+    }
+    suspend fun setNotificationUpdateIntervalMs(intervalMs: Int) = store.edit { prefs ->
+        prefs[NOTIFICATION_UPDATE_INTERVAL_MS] = intervalMs.coerceIn(
+            NotificationSettings.MIN_UPDATE_INTERVAL_MS,
+            NotificationSettings.MAX_UPDATE_INTERVAL_MS,
+        )
+    }
+    suspend fun setNotificationStyle(style: NotificationStyle) = store.edit { prefs ->
+        prefs[NOTIFICATION_STYLE] = style.name
+    }
+    suspend fun setNotificationShowTrafficSpeed(enabled: Boolean) = store.edit { prefs ->
+        prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] = enabled
+    }
+    suspend fun setNotificationShowRamUsage(enabled: Boolean) = store.edit { prefs ->
+        prefs[NOTIFICATION_SHOW_RAM_USAGE] = enabled
+    }
+    suspend fun setNotificationShowConnectionCount(enabled: Boolean) = store.edit { prefs ->
+        prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] = enabled
+    }
+    suspend fun setNotificationFieldOrder(fields: List<NotificationField>) = store.edit { prefs ->
+        prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(fields)
     }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
@@ -251,6 +297,21 @@ class SettingsRepository @Inject constructor(
             prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] =
                 map["app_specific_server_note_shown"]?.toBooleanStrictOrNull() ?: false
             prefs[USE_ROOT_SERVICE] = map["use_root_service"]?.toBooleanStrictOrNull() ?: false
+            prefs[NOTIFICATION_ENABLED] = map["notification_enabled"]?.toBooleanStrictOrNull() ?: true
+            prefs[NOTIFICATION_UPDATE_INTERVAL_MS] = map["notification_update_interval_ms"]
+                ?.toIntOrNull()
+                ?.coerceIn(NotificationSettings.MIN_UPDATE_INTERVAL_MS, NotificationSettings.MAX_UPDATE_INTERVAL_MS)
+                ?: NotificationSettings.DEFAULT_UPDATE_INTERVAL_MS
+            prefs[NOTIFICATION_STYLE] = NotificationStyle.fromValue(map["notification_style"]).name
+            prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] =
+                map["notification_show_traffic_speed"]?.toBooleanStrictOrNull() ?: false
+            prefs[NOTIFICATION_SHOW_RAM_USAGE] =
+                map["notification_show_ram_usage"]?.toBooleanStrictOrNull() ?: false
+            prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] =
+                map["notification_show_connection_count"]?.toBooleanStrictOrNull() ?: false
+            prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(
+                decodeNotificationFieldOrder(map["notification_field_order"]),
+            )
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }
@@ -274,6 +335,21 @@ class SettingsRepository @Inject constructor(
 
     private fun appendLegacyFileName(baseUrl: String, fileName: String): String =
         "${baseUrl.trim().trimEnd('/')}/$fileName"
+
+    private fun decodeNotificationFieldOrder(encoded: String?): List<NotificationField> {
+        val savedFields = encoded
+            ?.split(',')
+            ?.mapNotNull { value ->
+                NotificationField.entries.firstOrNull { it.name == value.trim() }
+            }
+            .orEmpty()
+        return (savedFields + NotificationField.entries).distinct()
+    }
+
+    private fun encodeNotificationFieldOrder(fields: List<NotificationField>): String =
+        (fields + NotificationField.entries)
+            .distinct()
+            .joinToString(",") { it.name }
 
     private fun decodeRoutingRuleStates(encoded: String?): Map<String, Boolean> =
         runCatching {

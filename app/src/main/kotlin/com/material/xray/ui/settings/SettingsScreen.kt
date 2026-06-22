@@ -3,15 +3,24 @@ package com.material.xray.ui.settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,6 +28,7 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -26,24 +36,40 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.collect
 import com.material.xray.model.LauncherIcon
+import com.material.xray.model.NotificationField
+import com.material.xray.model.NotificationSettings
+import com.material.xray.model.NotificationStyle
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.components.ScrolledTopAppBar
@@ -65,6 +91,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
+    val notificationSettings by viewModel.notificationSettings.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
     val latencyCheckUrl by viewModel.latencyCheckUrl.collectAsStateWithLifecycle()
@@ -76,6 +103,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var defaultOutboundExpanded by remember { mutableStateOf(false) }
     var logLevelExpanded by remember { mutableStateOf(false) }
     var showRootAccessDeniedDialog by remember { mutableStateOf(false) }
+    var showNotificationFieldsDialog by remember { mutableStateOf(false) }
+    var showFieldStyleDialog by remember { mutableStateOf(false) }
+    var showUpdateFrequencyDialog by remember { mutableStateOf(false) }
     val rootServiceAvailable = rootAvailable == true
     val rootServiceActive = useRootService && rootServiceAvailable
     val appVersion = remember(context) {
@@ -208,6 +238,49 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     onCheckedChange = { viewModel.setShowAdvancedOptions(it) },
                 )
             }
+
+            HorizontalDivider()
+            Text("Notification", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Customize persistent notification", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (notificationSettings.enabled) "Custom fields enabled" else "Use the default service status text",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = notificationSettings.enabled,
+                    onCheckedChange = viewModel::setNotificationEnabled,
+                )
+            }
+
+            SettingsActionRow(
+                title = "Configure fields",
+                subtitle = notificationFieldSummary(notificationSettings),
+                enabled = notificationSettings.enabled,
+                onClick = { showNotificationFieldsDialog = true },
+            )
+            SettingsActionRow(
+                title = "Field style",
+                subtitle = notificationSettings.style.label,
+                enabled = notificationSettings.enabled,
+                onClick = { showFieldStyleDialog = true },
+            )
+            SettingsActionRow(
+                title = "Update frequency",
+                subtitle = "Every ${notificationSettings.updateIntervalMs} ms",
+                enabled = notificationSettings.enabled,
+                onClick = { showUpdateFrequencyDialog = true },
+            )
 
             HorizontalDivider()
             Text("Appearance", style = MaterialTheme.typography.titleMedium)
@@ -503,4 +576,304 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             },
         )
     }
+
+    if (showNotificationFieldsDialog) {
+        NotificationFieldsDialog(
+            settings = notificationSettings,
+            onDismiss = { showNotificationFieldsDialog = false },
+            onFieldEnabledChange = viewModel::setNotificationFieldEnabled,
+            onReorder = viewModel::setNotificationFieldOrder,
+        )
+    }
+
+    if (showUpdateFrequencyDialog) {
+        UpdateFrequencyDialog(
+            currentValue = notificationSettings.updateIntervalMs,
+            onDismiss = { showUpdateFrequencyDialog = false },
+            onConfirm = {
+                viewModel.setNotificationUpdateIntervalMs(it)
+                showUpdateFrequencyDialog = false
+            },
+        )
+    }
+
+    if (showFieldStyleDialog) {
+        FieldStyleDialog(
+            selected = notificationSettings.style,
+            onDismiss = { showFieldStyleDialog = false },
+            onSelect = viewModel::setNotificationStyle,
+        )
+    }
+}
+
+@Composable
+private fun SettingsActionRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    val titleColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    val subtitleColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = subtitleColor,
+            )
+        }
+        Icon(
+            imageVector = Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = subtitleColor,
+        )
+    }
+}
+
+@Composable
+private fun FieldStyleDialog(
+    selected: NotificationStyle,
+    onDismiss: () -> Unit,
+    onSelect: (NotificationStyle) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Field style") },
+        text = {
+            Column {
+                NotificationStyle.entries.forEach { style ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onSelect(style)
+                                onDismiss()
+                            }
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = style == selected,
+                            onClick = {
+                                onSelect(style)
+                                onDismiss()
+                            },
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(style.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                style.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+    )
+}
+
+@Composable
+private fun UpdateFrequencyDialog(
+    currentValue: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
+    var text by remember { mutableStateOf(currentValue.toString()) }
+    val parsed = text.toIntOrNull()
+    val isValid = parsed != null &&
+        parsed in NotificationSettings.MIN_UPDATE_INTERVAL_MS..NotificationSettings.MAX_UPDATE_INTERVAL_MS
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Update frequency") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { value -> text = value.filter(Char::isDigit).take(4) },
+                singleLine = true,
+                isError = text.isNotEmpty() && !isValid,
+                suffix = { Text("ms") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                supportingText = {
+                    Text(
+                        "Range: ${NotificationSettings.MIN_UPDATE_INTERVAL_MS}-" +
+                            "${NotificationSettings.MAX_UPDATE_INTERVAL_MS} ms · Default: " +
+                            "${NotificationSettings.DEFAULT_UPDATE_INTERVAL_MS} ms",
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { parsed?.let(onConfirm) },
+                enabled = isValid,
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun NotificationFieldsDialog(
+    settings: NotificationSettings,
+    onDismiss: () -> Unit,
+    onFieldEnabledChange: (NotificationField, Boolean) -> Unit,
+    onReorder: (List<NotificationField>) -> Unit,
+) {
+    val order = remember { settings.normalizedFieldOrder().toMutableStateList() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Notification fields") },
+        text = {
+            Column {
+                Text(
+                    "Drag the handle to reorder how fields appear in the notification.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                ReorderableFieldList(
+                    order = order,
+                    isEnabled = settings::isFieldEnabled,
+                    onToggle = onFieldEnabledChange,
+                    onReordered = { onReorder(order.toList()) },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+    )
+}
+
+@Composable
+private fun ReorderableFieldList(
+    order: SnapshotStateList<NotificationField>,
+    isEnabled: (NotificationField) -> Boolean,
+    onToggle: (NotificationField, Boolean) -> Unit,
+    onReordered: () -> Unit,
+) {
+    var draggingField by remember { mutableStateOf<NotificationField?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val heights = remember { mutableStateMapOf<NotificationField, Int>() }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        order.forEach { field ->
+            key(field) {
+                val dragging = field == draggingField
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { heights[field] = it.size.height }
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer { translationY = if (dragging) dragOffsetY else 0f }
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (dragging) {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            } else {
+                                Color.Transparent
+                            },
+                        )
+                        .heightIn(min = 52.dp)
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.DragIndicator,
+                        contentDescription = "Drag to reorder",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .pointerInput(field) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        draggingField = field
+                                        dragOffsetY = 0f
+                                    },
+                                    onDragEnd = {
+                                        draggingField = null
+                                        dragOffsetY = 0f
+                                        onReordered()
+                                    },
+                                    onDragCancel = {
+                                        draggingField = null
+                                        dragOffsetY = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragOffsetY += dragAmount.y
+                                        val current = order.indexOf(field)
+                                        if (dragAmount.y < 0 && current > 0) {
+                                            val above = order[current - 1]
+                                            val threshold = (heights[above] ?: 0) / 2f
+                                            if (-dragOffsetY > threshold) {
+                                                order.add(current - 1, order.removeAt(current))
+                                                dragOffsetY += (heights[above] ?: 0)
+                                            }
+                                        } else if (dragAmount.y > 0 && current < order.lastIndex) {
+                                            val below = order[current + 1]
+                                            val threshold = (heights[below] ?: 0) / 2f
+                                            if (dragOffsetY > threshold) {
+                                                order.add(current + 1, order.removeAt(current))
+                                                dragOffsetY -= (heights[below] ?: 0)
+                                            }
+                                        }
+                                    },
+                                )
+                            },
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(field.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            field.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = isEnabled(field),
+                        onCheckedChange = { onToggle(field, it) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun notificationFieldSummary(settings: NotificationSettings): String {
+    val enabledFields = settings.normalizedFieldOrder()
+        .filter(settings::isFieldEnabled)
+        .map(NotificationField::label)
+    return if (enabledFields.isEmpty()) "No custom fields selected" else enabledFields.joinToString(" • ")
 }

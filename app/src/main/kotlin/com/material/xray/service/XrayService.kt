@@ -31,10 +31,14 @@ import com.material.xray.data.db.entity.routeAssignment
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.ConnectionState
+import com.material.xray.model.NotificationField
+import com.material.xray.model.NotificationSettings
+import com.material.xray.model.NotificationStyle
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
@@ -67,6 +71,12 @@ class XrayService : VpnService() {
     private var processRecoveryJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var activeUseRootService = true
+    private var notificationSettings = NotificationSettings()
+    private var notificationMetrics = NotificationMetrics()
+    private var previousTrafficSample: TrafficSample? = null
+    private var notificationMetricsJob: Job? = null
+    private var notificationMetricsIntervalMs = 0
+    private var lastNotificationContent: NotificationContent? = null
     private val connectionCommandMutex = Mutex()
 
     override fun onCreate() {
@@ -91,6 +101,18 @@ class XrayService : VpnService() {
         scope.launch {
             connectionStateHolder.state.drop(1).collect { state ->
                 handleStateSideEffects(state)
+                updateNotification()
+            }
+        }
+
+        scope.launch {
+            settingsRepo.notificationSettings.collectLatest { settings ->
+                notificationSettings = settings
+                if (!settings.showTrafficSpeed) {
+                    previousTrafficSample = null
+                    notificationMetrics = notificationMetrics.copy(proxyBps = null, directBps = null)
+                }
+                updateNotificationMetricsJob()
                 updateNotification()
             }
         }
@@ -345,8 +367,12 @@ class XrayService : VpnService() {
     private fun handleStateSideEffects(state: ConnectionState) {
         when (state) {
             is ConnectionState.Connected -> startProcessWatchdog(state)
-            else -> stopProcessWatchdog()
+            else -> {
+                stopProcessWatchdog()
+                stopNotificationMetrics()
+            }
         }
+        updateNotificationMetricsJob()
     }
 
     private fun startProcessWatchdog(state: ConnectionState.Connected) {
@@ -383,6 +409,87 @@ class XrayService : VpnService() {
         processWatchdogJob?.cancel()
         processWatchdogJob = null
         processWatchdogPid = null
+    }
+
+    private fun updateNotificationMetricsJob() {
+        val state = connectionStateHolder.state.value
+        if (state is ConnectionState.Connected && notificationSettings.hasDynamicMetrics) {
+            startNotificationMetrics(state)
+        } else {
+            stopNotificationMetrics()
+        }
+    }
+
+    private fun startNotificationMetrics(state: ConnectionState.Connected) {
+        val intervalMs = notificationSettings.updateIntervalMs
+        if (notificationMetricsJob?.isActive == true && notificationMetricsIntervalMs == intervalMs) return
+
+        stopNotificationMetrics()
+        notificationMetricsIntervalMs = intervalMs
+        previousTrafficSample = null
+        notificationMetricsJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                val connectedState = connectionStateHolder.state.value as? ConnectionState.Connected ?: break
+                val metrics = readNotificationMetrics(connectedState)
+                if (metrics != notificationMetrics) {
+                    withContext(Dispatchers.Main) {
+                        notificationMetrics = metrics
+                        updateNotification()
+                    }
+                }
+                delay(notificationSettings.updateIntervalMs.toLong())
+            }
+        }
+        if (state.corePid <= 0) stopNotificationMetrics()
+    }
+
+    private fun stopNotificationMetrics() {
+        notificationMetricsJob?.cancel()
+        notificationMetricsJob = null
+        notificationMetricsIntervalMs = 0
+        previousTrafficSample = null
+        notificationMetrics = NotificationMetrics()
+    }
+
+    private suspend fun readNotificationMetrics(state: ConnectionState.Connected): NotificationMetrics {
+        val settings = notificationSettings
+        val trafficSpeeds = if (settings.showTrafficSpeed) {
+            readTrafficSpeeds()
+        } else {
+            null
+        }
+        val ramMb = if (settings.showRamUsage) {
+            connectionManager.readProcessResidentMemoryMb(state.corePid)
+        } else {
+            null
+        }
+        val connectionCount = if (settings.showConnectionCount) {
+            connectionManager.readActiveConnectionCount(state.corePid)
+        } else {
+            null
+        }
+        return NotificationMetrics(
+            proxyBps = trafficSpeeds?.proxyBps,
+            directBps = trafficSpeeds?.directBps,
+            ramMb = ramMb,
+            connectionCount = connectionCount,
+        )
+    }
+
+    private suspend fun readTrafficSpeeds(): TrafficSpeeds? {
+        val stats = connectionManager.readOutboundTrafficStatsBytes()
+        val now = System.currentTimeMillis()
+        val sample = TrafficSample(
+            timestampMs = now,
+            proxyBytes = stats.outboundBytes("proxy"),
+            directBytes = stats.outboundBytes("direct"),
+        )
+        val previous = previousTrafficSample.also { previousTrafficSample = sample } ?: return null
+        val elapsedSeconds = ((sample.timestampMs - previous.timestampMs).coerceAtLeast(1)).toDouble() / 1000.0
+        return TrafficSpeeds(
+            proxyBps = ((sample.proxyBytes - previous.proxyBytes).coerceAtLeast(0) / elapsedSeconds).toLong(),
+            directBps = ((sample.directBytes - previous.directBytes).coerceAtLeast(0) / elapsedSeconds).toLong(),
+        )
     }
 
     private fun recoverNativeProcess(
@@ -768,6 +875,7 @@ class XrayService : VpnService() {
         XrayTileService.requestStateRefresh(this)
         val state = connectionStateHolder.state.value
         if (state is ConnectionState.Disconnected) {
+            lastNotificationContent = null
             getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
             stopForeground(STOP_FOREGROUND_REMOVE)
             return
@@ -789,18 +897,80 @@ class XrayService : VpnService() {
             ConnectionState.Disconnected -> return
         }
         val showDisconnectAction = state !is ConnectionState.Error
+        val content = NotificationContent(title, text, showDisconnectAction)
+        if (content == lastNotificationContent) return
+        lastNotificationContent = content
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, buildNotification(title, text, showDisconnectAction))
     }
 
-    private fun connectedNotificationText(state: ConnectionState.Connected): String =
-        if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) {
+    private fun connectedNotificationText(state: ConnectionState.Connected): String {
+        val baseText = if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) {
             "VPN service active"
         } else {
             "Root service active (pinned ${state.tunName} to ${state.physicalInterface})"
         }
+        val settings = notificationSettings
+        if (!settings.enabled || !settings.anyFieldEnabled) return baseText
+
+        val metrics = notificationMetrics
+        val separator = if (settings.style == NotificationStyle.Compact) " • " else "\n"
+        return settings.normalizedFieldOrder()
+            .mapNotNull { field -> notificationFieldText(field, settings, metrics) }
+            .joinToString(separator)
+            .ifBlank { baseText }
+    }
+
+    private fun notificationFieldText(
+        field: NotificationField,
+        settings: NotificationSettings,
+        metrics: NotificationMetrics,
+    ): String? {
+        if (!settings.isFieldEnabled(field)) return null
+        val compact = settings.style == NotificationStyle.Compact
+        return when (field) {
+            NotificationField.TrafficSpeed -> {
+                val proxy = formatNullableBytesPerSecond(metrics.proxyBps)
+                val direct = formatNullableBytesPerSecond(metrics.directBps)
+                if (compact) "P $proxy / D $direct" else "Proxy: $proxy | Direct: $direct"
+            }
+            NotificationField.RamUsage -> {
+                val ram = metrics.ramMb?.let { "$it MiB" } ?: "--"
+                if (compact) "RAM $ram" else "Core RAM: $ram"
+            }
+            NotificationField.ConnectionCount -> {
+                val count = metrics.connectionCount?.toString() ?: "--"
+                if (compact) "Conn $count" else "Connections: $count"
+            }
+        }
+    }
+
+    private fun Map<String, Long>.outboundBytes(tag: String): Long =
+        get("outbound>>>$tag>>>traffic>>>uplink").orZero() +
+            get("outbound>>>$tag>>>traffic>>>downlink").orZero()
+
+    private fun Long?.orZero(): Long = this ?: 0L
+
+    private fun formatNullableBytesPerSecond(bytesPerSecond: Long?): String =
+        bytesPerSecond?.let(::formatBytesPerSecond) ?: "--"
+
+    private fun formatBytesPerSecond(bytesPerSecond: Long): String {
+        val units = listOf("B/s", "KiB/s", "MiB/s", "GiB/s")
+        var value = bytesPerSecond.coerceAtLeast(0).toDouble()
+        var unitIndex = 0
+        while (value >= 1024.0 && unitIndex < units.lastIndex) {
+            value /= 1024.0
+            unitIndex++
+        }
+        return if (unitIndex == 0) {
+            "${value.toLong()} ${units[unitIndex]}"
+        } else {
+            "%.1f %s".format(java.util.Locale.US, value, units[unitIndex])
+        }
+    }
 
     private fun startAsForeground(title: String, text: String, showDisconnectAction: Boolean) {
+        lastNotificationContent = NotificationContent(title, text, showDisconnectAction)
         startForeground(NOTIFICATION_ID, buildNotification(title, text, showDisconnectAction))
     }
 
@@ -849,6 +1019,30 @@ class XrayService : VpnService() {
         fun describe(): String =
             "$label#$handle" + if (validated) " validated" else " unvalidated"
     }
+
+    private data class NotificationMetrics(
+        val proxyBps: Long? = null,
+        val directBps: Long? = null,
+        val ramMb: Long? = null,
+        val connectionCount: Int? = null,
+    )
+
+    private data class NotificationContent(
+        val title: String,
+        val text: String,
+        val showDisconnectAction: Boolean,
+    )
+
+    private data class TrafficSample(
+        val timestampMs: Long,
+        val proxyBytes: Long,
+        val directBytes: Long,
+    )
+
+    private data class TrafficSpeeds(
+        val proxyBps: Long,
+        val directBps: Long,
+    )
 
     private enum class NetworkRetargetResult {
         Done,

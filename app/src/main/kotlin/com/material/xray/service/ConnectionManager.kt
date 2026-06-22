@@ -3,6 +3,7 @@ package com.material.xray.service
 import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.system.Os
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.CleanupManager
@@ -12,12 +13,15 @@ import com.material.xray.core.xray.ServerAddressResolver
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayBinary
+import com.material.xray.core.xray.XRAY_API_SOCKET_NAME_PREFIX
+import com.material.xray.core.xray.XrayStatsClient
 import com.material.xray.core.xray.XrayState
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
+import java.io.File
 
 class ConnectionManager(
     private val context: Context,
@@ -36,6 +40,7 @@ class ConnectionManager(
     private val tunManager = TunManager(shell)
     private val cleanupManager = CleanupManager(context, shell)
     private val stateFile = StateFile(context)
+    private var xrayStatsClient = XrayStatsClient()
     private val processSupervisor = XrayProcessSupervisor(
         environment = AndroidXrayRuntimeEnvironment(context),
         commandRunner = RootShellCommandRunner(shell),
@@ -233,6 +238,9 @@ class ConnectionManager(
                 )
             }
 
+            val xrayApiSocketName = nextXrayApiSocketName()
+            xrayStatsClient = XrayStatsClient(xrayApiSocketName)
+
             val configJson = configGenerator.generate(
                 server = xrayServer,
                 tunName = tunName,
@@ -246,6 +254,7 @@ class ConnectionManager(
                 routingRules = runtimeSettings.routingRules,
                 appProxyRoutes = appRoutingPlan.proxyRoutes,
                 physicalInterface = physicalRoute?.dev,
+                xrayApiSocketName = xrayApiSocketName,
             )
             xrayBinary.writeConfig(configJson)
             log.append(LogSource.APP, "Config written to ${xrayBinary.configPath()}")
@@ -475,10 +484,30 @@ class ConnectionManager(
             processSupervisor.readResidentMemoryMb(pid)
         }
 
+    suspend fun readActiveConnectionCount(pid: Int): Int? =
+        if (runningViaVpnService) {
+            readUserProcessSocketCount(pid)
+        } else {
+            val result = shell.execute("ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:'")
+            result.output.trim().toIntOrNull()
+        }
+
+    suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> =
+        xrayStatsClient.queryOutboundTrafficStatsBytes()
+
     private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
         val appUid = context.applicationInfo.uid
         return if (appUid > 0) directUids + appUid else directUids
     }
+
+    private fun readUserProcessSocketCount(pid: Int): Int? =
+        File("/proc/$pid/fd")
+            .takeIf { it.isDirectory }
+            ?.listFiles()
+            ?.count { fd -> runCatching { Os.readlink(fd.absolutePath).startsWith("socket:") }.getOrDefault(false) }
+
+    private fun nextXrayApiSocketName(): String =
+        "$XRAY_API_SOCKET_NAME_PREFIX-${android.os.Process.myPid()}-${SystemClock.elapsedRealtime()}"
 
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
         val startedAt = SystemClock.elapsedRealtime()

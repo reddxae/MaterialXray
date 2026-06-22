@@ -27,6 +27,7 @@ internal class RawConfigTunInjector(
         routingRules: List<RoutingRule>,
         appProxyRoutes: List<AppProxyRoute>,
         physicalInterface: String?,
+        xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
     ): String {
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
         original["inbounds"] = injectTunInbounds(original["inbounds"] as? JsonArray, tunName, appProxyRoutes)
@@ -55,6 +56,9 @@ internal class RawConfigTunInjector(
         )
         original["log"] = buildLogConfig(logLevel)
         original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6)
+        original["api"] = buildStatsApi(xrayApiSocketName)
+        original["stats"] = buildStatsConfig()
+        original["policy"] = buildStatsPolicy()
         original["routing"] = buildRouting(routingRules, appProxyRoutes, bypassLan, domesticDnsServers)
 
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))

@@ -26,6 +26,7 @@ class ConfigGenerator {
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
+        xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
     ): String {
         if (server.rawConfigJson.isNotBlank()) {
             return injectTunIntoRawConfig(
@@ -41,6 +42,7 @@ class ConfigGenerator {
                 routingRules = routingRules,
                 appProxyRoutes = appProxyRoutes,
                 physicalInterface = physicalInterface,
+                xrayApiSocketName = xrayApiSocketName,
             )
         }
 
@@ -65,6 +67,9 @@ class ConfigGenerator {
                     },
                 ).forEach { add(it) }
             })
+            put("api", buildStatsApi(xrayApiSocketName))
+            put("stats", buildStatsConfig())
+            put("policy", buildStatsPolicy())
             put("routing", buildRouting(routingRules, appProxyRoutes, bypassLan, domesticDnsServers))
         }
         return json.encodeToString(JsonObject.serializer(), config)
@@ -83,6 +88,7 @@ class ConfigGenerator {
         routingRules: List<RoutingRule> = emptyList(),
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
+        xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
     ): String = RawConfigTunInjector(json).inject(
         rawJson = rawJson,
         tunName = tunName,
@@ -96,5 +102,6 @@ class ConfigGenerator {
         routingRules = routingRules,
         appProxyRoutes = appProxyRoutes,
         physicalInterface = physicalInterface,
+        xrayApiSocketName = xrayApiSocketName,
     )
 }

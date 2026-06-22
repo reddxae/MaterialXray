@@ -53,6 +53,17 @@
             </intent-filter>
         </activity-alias>
 
+        <activity-alias
+            android:name=".QuickSettingsPreferencesAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <service
             android:name=".service.XrayService"
             android:foregroundServiceType="specialUse"

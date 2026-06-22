@@ -109,7 +109,7 @@ class XrayConfigOutboundsTest {
                 transport = ServerConfig.Transport(type = "xhttp", mode = "auto"),
                 security = ServerConfig.Security(type = "reality", publicKey = "publicKey"),
                 rawUri = "vless://uuid@example.com:443?" +
-                    "extra=%7B%22scMaxBufferedPosts%22%3A30%7D&pqv=verifyKey",
+                    "extra=%7B%22token%22%3A%22a+b%22%2C%22scMaxBufferedPosts%22%3A30%7D&pqv=verify+Key",
             ),
             fwmark = 100,
             physicalInterface = null,
@@ -118,8 +118,14 @@ class XrayConfigOutboundsTest {
 
         val stream = outbound.getValue("streamSettings").jsonObject
         assertEquals(
-            "verifyKey",
+            "verify+Key",
             stream.getValue("realitySettings").jsonObject.getValue("mldsa65Verify").jsonPrimitive.content,
+        )
+        assertEquals(
+            "a+b",
+            stream.getValue("xhttpSettings").jsonObject
+                .getValue("extra").jsonObject
+                .getValue("token").jsonPrimitive.content,
         )
         assertEquals(
             30,

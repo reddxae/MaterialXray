@@ -53,6 +53,21 @@ class VlessParserTest {
     }
 
     @Test
+    fun `parse VLESS link preserves literal plus in uri components`() {
+        val uri = "vless://uuid@example.com:443?type=xhttp&path=%2Fapi+v1" +
+            "&extra=%7B%22token%22%3A%22a+b%22%7D&pqv=verify+Key&spx=%2Fcrawler+bot" +
+            "#Plus+Server"
+
+        val config = VlessParser.parse(uri)!!
+
+        assertEquals("Plus+Server", config.name)
+        assertEquals("/api+v1", config.transport.path)
+        assertEquals("{\"token\":\"a+b\"}", config.extra["xhttpExtra"])
+        assertEquals("verify+Key", config.extra["mldsa65Verify"])
+        assertEquals("/crawler+bot", config.extra["spiderX"])
+    }
+
+    @Test
     fun `parse returns null for missing required parts`() {
         assertNull(VlessParser.parse("vless://example.com:443"))
         assertNull(VlessParser.parse("vless://uuid@example.com"))

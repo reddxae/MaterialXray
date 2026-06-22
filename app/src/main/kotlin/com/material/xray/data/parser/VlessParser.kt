@@ -15,7 +15,7 @@ object VlessParser {
         val userInfo = parsed.rawUserInfo ?: return null
         val host = parsed.host ?: return null
         val port = parsed.port.takeIf { it > 0 } ?: return null
-        val fragment = parsed.rawFragment?.let { URLDecoder.decode(it, "UTF-8") } ?: ""
+        val fragment = parsed.rawFragment?.let { decodeUriComponent(it) } ?: ""
         val params = parseQuery(parsed.rawQuery ?: "")
 
         ServerConfig(
@@ -26,7 +26,7 @@ object VlessParser {
             password = userInfo,
             transport = ServerConfig.Transport(
                 type = params["type"] ?: "tcp",
-                path = params["path"]?.let { URLDecoder.decode(it, "UTF-8") } ?: "",
+                path = params["path"]?.let { decodeUriComponent(it) } ?: "",
                 host = params["host"] ?: "",
                 serviceName = params["serviceName"] ?: "",
                 mode = params["mode"] ?: "",
@@ -42,11 +42,14 @@ object VlessParser {
             extra = buildMap {
                 params["encryption"]?.let { put("encryption", it) }
                 params["flow"]?.let { put("flow", it) }
-                params["extra"]?.let { put(SERVER_EXTRA_XHTTP_EXTRA, URLDecoder.decode(it, "UTF-8")) }
-                params["pqv"]?.let { put(SERVER_EXTRA_MLDSA65_VERIFY, URLDecoder.decode(it, "UTF-8")) }
-                params["spx"]?.let { put(SERVER_EXTRA_SPIDER_X, URLDecoder.decode(it, "UTF-8")) }
+                params["extra"]?.let { put(SERVER_EXTRA_XHTTP_EXTRA, decodeUriComponent(it)) }
+                params["pqv"]?.let { put(SERVER_EXTRA_MLDSA65_VERIFY, decodeUriComponent(it)) }
+                params["spx"]?.let { put(SERVER_EXTRA_SPIDER_X, decodeUriComponent(it)) }
             },
             rawUri = uri,
         )
     }.getOrNull()
+
+    private fun decodeUriComponent(value: String): String =
+        URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
 }

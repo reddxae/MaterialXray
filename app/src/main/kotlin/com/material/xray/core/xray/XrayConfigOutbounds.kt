@@ -272,10 +272,13 @@ private fun ServerConfig.rawUriQueryParam(name: String): String? = runCatching {
         .mapNotNull { part ->
             val values = part.split("=", limit = 2)
             if (values.size == 2 && values[0] == name) {
-                URLDecoder.decode(values[1], "UTF-8")
+                decodeUriComponent(values[1])
             } else {
                 null
             }
         }
         .firstOrNull { it.isNotBlank() }
 }.getOrNull()
+
+private fun decodeUriComponent(value: String): String =
+    URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")

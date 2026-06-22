@@ -39,6 +39,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -75,6 +77,7 @@ class HomeViewModel @Inject constructor(
     private var latencyJob: Job? = null
     private var latencyRunId = 0L
     private var activeLatencyServerIds = emptySet<Long>()
+    private val latencySemaphore = Semaphore(MAX_CONCURRENT_LATENCY_TESTS)
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
     val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateHolder.events
@@ -344,7 +347,7 @@ class HomeViewModel @Inject constructor(
     private suspend fun runLatencyProbe(runId: Long, server: ServerEntity, method: PingMethod) {
         try {
             val latency = try {
-                measureLatency(server, method)
+                latencySemaphore.withPermit { measureLatency(server, method) }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -403,5 +406,6 @@ class HomeViewModel @Inject constructor(
     private companion object {
         const val DEFAULT_TUN_NAME = "xray0"
         const val AMBIGUOUS_TUN_NAME = "tun0"
+        const val MAX_CONCURRENT_LATENCY_TESTS = 10
     }
 }

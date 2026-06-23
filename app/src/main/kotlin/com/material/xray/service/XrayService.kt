@@ -478,6 +478,12 @@ class XrayService : VpnService() {
 
     private suspend fun readTrafficSpeeds(): TrafficSpeeds? {
         val stats = connectionManager.readOutboundTrafficStatsBytes()
+        val hasProxyStats = stats.hasOutboundTrafficStats("proxy")
+        val hasDirectStats = stats.hasOutboundTrafficStats("direct")
+        if (!hasProxyStats && !hasDirectStats) {
+            previousTrafficSample = null
+            return null
+        }
         val now = System.currentTimeMillis()
         val sample = TrafficSample(
             timestampMs = now,
@@ -486,9 +492,11 @@ class XrayService : VpnService() {
         )
         val previous = previousTrafficSample.also { previousTrafficSample = sample } ?: return null
         val elapsedSeconds = ((sample.timestampMs - previous.timestampMs).coerceAtLeast(1)).toDouble() / 1000.0
+        val proxyDelta = (sample.proxyBytes - previous.proxyBytes).coerceAtLeast(0)
+        val directDelta = (sample.directBytes - previous.directBytes).coerceAtLeast(0)
         return TrafficSpeeds(
-            proxyBps = ((sample.proxyBytes - previous.proxyBytes).coerceAtLeast(0) / elapsedSeconds).toLong(),
-            directBps = ((sample.directBytes - previous.directBytes).coerceAtLeast(0) / elapsedSeconds).toLong(),
+            proxyBps = (proxyDelta / elapsedSeconds).toLong(),
+            directBps = (directDelta / elapsedSeconds).toLong(),
         )
     }
 
@@ -948,6 +956,10 @@ class XrayService : VpnService() {
     private fun Map<String, Long>.outboundBytes(tag: String): Long =
         get("outbound>>>$tag>>>traffic>>>uplink").orZero() +
             get("outbound>>>$tag>>>traffic>>>downlink").orZero()
+
+    private fun Map<String, Long>.hasOutboundTrafficStats(tag: String): Boolean =
+        containsKey("outbound>>>$tag>>>traffic>>>uplink") ||
+            containsKey("outbound>>>$tag>>>traffic>>>downlink")
 
     private fun Long?.orZero(): Long = this ?: 0L
 

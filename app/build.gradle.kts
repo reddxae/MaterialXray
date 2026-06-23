@@ -155,7 +155,6 @@ dependencies {
     implementation(libs.datastore.preferences)
 
     implementation(libs.okhttp)
-    implementation(libs.grpc.android)
     implementation(libs.grpc.okhttp)
     implementation(libs.grpc.protobuf.lite)
     implementation(libs.grpc.stub)

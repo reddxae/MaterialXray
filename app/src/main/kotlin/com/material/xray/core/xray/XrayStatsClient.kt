@@ -1,12 +1,14 @@
 package com.material.xray.core.xray
 
 import android.net.LocalSocketAddress
+import android.util.Log
 import com.xray.app.stats.command.QueryStatsRequest
 import com.xray.app.stats.command.StatsServiceGrpc
 import com.xray.app.stats.command.SysStatsRequest
+import io.grpc.InsecureChannelCredentials
 import io.grpc.ManagedChannel
 import io.grpc.StatusRuntimeException
-import io.grpc.android.UdsChannelBuilder
+import io.grpc.okhttp.OkHttpChannelBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -26,7 +28,10 @@ internal class XrayStatsClient(
                     .build()
             )
             response.statList.associate { stat -> stat.name to stat.value }
-        }.getOrDefault(emptyMap())
+        }.getOrElse { error ->
+            Log.w(TAG, "Xray stats query failed", error)
+            emptyMap()
+        }
     }
 
     suspend fun getSysStats(): XraySysStats? = withContext(Dispatchers.IO) {
@@ -44,7 +49,10 @@ internal class XrayStatsClient(
                 pauseTotalNs = response.pauseTotalNs,
                 uptimeSeconds = response.uptime,
             )
-        }.getOrNull()
+        }.getOrElse { error ->
+            Log.w(TAG, "Xray sys stats query failed", error)
+            null
+        }
     }
 
     private fun <T> withBlockingStub(block: (StatsServiceGrpc.StatsServiceBlockingStub) -> T): Result<T> {
@@ -64,10 +72,15 @@ internal class XrayStatsClient(
         }
     }
 
-    private fun buildChannel(): ManagedChannel = UdsChannelBuilder
-        .forPath(socketName, LocalSocketAddress.Namespace.ABSTRACT)
+    private fun buildChannel(): ManagedChannel = OkHttpChannelBuilder
+        .forTarget(UNUSED_XRAY_API_GRPC_TARGET, InsecureChannelCredentials.create())
+        .socketFactory(AndroidLocalSocketFactory(socketName, LocalSocketAddress.Namespace.ABSTRACT))
+        .proxyDetector { null }
         .build()
 }
+
+private const val UNUSED_XRAY_API_GRPC_TARGET = "dns:///127.0.0.1"
+private const val TAG = "XrayStatsClient"
 
 internal data class XraySysStats(
     val numGoroutine: Int,

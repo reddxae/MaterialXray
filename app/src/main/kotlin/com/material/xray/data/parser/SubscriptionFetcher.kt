@@ -2,6 +2,7 @@ package com.material.xray.data.parser
 
 import android.content.Context
 import android.os.Build
+import com.material.xray.model.HAPP_USER_AGENT
 import com.material.xray.model.Protocol
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_CONGESTION
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_DOWN
@@ -16,6 +17,8 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionMetadata
+import com.material.xray.model.SubscriptionRequestIdentity
+import com.material.xray.model.SubscriptionUserAgentMode
 import java.io.IOException
 import java.util.UUID
 import javax.inject.Inject
@@ -51,7 +54,10 @@ class SubscriptionFetcher @Inject constructor(
 
     suspend fun fetch(url: String): List<ServerConfig> = fetchWithMetadata(url).configs
 
-    suspend fun fetchWithMetadata(url: String): FetchedSubscription = withContext(Dispatchers.IO) {
+    suspend fun fetchWithMetadata(
+        url: String,
+        identity: SubscriptionRequestIdentity = SubscriptionRequestIdentity(),
+    ): FetchedSubscription = withContext(Dispatchers.IO) {
         val normalizedUrl = url.trim()
         val httpUrl = normalizedUrl.toHttpUrlOrNull()
             ?: throw IOException("Invalid subscription URL: $normalizedUrl")
@@ -59,13 +65,7 @@ class SubscriptionFetcher @Inject constructor(
         val request = SubscriptionStandardHeaders.applyRequestHeaders(
             builder = Request.Builder()
                 .url(httpUrl),
-            values = SubscriptionRequestHeaderValues(
-                userAgent = buildUserAgent(),
-                hardwareId = buildHardwareId(),
-                deviceOs = "Android",
-                osVersion = buildOsVersion(),
-                deviceModel = buildDeviceModel(),
-            ),
+            values = buildHeaderValues(identity),
         ).build()
 
         client.newCall(request).execute().use { response ->
@@ -369,6 +369,35 @@ class SubscriptionFetcher @Inject constructor(
         }
 
         return null
+    }
+
+    private fun buildHeaderValues(identity: SubscriptionRequestIdentity): SubscriptionRequestHeaderValues = when (identity.mode) {
+        SubscriptionUserAgentMode.AUTO -> deviceHeaderValues(identity, userAgent = buildUserAgent())
+        SubscriptionUserAgentMode.HAPP -> deviceHeaderValues(identity, userAgent = HAPP_USER_AGENT)
+        SubscriptionUserAgentMode.CUSTOM -> customHeaderValues(identity)
+    }
+
+    private fun deviceHeaderValues(
+        identity: SubscriptionRequestIdentity,
+        userAgent: String,
+    ): SubscriptionRequestHeaderValues = SubscriptionRequestHeaderValues(
+        userAgent = userAgent,
+        hardwareId = if (identity.sendHardwareId) buildHardwareId() else null,
+        deviceOs = "Android",
+        osVersion = buildOsVersion(),
+        deviceModel = buildDeviceModel(),
+    )
+
+    private fun customHeaderValues(identity: SubscriptionRequestIdentity): SubscriptionRequestHeaderValues {
+        val headers = identity.customHeaders
+        val hasHardwareIdHeader = headers.any {
+            it.name.trim().equals(SubscriptionStandardHeaders.X_HWID, ignoreCase = true)
+        }
+        return SubscriptionRequestHeaderValues(
+            userAgent = identity.customUserAgent.trim().ifBlank { buildUserAgent() },
+            hardwareId = if (identity.sendHardwareId && !hasHardwareIdHeader) buildHardwareId() else null,
+            extraHeaders = headers.map { it.name to it.value },
+        )
     }
 
     private fun buildUserAgent(): String {

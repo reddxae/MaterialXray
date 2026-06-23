@@ -1,20 +1,26 @@
 package com.material.xray.data.parser
 
+import com.material.xray.model.HAPP_USER_AGENT
 import com.material.xray.model.Protocol
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_INSECURE
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
+import com.material.xray.model.SubscriptionHeader
+import com.material.xray.model.SubscriptionRequestIdentity
+import com.material.xray.model.SubscriptionUserAgentMode
 import java.util.Base64
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol as OkHttpProtocol
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -146,6 +152,113 @@ class SubscriptionFetcherTest {
     private fun fetcherReturning(body: String, contentType: String): SubscriptionFetcher {
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(OkHttpProtocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .headers(Headers.headersOf("content-type", contentType))
+                    .body(body.toResponseBody(contentType.toMediaType()))
+                    .build()
+            }
+            .build()
+        return SubscriptionFetcher(client)
+    }
+
+    @Test
+    fun `auto identity sends material user agent and device headers`() = runTest {
+        val capture = RequestCapture()
+        val fetcher = capturingFetcher(capture)
+
+        fetcher.fetchWithMetadata("https://subscriptions.example/auto", SubscriptionRequestIdentity())
+
+        val request = requireNotNull(capture.request)
+        assertTrue(request.header("User-Agent").orEmpty().startsWith("Material Xray/"))
+        assertEquals("Android", request.header("x-device-os"))
+        assertTrue(request.header("x-hwid").orEmpty().isNotBlank())
+    }
+
+    @Test
+    fun `auto identity omits hwid when disabled`() = runTest {
+        val capture = RequestCapture()
+        val fetcher = capturingFetcher(capture)
+
+        fetcher.fetchWithMetadata(
+            "https://subscriptions.example/auto-no-hwid",
+            SubscriptionRequestIdentity(sendHardwareId = false),
+        )
+
+        assertNull(requireNotNull(capture.request).header("x-hwid"))
+    }
+
+    @Test
+    fun `happ identity sends happ user agent`() = runTest {
+        val capture = RequestCapture()
+        val fetcher = capturingFetcher(capture)
+
+        fetcher.fetchWithMetadata(
+            "https://subscriptions.example/happ",
+            SubscriptionRequestIdentity(mode = SubscriptionUserAgentMode.HAPP),
+        )
+
+        val request = requireNotNull(capture.request)
+        assertEquals(HAPP_USER_AGENT, request.header("User-Agent"))
+        assertEquals("Android", request.header("x-device-os"))
+        assertTrue(request.header("x-hwid").orEmpty().isNotBlank())
+    }
+
+    @Test
+    fun `custom identity sends custom user agent and headers without device headers`() = runTest {
+        val capture = RequestCapture()
+        val fetcher = capturingFetcher(capture)
+
+        fetcher.fetchWithMetadata(
+            "https://subscriptions.example/custom",
+            SubscriptionRequestIdentity(
+                mode = SubscriptionUserAgentMode.CUSTOM,
+                customUserAgent = "MyClient/2.0",
+                customHeaders = listOf(SubscriptionHeader("X-Test", "abc")),
+            ),
+        )
+
+        val request = requireNotNull(capture.request)
+        assertEquals("MyClient/2.0", request.header("User-Agent"))
+        assertEquals("abc", request.header("X-Test"))
+        assertNull(request.header("x-device-os"))
+        // HWID toggle is on by default, so it is still appended in custom mode.
+        assertTrue(request.header("x-hwid").orEmpty().isNotBlank())
+    }
+
+    @Test
+    fun `custom identity preserves user provided hwid header`() = runTest {
+        val capture = RequestCapture()
+        val fetcher = capturingFetcher(capture)
+
+        fetcher.fetchWithMetadata(
+            "https://subscriptions.example/custom-hwid",
+            SubscriptionRequestIdentity(
+                mode = SubscriptionUserAgentMode.CUSTOM,
+                customUserAgent = "MyClient/2.0",
+                customHeaders = listOf(SubscriptionHeader("x-hwid", "custom-device")),
+            ),
+        )
+
+        assertEquals("custom-device", requireNotNull(capture.request).header("x-hwid"))
+    }
+
+    private class RequestCapture {
+        @Volatile
+        var request: Request? = null
+    }
+
+    private fun capturingFetcher(
+        capture: RequestCapture,
+        body: String = "vless://uuid@example.com:443?encryption=none&type=tcp#Captured",
+        contentType: String = "text/plain",
+    ): SubscriptionFetcher {
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                capture.request = chain.request()
                 Response.Builder()
                     .request(chain.request())
                     .protocol(OkHttpProtocol.HTTP_1_1)

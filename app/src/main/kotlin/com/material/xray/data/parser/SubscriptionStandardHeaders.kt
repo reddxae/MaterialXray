@@ -8,10 +8,11 @@ import okhttp3.Request
 
 data class SubscriptionRequestHeaderValues(
     val userAgent: String,
-    val hardwareId: String,
+    val hardwareId: String? = null,
     val deviceOs: String? = null,
     val osVersion: String? = null,
     val deviceModel: String? = null,
+    val extraHeaders: List<Pair<String, String>> = emptyList(),
 )
 
 object SubscriptionStandardHeaders {
@@ -54,10 +55,16 @@ object SubscriptionStandardHeaders {
         values: SubscriptionRequestHeaderValues,
     ): Request.Builder = builder.apply {
         header(USER_AGENT, values.userAgent)
-        header(X_HWID, values.hardwareId)
+        values.hardwareId?.takeIf { it.isNotBlank() }?.let { header(X_HWID, it) }
         values.deviceOs?.takeIf { it.isNotBlank() }?.let { header(X_DEVICE_OS, it) }
         values.osVersion?.takeIf { it.isNotBlank() }?.let { header(X_VER_OS, it) }
         values.deviceModel?.takeIf { it.isNotBlank() }?.let { header(X_DEVICE_MODEL, it) }
+        // Applied last so user-provided headers win: a duplicate name (e.g. User-Agent or
+        // x-hwid) replaces the value set above. header() keeps only the last value per name.
+        values.extraHeaders.forEach { (name, value) ->
+            val trimmedName = name.trim()
+            if (trimmedName.isNotEmpty()) header(trimmedName, value.trim())
+        }
     }
 
     fun parseMetadata(headers: Headers): SubscriptionMetadata = SubscriptionMetadata(

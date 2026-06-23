@@ -9,6 +9,7 @@ import com.material.xray.data.parser.SubscriptionFetcher
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -17,6 +18,7 @@ class SubscriptionRepository @Inject constructor(
     private val subscriptionDao: SubscriptionDao,
     private val serverDao: ServerDao,
     private val fetcher: SubscriptionFetcher,
+    private val settingsRepository: SettingsRepository,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -43,7 +45,8 @@ class SubscriptionRepository @Inject constructor(
     suspend fun refresh(subId: Long, url: String): RefreshResult? {
         val existing = subscriptionDao.getById(subId) ?: return null
         val existingServers = serverDao.getBySubscription(subId)
-        val fetched = fetcher.fetchWithMetadata(url)
+        val identity = settingsRepository.subscriptionRequestIdentity.first()
+        val fetched = fetcher.fetchWithMetadata(url, identity)
         val servers = fetched.configs.mapIndexed { index, config ->
             ServerEntity(
                 subscriptionId = subId,

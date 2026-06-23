@@ -15,13 +15,17 @@ import com.material.xray.model.NotificationStyle
 import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
+import com.material.xray.model.SubscriptionRequestIdentity
+import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
+import com.material.xray.model.parseSubscriptionHeaders
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
@@ -70,6 +74,10 @@ class SettingsRepository @Inject constructor(
         val NOTIFICATION_SHOW_RAM_USAGE = booleanPreferencesKey("notification_show_ram_usage")
         val NOTIFICATION_SHOW_CONNECTION_COUNT = booleanPreferencesKey("notification_show_connection_count")
         val NOTIFICATION_FIELD_ORDER = stringPreferencesKey("notification_field_order")
+        val SUBSCRIPTION_USER_AGENT_MODE = stringPreferencesKey("subscription_user_agent_mode")
+        val SUBSCRIPTION_SEND_HWID = booleanPreferencesKey("subscription_send_hwid")
+        val SUBSCRIPTION_CUSTOM_USER_AGENT = stringPreferencesKey("subscription_custom_user_agent")
+        val SUBSCRIPTION_CUSTOM_HEADERS = stringPreferencesKey("subscription_custom_headers")
         private val LEGACY_GEO_DATA_BASE_URL = stringPreferencesKey("geo_data_base_url")
         private const val CURRENT_ROUTING_RULES_VERSION = 2
 
@@ -154,6 +162,32 @@ class SettingsRepository @Inject constructor(
         )
     }
 
+    val subscriptionUserAgentMode: Flow<SubscriptionUserAgentMode> = store.data.map { prefs ->
+        SubscriptionUserAgentMode.fromValue(prefs[SUBSCRIPTION_USER_AGENT_MODE])
+    }
+    val subscriptionSendHardwareId: Flow<Boolean> = store.data.map { prefs ->
+        prefs[SUBSCRIPTION_SEND_HWID] ?: true
+    }
+    val subscriptionCustomUserAgent: Flow<String> = store.data.map { prefs ->
+        prefs[SUBSCRIPTION_CUSTOM_USER_AGENT].orEmpty()
+    }
+    val subscriptionCustomHeadersText: Flow<String> = store.data.map { prefs ->
+        prefs[SUBSCRIPTION_CUSTOM_HEADERS].orEmpty()
+    }
+    val subscriptionRequestIdentity: Flow<SubscriptionRequestIdentity> = combine(
+        subscriptionUserAgentMode,
+        subscriptionSendHardwareId,
+        subscriptionCustomUserAgent,
+        subscriptionCustomHeadersText,
+    ) { mode, sendHwid, customUserAgent, customHeadersText ->
+        SubscriptionRequestIdentity(
+            mode = mode,
+            sendHardwareId = sendHwid,
+            customUserAgent = customUserAgent,
+            customHeaders = parseSubscriptionHeaders(customHeadersText),
+        )
+    }
+
     suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings = XrayRuntimeSettings(
         tunName = tunName.first(),
         fwmark = fwmark.first(),
@@ -229,6 +263,18 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setNotificationFieldOrder(fields: List<NotificationField>) = store.edit { prefs ->
         prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(fields)
+    }
+    suspend fun setSubscriptionSendHardwareId(enabled: Boolean) = store.edit { prefs ->
+        prefs[SUBSCRIPTION_SEND_HWID] = enabled
+    }
+    suspend fun setSubscriptionUserAgent(
+        mode: SubscriptionUserAgentMode,
+        customUserAgent: String,
+        customHeadersText: String,
+    ) = store.edit { prefs ->
+        prefs[SUBSCRIPTION_USER_AGENT_MODE] = mode.value
+        prefs[SUBSCRIPTION_CUSTOM_USER_AGENT] = customUserAgent.trim()
+        prefs[SUBSCRIPTION_CUSTOM_HEADERS] = customHeadersText.trim()
     }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
@@ -311,6 +357,12 @@ class SettingsRepository @Inject constructor(
             prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(
                 decodeNotificationFieldOrder(map["notification_field_order"]),
             )
+            prefs[SUBSCRIPTION_USER_AGENT_MODE] = SubscriptionUserAgentMode.fromValue(
+                map["subscription_user_agent_mode"],
+            ).value
+            prefs[SUBSCRIPTION_SEND_HWID] = map["subscription_send_hwid"]?.toBooleanStrictOrNull() ?: true
+            map["subscription_custom_user_agent"]?.let { prefs[SUBSCRIPTION_CUSTOM_USER_AGENT] = it }
+            map["subscription_custom_headers"]?.let { prefs[SUBSCRIPTION_CUSTOM_HEADERS] = it }
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }

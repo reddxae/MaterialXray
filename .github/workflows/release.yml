@@ -18,26 +18,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Restore Android SDK package cache
-        id: android-sdk-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ANDROID_HOME }}/licenses
-            ${{ env.ANDROID_HOME }}/platform-tools
-            ${{ env.ANDROID_HOME }}/platforms/android-37.0
-            ${{ env.ANDROID_HOME }}/cmake/3.31.6
-          key: ${{ runner.os }}-android-sdk-37.0-cmake-3.31.6-v1
-
       - name: Install Android SDK packages
-        if: steps.android-sdk-cache.outputs.cache-hit != 'true'
         run: |
           yes | sdkmanager --licenses > /dev/null
           sdkmanager "platform-tools" "platforms;android-37.0" "cmake;3.31.6"

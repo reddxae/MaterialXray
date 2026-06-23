@@ -10,6 +10,7 @@ import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.ConnectionState
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,14 +20,16 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class XrayTileService : TileService() {
 
     @Inject lateinit var settingsRepo: SettingsRepository
+
     @Inject lateinit var serverRepository: ServerRepository
+
     @Inject lateinit var connectionStateHolder: ConnectionStateHolder
+
     @Inject lateinit var routingChangeManager: RoutingChangeManager
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -65,7 +68,8 @@ class XrayTileService : TileService() {
             is ConnectionState.Connecting,
             ConnectionState.ApplyingRoutingChanges,
             ConnectionState.UpdatingRoutingData,
-            is ConnectionState.Disconnecting -> Unit
+            is ConnectionState.Disconnecting,
+            -> Unit
             else -> scope.launch { connectSelectedServer() }
         }
     }
@@ -82,7 +86,7 @@ class XrayTileService : TileService() {
                 TileSnapshot(
                     state = connectionStateHolder.state.value,
                     hasSelectedServer = settingsRepo.lastServerId.first() >= 0,
-                )
+                ),
             )
         }
     }
@@ -117,19 +121,17 @@ class XrayTileService : TileService() {
         }
     }
 
-    private fun TileSnapshot.tileState(): Int =
-        when {
-            state is ConnectionState.Connected -> Tile.STATE_ACTIVE
-            !hasSelectedServer -> Tile.STATE_UNAVAILABLE
-            state.isTransitioning() -> Tile.STATE_UNAVAILABLE
-            else -> Tile.STATE_INACTIVE
-        }
+    private fun TileSnapshot.tileState(): Int = when {
+        state is ConnectionState.Connected -> Tile.STATE_ACTIVE
+        !hasSelectedServer -> Tile.STATE_UNAVAILABLE
+        state.isTransitioning() -> Tile.STATE_UNAVAILABLE
+        else -> Tile.STATE_INACTIVE
+    }
 
-    private fun ConnectionState.isTransitioning(): Boolean =
-        this is ConnectionState.Connecting ||
-            this is ConnectionState.ApplyingRoutingChanges ||
-            this is ConnectionState.UpdatingRoutingData ||
-            this is ConnectionState.Disconnecting
+    private fun ConnectionState.isTransitioning(): Boolean = this is ConnectionState.Connecting ||
+        this is ConnectionState.ApplyingRoutingChanges ||
+        this is ConnectionState.UpdatingRoutingData ||
+        this is ConnectionState.Disconnecting
 
     private data class TileSnapshot(
         val state: ConnectionState,

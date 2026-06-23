@@ -31,12 +31,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -79,8 +77,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
@@ -99,8 +99,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.model.ConnectionState
@@ -192,8 +192,9 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     isTransitioning = connectionUiState.isTransitioning,
                     canStart = uiState.selectedServer != null,
                     onClick = {
-                        if (connectionUiState.isConnected) viewModel.disconnect()
-                        else if (!connectionUiState.isTransitioning) {
+                        if (connectionUiState.isConnected) {
+                            viewModel.disconnect()
+                        } else if (!connectionUiState.isTransitioning) {
                             if (uiState.useRootService) viewModel.connect() else startRootlessConnection()
                         }
                     },
@@ -710,7 +711,6 @@ private fun SubscriptionMetadataSection(
                             text = metadata.expiry.standaloneText,
                         )
                     }
-
                 }
             }
         }
@@ -1146,46 +1146,45 @@ private fun String.withMetadataEmphasis() = buildAnnotatedString {
 private fun String.withUrlLinks(
     linkColor: androidx.compose.ui.graphics.Color,
     onUrlClick: (String) -> Unit,
-): AnnotatedString =
-    buildAnnotatedString {
-        var cursor = 0
-        val linkStyles = TextLinkStyles(
-            style = SpanStyle(
-                color = linkColor,
-                textDecoration = TextDecoration.Underline,
+): AnnotatedString = buildAnnotatedString {
+    var cursor = 0
+    val linkStyles = TextLinkStyles(
+        style = SpanStyle(
+            color = linkColor,
+            textDecoration = TextDecoration.Underline,
+        ),
+    )
+
+    subscriptionUrlRegex.findAll(this@withUrlLinks).forEach { match ->
+        val start = match.range.first
+        val end = this@withUrlLinks.trimmedUrlEnd(match)
+        if (end <= start) return@forEach
+
+        if (cursor < start) {
+            append(this@withUrlLinks.substring(cursor, start))
+        }
+
+        val url = this@withUrlLinks.substring(start, end)
+        val linkStart = length
+        append(url)
+        addLink(
+            LinkAnnotation.Clickable(
+                tag = url.normalizedSubscriptionUrl(),
+                styles = linkStyles,
+                linkInteractionListener = LinkInteractionListener { link ->
+                    (link as? LinkAnnotation.Clickable)?.tag?.let(onUrlClick)
+                },
             ),
+            start = linkStart,
+            end = length,
         )
-
-        subscriptionUrlRegex.findAll(this@withUrlLinks).forEach { match ->
-            val start = match.range.first
-            val end = this@withUrlLinks.trimmedUrlEnd(match)
-            if (end <= start) return@forEach
-
-            if (cursor < start) {
-                append(this@withUrlLinks.substring(cursor, start))
-            }
-
-            val url = this@withUrlLinks.substring(start, end)
-            val linkStart = length
-            append(url)
-            addLink(
-                LinkAnnotation.Clickable(
-                    tag = url.normalizedSubscriptionUrl(),
-                    styles = linkStyles,
-                    linkInteractionListener = LinkInteractionListener { link ->
-                        (link as? LinkAnnotation.Clickable)?.tag?.let(onUrlClick)
-                    },
-                ),
-                start = linkStart,
-                end = length,
-            )
-            cursor = end
-        }
-
-        if (cursor < this@withUrlLinks.length) {
-            append(this@withUrlLinks.substring(cursor))
-        }
+        cursor = end
     }
+
+    if (cursor < this@withUrlLinks.length) {
+        append(this@withUrlLinks.substring(cursor))
+    }
+}
 
 private fun String.trimmedUrlEnd(match: MatchResult): Int {
     var end = match.range.last + 1
@@ -1195,12 +1194,11 @@ private fun String.trimmedUrlEnd(match: MatchResult): Int {
     return end
 }
 
-private fun String.normalizedSubscriptionUrl(): String =
-    if (startsWith("http://", ignoreCase = true) || startsWith("https://", ignoreCase = true)) {
-        this
-    } else {
-        "https://$this"
-    }
+private fun String.normalizedSubscriptionUrl(): String = if (startsWith("http://", ignoreCase = true) || startsWith("https://", ignoreCase = true)) {
+    this
+} else {
+    "https://$this"
+}
 
 private val subscriptionUrlRegex = Regex(
     pattern = """(?i)(?<![@\w])(?:https?://[^\s<>"']+|(?:www\.|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})(?:/[^\s<>"']*)?)""",

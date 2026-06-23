@@ -31,6 +31,5 @@ class LauncherIconManager @Inject constructor(
             }
     }
 
-    private fun LauncherIcon.componentName(): ComponentName =
-        ComponentName(context, "${context.packageName}.$aliasClassName")
+    private fun LauncherIcon.componentName(): ComponentName = ComponentName(context, "${context.packageName}.$aliasClassName")
 }

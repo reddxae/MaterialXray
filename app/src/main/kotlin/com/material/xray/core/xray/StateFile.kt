@@ -1,10 +1,10 @@
 package com.material.xray.core.xray
 
 import android.content.Context
+import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
 
 @Serializable
 data class XrayState(
@@ -26,7 +26,10 @@ data class XrayState(
 
 class StateFile(context: Context) {
     private val file = File(context.filesDir, "state.json")
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        prettyPrint = true
+    }
 
     fun read(): XrayState? = runCatching {
         if (!file.exists()) return null

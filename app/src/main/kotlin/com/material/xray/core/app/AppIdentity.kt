@@ -23,8 +23,7 @@ fun parseAppKey(value: String): AppIdentity {
     }
 }
 
-fun profileIdForUid(uid: Int): Int =
-    if (uid > 0) uid / PER_USER_RANGE else 0
+fun profileIdForUid(uid: Int): Int = if (uid > 0) uid / PER_USER_RANGE else 0
 
 fun isApplicationUid(uid: Int): Boolean {
     if (uid <= 0) return false

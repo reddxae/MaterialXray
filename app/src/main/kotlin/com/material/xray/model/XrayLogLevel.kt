@@ -8,12 +8,12 @@ enum class XrayLogLevel(
     Info("info", "info"),
     Warning("warning", "warning"),
     Error("error", "error"),
-    None("none", "none");
+    None("none", "none"),
+    ;
 
     companion object {
         val default: XrayLogLevel = Error
 
-        fun fromValue(value: String?): XrayLogLevel =
-            entries.firstOrNull { it.value == value?.trim()?.lowercase() } ?: default
+        fun fromValue(value: String?): XrayLogLevel = entries.firstOrNull { it.value == value?.trim()?.lowercase() } ?: default
     }
 }

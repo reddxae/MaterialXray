@@ -1,17 +1,17 @@
 package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
+import java.util.Base64
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import java.util.Base64
 
 class VmessParserTest {
 
     @Test
     fun `parse VMess base64 json link`() {
         val uri = vmess(
-            """{"ps":"Tokyo","add":"1.2.3.4","port":"443","id":"uuid","aid":"0","net":"ws","host":"example.com","path":"/ws","tls":"tls","sni":"sni.example","fp":"chrome","alpn":"h2,http/1.1"}"""
+            """{"ps":"Tokyo","add":"1.2.3.4","port":"443","id":"uuid","aid":"0","net":"ws","host":"example.com","path":"/ws","tls":"tls","sni":"sni.example","fp":"chrome","alpn":"h2,http/1.1"}""",
         )
 
         val config = VmessParser.parse(uri)!!
@@ -49,6 +49,5 @@ class VmessParserTest {
         assertNull(VmessParser.parse(vmess("""{"add":"1.2.3.4","port":"bad","id":"uuid"}""")))
     }
 
-    private fun vmess(json: String): String =
-        "vmess://${Base64.getEncoder().encodeToString(json.toByteArray())}"
+    private fun vmess(json: String): String = "vmess://${Base64.getEncoder().encodeToString(json.toByteArray())}"
 }

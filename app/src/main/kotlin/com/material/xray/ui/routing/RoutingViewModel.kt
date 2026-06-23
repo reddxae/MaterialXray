@@ -2,15 +2,15 @@ package com.material.xray.ui.routing
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.material.xray.model.RoutingRule
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.model.RoutingRule
 import com.material.xray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @HiltViewModel
 class RoutingViewModel @Inject constructor(

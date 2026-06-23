@@ -21,8 +21,7 @@ data class NotificationSettings(
         NotificationField.ConnectionCount -> showConnectionCount
     }
 
-    fun normalizedFieldOrder(): List<NotificationField> =
-        (fieldOrder + NotificationField.entries).distinct()
+    fun normalizedFieldOrder(): List<NotificationField> = (fieldOrder + NotificationField.entries).distinct()
 
     companion object {
         const val MIN_UPDATE_INTERVAL_MS = 100
@@ -51,7 +50,6 @@ enum class NotificationStyle(
     companion object {
         val default = Normal
 
-        fun fromValue(value: String?): NotificationStyle =
-            entries.firstOrNull { it.name == value } ?: default
+        fun fromValue(value: String?): NotificationStyle = entries.firstOrNull { it.name == value } ?: default
     }
 }

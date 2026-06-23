@@ -1,9 +1,9 @@
 package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
-import com.material.xray.model.ServerConfig
 import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
+import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
@@ -146,7 +146,7 @@ class XrayConfigOutboundsTest {
                         {"protocol":"vless","settings":{}}
                       ]
                     }
-                """.trimIndent()
+                """.trimIndent(),
             ),
             fwmark = 9,
             physicalInterface = "wlan1",

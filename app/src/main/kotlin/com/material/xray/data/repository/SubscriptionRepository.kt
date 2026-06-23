@@ -6,11 +6,11 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.FetchedSubscription
 import com.material.xray.data.parser.SubscriptionFetcher
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
-import javax.inject.Singleton
 
 @Singleton
 class SubscriptionRepository @Inject constructor(
@@ -34,7 +34,7 @@ class SubscriptionRepository @Inject constructor(
             SubscriptionEntity(
                 name = trimmedName.ifEmpty { nextFallbackName() },
                 url = trimmedUrl,
-            )
+            ),
         )
         refresh(id, trimmedUrl)
         return id
@@ -147,11 +147,9 @@ class SubscriptionRepository @Inject constructor(
         return "Subscription $index"
     }
 
-    private fun String?.trimToNull(): String? =
-        this?.trim()?.takeIf { it.isNotEmpty() }
+    private fun String?.trimToNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
-    private fun String.isFallbackSubscriptionName(): Boolean =
-        matches(FALLBACK_NAME_PATTERN)
+    private fun String.isFallbackSubscriptionName(): Boolean = matches(FALLBACK_NAME_PATTERN)
 
     private fun buildServerIdReplacements(
         oldServers: List<ServerEntity>,
@@ -172,22 +170,20 @@ class SubscriptionRepository @Inject constructor(
         }.toMap()
     }
 
-    private fun List<ServerEntity>.uniqueByTrimmedName(): Map<String, Long> =
-        asSequence()
-            .map { it.name.trim() to it.id }
-            .filter { (name, _) -> name.isNotEmpty() }
-            .groupBy({ it.first }, { it.second })
-            .filterValues { it.size == 1 }
-            .mapValues { (_, ids) -> ids.single() }
+    private fun List<ServerEntity>.uniqueByTrimmedName(): Map<String, Long> = asSequence()
+        .map { it.name.trim() to it.id }
+        .filter { (name, _) -> name.isNotEmpty() }
+        .groupBy({ it.first }, { it.second })
+        .filterValues { it.size == 1 }
+        .mapValues { (_, ids) -> ids.single() }
 
-    private fun List<ServerEntity>.uniqueTrimmedNames(): Set<String> =
-        asSequence()
-            .map { it.name.trim() }
-            .filter { it.isNotEmpty() }
-            .groupingBy { it }
-            .eachCount()
-            .filterValues { it == 1 }
-            .keys
+    private fun List<ServerEntity>.uniqueTrimmedNames(): Set<String> = asSequence()
+        .map { it.name.trim() }
+        .filter { it.isNotEmpty() }
+        .groupingBy { it }
+        .eachCount()
+        .filterValues { it == 1 }
+        .keys
 
     private fun SubscriptionEntity.isDueForAutoUpdate(nowMillis: Long): Boolean {
         val interval = autoUpdateIntervalHours

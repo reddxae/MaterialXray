@@ -14,8 +14,7 @@ internal class RootShellDiagnosticCommandRunner(
 ) : DiagnosticCommandRunner {
     override fun defaultNetworkNamespace(): NetworkNamespace = shell.defaultNetworkNamespace()
 
-    override suspend fun execute(command: String, namespace: NetworkNamespace): RootShell.Result =
-        shell.execute(command, namespace)
+    override suspend fun execute(command: String, namespace: NetworkNamespace): RootShell.Result = shell.execute(command, namespace)
 }
 
 internal class ConnectionDiagnostics(

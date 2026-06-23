@@ -22,15 +22,14 @@ data class SubscriptionUserInfo(
     val expire: Long? = null,
 )
 
-fun SubscriptionMetadata.hasValues(): Boolean =
-    contentDisposition != null ||
-            contentType != null ||
-            profileTitle != null ||
-            profileUpdateIntervalHours != null ||
-            subscriptionUserInfo?.hasValues() == true ||
-            profileWebPageUrl != null ||
-            announce != null ||
-            supportUrl != null
+fun SubscriptionMetadata.hasValues(): Boolean = contentDisposition != null ||
+    contentType != null ||
+    profileTitle != null ||
+    profileUpdateIntervalHours != null ||
+    subscriptionUserInfo?.hasValues() == true ||
+    profileWebPageUrl != null ||
+    announce != null ||
+    supportUrl != null
 
 fun SubscriptionMetadata.normalized(): SubscriptionMetadata? {
     val normalized = copy(
@@ -46,8 +45,7 @@ fun SubscriptionMetadata.normalized(): SubscriptionMetadata? {
     return normalized.takeIf { it.hasValues() }
 }
 
-fun SubscriptionUserInfo.hasValues(): Boolean =
-    upload != null || download != null || total != null || expire != null
+fun SubscriptionUserInfo.hasValues(): Boolean = upload != null || download != null || total != null || expire != null
 
 fun SubscriptionUserInfo.normalized(): SubscriptionUserInfo? {
     val normalized = copy(
@@ -59,5 +57,4 @@ fun SubscriptionUserInfo.normalized(): SubscriptionUserInfo? {
     return normalized.takeIf { it.hasValues() }
 }
 
-private fun String?.trimToNull(): String? =
-    this?.trim()?.takeIf { it.isNotEmpty() }
+private fun String?.trimToNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }

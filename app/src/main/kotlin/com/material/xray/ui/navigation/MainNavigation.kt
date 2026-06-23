@@ -7,13 +7,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -94,28 +94,28 @@ fun MainNavigation() {
                 }
                 NavigationBar {
                     navigationScreens.forEach { screen ->
-                            NavigationBarItem(
-                                icon = {
-                                    val icon = screen.icon
-                                    if (icon != null) {
-                                        Icon(icon, contentDescription = screen.label)
-                                    } else {
-                                        Icon(
-                                            painter = painterResource(requireNotNull(screen.iconRes)),
-                                            contentDescription = screen.label,
-                                        )
-                                    }
-                                },
-                                label = { Text(screen.label) },
-                                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                                onClick = {
-                                    navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                            )
+                        NavigationBarItem(
+                            icon = {
+                                val icon = screen.icon
+                                if (icon != null) {
+                                    Icon(icon, contentDescription = screen.label)
+                                } else {
+                                    Icon(
+                                        painter = painterResource(requireNotNull(screen.iconRes)),
+                                        contentDescription = screen.label,
+                                    )
+                                }
+                            },
+                            label = { Text(screen.label) },
+                            selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                            onClick = {
+                                navController.navigate(screen.route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                        )
                     }
                 }
             }

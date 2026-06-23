@@ -56,13 +56,12 @@ class AppRouteAssignmentTest {
         serverId: Long? = null,
         routeMode: String? = null,
         manual: Boolean = true,
-    ): AppBypassEntity =
-        AppBypassEntity(
-            packageName = "pkg",
-            uid = 123,
-            excluded = excluded,
-            serverId = serverId,
-            routeMode = routeMode,
-            manual = manual,
-        )
+    ): AppBypassEntity = AppBypassEntity(
+        packageName = "pkg",
+        uid = 123,
+        excluded = excluded,
+        serverId = serverId,
+        routeMode = routeMode,
+        manual = manual,
+    )
 }

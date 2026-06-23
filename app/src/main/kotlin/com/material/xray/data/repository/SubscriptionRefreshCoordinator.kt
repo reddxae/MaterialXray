@@ -3,9 +3,9 @@ package com.material.xray.data.repository
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.first
 
 @Singleton
 class SubscriptionRefreshCoordinator @Inject constructor(

@@ -14,12 +14,12 @@ enum class LauncherIcon(
         value = "material",
         label = "Material",
         aliasClassName = "MaterialLauncherAlias",
-    );
+    ),
+    ;
 
     companion object {
         val default = Default
 
-        fun fromValue(value: String?): LauncherIcon =
-            entries.firstOrNull { it.value == value } ?: default
+        fun fromValue(value: String?): LauncherIcon = entries.firstOrNull { it.value == value } ?: default
     }
 }

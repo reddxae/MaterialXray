@@ -6,9 +6,9 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -30,8 +30,10 @@ class ConfigGeneratorTest {
         password = "test-uuid",
         transport = ServerConfig.Transport(type = "tcp"),
         security = ServerConfig.Security(
-            type = "reality", sni = "example.com",
-            fingerprint = "chrome", publicKey = "testpbk",
+            type = "reality",
+            sni = "example.com",
+            fingerprint = "chrome",
+            publicKey = "testpbk",
         ),
         extra = mapOf("flow" to "xtls-rprx-vision", "encryption" to "none"),
     )
@@ -284,7 +286,7 @@ class ConfigGeneratorTest {
                     tunName = "xray0a1",
                     outboundTag = "app-proxy-42",
                     server = appServer,
-                )
+                ),
             ),
         )
         val json = Json.parseToJsonElement(config).jsonObject
@@ -319,7 +321,7 @@ class ConfigGeneratorTest {
                     outboundTag = "proxy",
                     server = appServer,
                     applyRoutingRules = true,
-                )
+                ),
             ),
         )
         val json = Json.parseToJsonElement(config).jsonObject
@@ -341,5 +343,4 @@ class ConfigGeneratorTest {
 
         assertTrue("User routing rules should be emitted before default selected proxy fallback", ruRuleIndex in 0 until fallbackIndex)
     }
-
 }

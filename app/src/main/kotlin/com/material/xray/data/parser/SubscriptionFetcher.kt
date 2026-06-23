@@ -5,6 +5,9 @@ import android.os.Build
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionMetadata
+import java.io.IOException
+import java.util.UUID
+import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -18,9 +21,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import java.io.IOException
-import java.util.UUID
-import javax.inject.Inject
 
 data class FetchedSubscription(
     val configs: List<ServerConfig>,
@@ -292,23 +292,17 @@ class SubscriptionFetcher @Inject constructor(
         extra = emptyMap(),
     )
 
-    private fun firstString(primary: JsonObject?, fallback: JsonObject, key: String): String =
-        primary?.findString(key) ?: fallback.findFirstStringRecursive(key) ?: ""
+    private fun firstString(primary: JsonObject?, fallback: JsonObject, key: String): String = primary?.findString(key) ?: fallback.findFirstStringRecursive(key) ?: ""
 
-    private fun firstInt(primary: JsonObject?, fallback: JsonObject, key: String): Int =
-        primary?.findInt(key) ?: fallback.findFirstIntRecursive(key) ?: 0
+    private fun firstInt(primary: JsonObject?, fallback: JsonObject, key: String): Int = primary?.findInt(key) ?: fallback.findFirstIntRecursive(key) ?: 0
 
-    private fun parseMetadata(response: Response): SubscriptionMetadata =
-        SubscriptionStandardHeaders.parseMetadata(response.headers)
+    private fun parseMetadata(response: Response): SubscriptionMetadata = SubscriptionStandardHeaders.parseMetadata(response.headers)
 
-    private fun isJsonContentType(contentType: String?): Boolean =
-        SubscriptionStandardHeaders.isJsonContentType(contentType)
+    private fun isJsonContentType(contentType: String?): Boolean = SubscriptionStandardHeaders.isJsonContentType(contentType)
 
-    private fun isPlainTextContentType(contentType: String?): Boolean =
-        SubscriptionStandardHeaders.isPlainTextContentType(contentType)
+    private fun isPlainTextContentType(contentType: String?): Boolean = SubscriptionStandardHeaders.isPlainTextContentType(contentType)
 
-    private fun decodeBase64ToUtf8(value: String): String? =
-        SubscriptionStandardHeaders.decodeBase64ToUtf8(value)
+    private fun decodeBase64ToUtf8(value: String): String? = SubscriptionStandardHeaders.decodeBase64ToUtf8(value)
 
     private fun Response.permanentRedirectTarget(originalUrl: String): String? {
         val finalUrl = request.url.toString()
@@ -437,22 +431,19 @@ class SubscriptionFetcher @Inject constructor(
             ?: emptyList()
     }
 
-    private fun JsonObject.findElement(name: String): JsonElement? =
-        entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+    private fun JsonObject.findElement(name: String): JsonElement? = entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
 
     private fun JsonObject.findObject(name: String): JsonObject? = findElement(name) as? JsonObject
 
     private fun JsonObject.findArray(name: String): JsonArray? = findElement(name) as? JsonArray
 
-    private fun JsonObject.findString(name: String): String? =
-        (findElement(name) as? JsonPrimitive)?.contentOrNull
+    private fun JsonObject.findString(name: String): String? = (findElement(name) as? JsonPrimitive)?.contentOrNull
 
     private fun JsonObject.findInt(name: String): Int? = findString(name)?.toIntOrNull()
 
     private fun JsonArray.firstObject(): JsonObject? = firstOrNull() as? JsonObject
 
-    private fun JsonArray.stringList(): List<String> =
-        mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+    private fun JsonArray.stringList(): List<String> = mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
 
     private fun JsonElement.findFirstStringRecursive(name: String): String? = when (this) {
         is JsonObject -> {
@@ -464,8 +455,7 @@ class SubscriptionFetcher @Inject constructor(
         else -> null
     }
 
-    private fun JsonElement.findFirstIntRecursive(name: String): Int? =
-        findFirstStringRecursive(name)?.toIntOrNull()
+    private fun JsonElement.findFirstIntRecursive(name: String): Int? = findFirstStringRecursive(name)?.toIntOrNull()
 
     private data class DerivedOutbound(
         val protocol: Protocol,

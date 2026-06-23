@@ -9,6 +9,15 @@ import com.material.xray.core.xray.buildProxyOutbound
 import com.material.xray.model.PingMethod
 import com.material.xray.model.ServerConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -25,15 +34,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.ServerSocket
-import java.net.Socket
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import javax.inject.Inject
-import javax.inject.Singleton
-import kotlin.coroutines.resume
 
 data class LatencyProbeResult(
     val latencyMs: Int,
@@ -146,35 +146,57 @@ class ServerLatencyTester @Inject constructor(
         allowIpv6: Boolean,
     ): String {
         val config = buildJsonObject {
-            put("log", buildJsonObject {
-                put("access", "none")
-                put("loglevel", "error")
-            })
+            put(
+                "log",
+                buildJsonObject {
+                    put("access", "none")
+                    put("loglevel", "error")
+                },
+            )
             put("dns", buildDns(dnsServers, allowIpv6 = allowIpv6))
-            put("inbounds", buildJsonArray {
-                add(buildJsonObject {
-                    put("tag", "latency-socks")
-                    put("listen", LOCAL_PROXY_HOST)
-                    put("port", proxyPort)
-                    put("protocol", "socks")
-                    put("settings", buildJsonObject {
-                        put("udp", false)
-                        put("timeout", LOCAL_PROXY_TIMEOUT_SECONDS)
-                    })
-                })
-            })
-            put("outbounds", buildJsonArray {
-                add(buildProxyOutbound(server, fwmark = 0, physicalInterface = null, tag = "proxy", allowIpv6 = allowIpv6))
-            })
-            put("routing", buildJsonObject {
-                put("rules", buildJsonArray {
-                    add(buildJsonObject {
-                        put("type", "field")
-                        put("inboundTag", buildJsonArray { add("latency-socks") })
-                        put("outboundTag", "proxy")
-                    })
-                })
-            })
+            put(
+                "inbounds",
+                buildJsonArray {
+                    add(
+                        buildJsonObject {
+                            put("tag", "latency-socks")
+                            put("listen", LOCAL_PROXY_HOST)
+                            put("port", proxyPort)
+                            put("protocol", "socks")
+                            put(
+                                "settings",
+                                buildJsonObject {
+                                    put("udp", false)
+                                    put("timeout", LOCAL_PROXY_TIMEOUT_SECONDS)
+                                },
+                            )
+                        },
+                    )
+                },
+            )
+            put(
+                "outbounds",
+                buildJsonArray {
+                    add(buildProxyOutbound(server, fwmark = 0, physicalInterface = null, tag = "proxy", allowIpv6 = allowIpv6))
+                },
+            )
+            put(
+                "routing",
+                buildJsonObject {
+                    put(
+                        "rules",
+                        buildJsonArray {
+                            add(
+                                buildJsonObject {
+                                    put("type", "field")
+                                    put("inboundTag", buildJsonArray { add("latency-socks") })
+                                    put("outboundTag", "proxy")
+                                },
+                            )
+                        },
+                    )
+                },
+            )
         }
         return json.encodeToString(JsonObject.serializer(), config)
     }
@@ -261,37 +283,35 @@ class ServerLatencyTester @Inject constructor(
         return best
     }
 
-    private suspend fun socketConnectTime(host: String, port: Int): Int =
-        suspendCancellableCoroutine { continuation ->
-            val socket = Socket()
-            continuation.invokeOnCancellation {
-                runCatching { socket.close() }
-            }
-
-            try {
-                socket.tcpNoDelay = true
-
-                val startedAt = SystemClock.elapsedRealtimeNanos()
-                socket.connect(InetSocketAddress(host, port), TCP_CONNECT_TIMEOUT_MS)
-                val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
-                val latency = elapsedMs.toInt().coerceAtLeast(1)
-                if (continuation.isActive) {
-                    continuation.resume(latency)
-                }
-            } catch (_: Exception) {
-                if (continuation.isActive) {
-                    continuation.resume(-1)
-                }
-            } finally {
-                runCatching { socket.close() }
-            }
+    private suspend fun socketConnectTime(host: String, port: Int): Int = suspendCancellableCoroutine { continuation ->
+        val socket = Socket()
+        continuation.invokeOnCancellation {
+            runCatching { socket.close() }
         }
 
-    private fun reserveLocalPort(): Int =
-        ServerSocket(0).use { socket ->
-            socket.reuseAddress = true
-            socket.localPort
+        try {
+            socket.tcpNoDelay = true
+
+            val startedAt = SystemClock.elapsedRealtimeNanos()
+            socket.connect(InetSocketAddress(host, port), TCP_CONNECT_TIMEOUT_MS)
+            val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
+            val latency = elapsedMs.toInt().coerceAtLeast(1)
+            if (continuation.isActive) {
+                continuation.resume(latency)
+            }
+        } catch (_: Exception) {
+            if (continuation.isActive) {
+                continuation.resume(-1)
+            }
+        } finally {
+            runCatching { socket.close() }
         }
+    }
+
+    private fun reserveLocalPort(): Int = ServerSocket(0).use { socket ->
+        socket.reuseAddress = true
+        socket.localPort
+    }
 
     private suspend fun stopProcess(process: Process) {
         if (process.isAlive) {

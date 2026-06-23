@@ -2,11 +2,11 @@ package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
+import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.Base64
 
 object VmessParser {
 

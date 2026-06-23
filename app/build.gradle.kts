@@ -1,6 +1,7 @@
-import org.gradle.api.artifacts.VersionCatalogsExtension
 import java.io.File
 import java.util.Properties
+import org.gradle.api.artifacts.VersionCatalogsExtension
+import org.jlleitschuh.gradle.ktlint.reporter.ReporterType
 
 plugins {
     alias(libs.plugins.android.application)
@@ -9,7 +10,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.protobuf)
-    id("dev.detekt") version("2.0.0-alpha.5")
+    id("dev.detekt") version ("2.0.0-alpha.5")
+    id("org.jlleitschuh.gradle.ktlint") version ("14.2.0")
 }
 
 val localProperties = Properties().apply {
@@ -19,8 +21,7 @@ val localProperties = Properties().apply {
     }
 }
 
-fun localProperty(name: String): String? =
-    localProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+fun localProperty(name: String): String? = localProperties.getProperty(name)?.takeIf { it.isNotBlank() }
 
 val releaseKeystorePath = providers.environmentVariable("RELEASE_KEYSTORE_PATH")
     .orElse(providers.gradleProperty("releaseKeystorePath"))
@@ -108,6 +109,31 @@ detekt {
     buildUponDefaultConfig = true
     config.setFrom(rootProject.files("config/detekt/detekt.yml"))
     basePath.set(rootDir)
+}
+
+ktlint {
+    ignoreFailures.set(false)
+    reporters {
+        reporter(ReporterType.PLAIN)
+        reporter(ReporterType.HTML)
+    }
+    filter {
+        // KSP (Hilt/Room) and protobuf/grpc write Kotlin/Java into build/generated;
+        // those are attached to the source sets, so exclude them from linting.
+        exclude { element -> element.file.path.contains("/generated/") }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("ktlintFormat")
+}
+
+tasks.named("check") {
+    dependsOn("ktlintFormat")
+}
+
+tasks.named("ktlintCheck") {
+    dependsOn("ktlintFormat")
 }
 
 protobuf {

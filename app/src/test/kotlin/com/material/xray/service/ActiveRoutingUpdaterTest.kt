@@ -20,7 +20,7 @@ class ActiveRoutingUpdaterTest {
                 fwmark = FWMARK,
                 routeTable = ROUTE_TABLE,
                 appProxyServerIds = listOf(PROXY_SERVER_ID),
-            )
+            ),
         )
         val plan = AppRoutingPlan(
             directUids = setOf(DIRECT_UID),
@@ -58,7 +58,7 @@ class ActiveRoutingUpdaterTest {
                 fwmark = FWMARK,
                 routeTable = ROUTE_TABLE,
                 appProxyServerIds = listOf(PROXY_SERVER_ID),
-            )
+            ),
         )
         val tunGateway = FakeTunGateway()
         val updater = updater(
@@ -154,8 +154,7 @@ class ActiveRoutingUpdaterTest {
         var lastManagedAppRouteCount: Int? = null
         var lastRouteProfileIds: Set<Int> = emptySet()
 
-        override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? =
-            physicalRoute
+        override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? = physicalRoute
 
         override suspend fun configureTun(
             tunName: String,

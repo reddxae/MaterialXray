@@ -12,19 +12,19 @@ import com.material.xray.core.xray.GeoDataManager
 import com.material.xray.core.xray.ServerAddressResolver
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunManager
-import com.material.xray.core.xray.XrayBinary
 import com.material.xray.core.xray.XRAY_API_SOCKET_NAME_PREFIX
-import com.material.xray.core.xray.XrayStatsClient
+import com.material.xray.core.xray.XrayBinary
 import com.material.xray.core.xray.XrayState
+import com.material.xray.core.xray.XrayStatsClient
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 
 class ConnectionManager(
@@ -406,7 +406,7 @@ class ConnectionManager(
                 physicalInterface = physicalRoute?.dev ?: "VpnService",
                 physicalGateway = physicalRoute?.gateway,
                 physicalTable = physicalRoute?.table,
-            )
+            ),
         )
     }
 
@@ -548,7 +548,7 @@ class ConnectionManager(
                 physicalInterface = physicalRoute?.dev ?: "VpnService",
                 physicalGateway = physicalRoute?.gateway,
                 physicalTable = physicalRoute?.table,
-            )
+            ),
         )
     }
 
@@ -560,32 +560,29 @@ class ConnectionManager(
     suspend fun applyAppRoutingChanges(
         connectedState: ConnectionState.Connected,
         runtimeSettings: XrayRuntimeSettings,
-    ): Boolean =
-        activeRoutingUpdater.applyAppRoutingChanges(
-            connectedState = connectedState,
-            tunName = runtimeSettings.tunName,
-            fwmark = runtimeSettings.fwmark,
-            routeTable = runtimeSettings.routeTable,
-        )
+    ): Boolean = activeRoutingUpdater.applyAppRoutingChanges(
+        connectedState = connectedState,
+        tunName = runtimeSettings.tunName,
+        fwmark = runtimeSettings.fwmark,
+        routeTable = runtimeSettings.routeTable,
+    )
 
     suspend fun reapplyPhysicalRoutingForNetworkChange(
         connectedState: ConnectionState.Connected,
         runtimeSettings: XrayRuntimeSettings,
-    ): PhysicalRouteUpdateResult =
-        activeRoutingUpdater.reapplyPhysicalRoutingForNetworkChange(
-            connectedState = connectedState,
-            tunName = runtimeSettings.tunName,
-            fwmark = runtimeSettings.fwmark,
-            routeTable = runtimeSettings.routeTable,
-        )
+    ): PhysicalRouteUpdateResult = activeRoutingUpdater.reapplyPhysicalRoutingForNetworkChange(
+        connectedState = connectedState,
+        tunName = runtimeSettings.tunName,
+        fwmark = runtimeSettings.fwmark,
+        routeTable = runtimeSettings.routeTable,
+    )
 
     suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? {
         if (!shell.open()) return null
         return tunManager.detectPhysicalRoute(tunName)
     }
 
-    suspend fun detectPhysicalInterface(tunName: String): String? =
-        detectPhysicalRoute(tunName)?.dev
+    suspend fun detectPhysicalInterface(tunName: String): String? = detectPhysicalRoute(tunName)?.dev
 
     suspend fun disconnect() {
         disconnect(updateState = true, fastRootCleanup = true)
@@ -632,51 +629,44 @@ class ConnectionManager(
         stateHolder.update(ConnectionState.Error(message))
     }
 
-    suspend fun isProcessAlive(pid: Int): Boolean =
-        if (runningViaVpnService) {
-            userProcessSupervisor.isAlive(pid)
-        } else {
-            processSupervisor.isAlive(pid)
-        }
+    suspend fun isProcessAlive(pid: Int): Boolean = if (runningViaVpnService) {
+        userProcessSupervisor.isAlive(pid)
+    } else {
+        processSupervisor.isAlive(pid)
+    }
 
-    suspend fun killProcess(pid: Int, signal: Int = 15): Boolean =
-        if (runningViaVpnService) {
-            userProcessSupervisor.kill(pid, signal)
-        } else {
-            processSupervisor.kill(pid, signal)
-        }
+    suspend fun killProcess(pid: Int, signal: Int = 15): Boolean = if (runningViaVpnService) {
+        userProcessSupervisor.kill(pid, signal)
+    } else {
+        processSupervisor.kill(pid, signal)
+    }
 
-    suspend fun readProcessResidentMemoryMb(pid: Int): Long? =
-        if (runningViaVpnService) {
-            userProcessSupervisor.readResidentMemoryMb(pid)
-        } else {
-            processSupervisor.readResidentMemoryMb(pid)
-        }
+    suspend fun readProcessResidentMemoryMb(pid: Int): Long? = if (runningViaVpnService) {
+        userProcessSupervisor.readResidentMemoryMb(pid)
+    } else {
+        processSupervisor.readResidentMemoryMb(pid)
+    }
 
-    suspend fun readActiveConnectionCount(pid: Int): Int? =
-        if (runningViaVpnService) {
-            withContext(Dispatchers.IO) { readUserProcessSocketCount(pid) }
-        } else {
-            val result = shell.execute("ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:'")
-            result.output.trim().toIntOrNull()
-        }
+    suspend fun readActiveConnectionCount(pid: Int): Int? = if (runningViaVpnService) {
+        withContext(Dispatchers.IO) { readUserProcessSocketCount(pid) }
+    } else {
+        val result = shell.execute("ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:'")
+        result.output.trim().toIntOrNull()
+    }
 
-    suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> =
-        xrayStatsClient.queryOutboundTrafficStatsBytes()
+    suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> = xrayStatsClient.queryOutboundTrafficStatsBytes()
 
     private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
         val appUid = context.applicationInfo.uid
         return if (appUid > 0) directUids + appUid else directUids
     }
 
-    private fun readUserProcessSocketCount(pid: Int): Int? =
-        File("/proc/$pid/fd")
-            .takeIf { it.isDirectory }
-            ?.listFiles()
-            ?.count { fd -> runCatching { Os.readlink(fd.absolutePath).startsWith("socket:") }.getOrDefault(false) }
+    private fun readUserProcessSocketCount(pid: Int): Int? = File("/proc/$pid/fd")
+        .takeIf { it.isDirectory }
+        ?.listFiles()
+        ?.count { fd -> runCatching { Os.readlink(fd.absolutePath).startsWith("socket:") }.getOrDefault(false) }
 
-    private fun nextXrayApiSocketName(): String =
-        "$XRAY_API_SOCKET_NAME_PREFIX-${android.os.Process.myPid()}-${SystemClock.elapsedRealtime()}"
+    private fun nextXrayApiSocketName(): String = "$XRAY_API_SOCKET_NAME_PREFIX-${android.os.Process.myPid()}-${SystemClock.elapsedRealtime()}"
 
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
         val startedAt = SystemClock.elapsedRealtime()
@@ -686,5 +676,4 @@ class ConnectionManager(
             log.append(LogSource.APP, "$label took ${SystemClock.elapsedRealtime() - startedAt} ms")
         }
     }
-
 }

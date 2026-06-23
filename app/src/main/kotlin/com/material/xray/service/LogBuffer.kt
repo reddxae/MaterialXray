@@ -1,10 +1,10 @@
 package com.material.xray.service
 
 import android.util.Log
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 data class LogEntry(
     val id: Long,
@@ -40,7 +40,7 @@ class LogBuffer @Inject constructor() {
                 id = nextId++,
                 source = source,
                 message = message,
-            )
+            ),
         )
         _entries.value = buffer.toList()
     }

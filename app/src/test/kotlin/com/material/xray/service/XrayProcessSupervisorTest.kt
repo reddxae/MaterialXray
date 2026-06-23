@@ -1,12 +1,12 @@
 package com.material.xray.service
 
 import com.material.xray.core.root.RootShell
+import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 class XrayProcessSupervisorTest {
 
@@ -23,7 +23,7 @@ class XrayProcessSupervisorTest {
                 assertTrue(command.contains("pidof xray"))
                 assertTrue(command.contains("printf '%s' \"\${found:-\$launcher}\""))
                 RootShell.Result(exitCode = 0, output = "1234", error = "")
-            }
+            },
         )
         val supervisor = supervisor(commandRunner = commands)
 
@@ -53,7 +53,7 @@ class XrayProcessSupervisorTest {
                         RootShell.Result(exitCode = 1, output = "", error = "")
                     }
                 },
-            )
+            ),
         )
 
         assertEquals(3L, supervisor.readResidentMemoryMb(42))
@@ -70,7 +70,7 @@ class XrayProcessSupervisorTest {
                         RootShell.Result(exitCode = 0, output = "512", error = "")
                     }
                 },
-            )
+            ),
         )
 
         assertEquals(2L, supervisor.readResidentMemoryMb(42))

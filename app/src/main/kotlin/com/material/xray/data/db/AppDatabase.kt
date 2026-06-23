@@ -83,7 +83,7 @@ abstract class AppDatabase : RoomDatabase() {
                         routeMode TEXT,
                         PRIMARY KEY(profileId, packageName)
                     )
-                    """.trimIndent()
+                    """.trimIndent(),
                 )
                 db.execSQL(
                     """
@@ -96,7 +96,7 @@ abstract class AppDatabase : RoomDatabase() {
                         manual,
                         routeMode
                     FROM app_bypass
-                    """.trimIndent()
+                    """.trimIndent(),
                 )
                 db.execSQL("DROP TABLE app_bypass")
                 db.execSQL("ALTER TABLE app_bypass_new RENAME TO app_bypass")

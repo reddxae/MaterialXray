@@ -19,12 +19,12 @@ enum class XrayOutbound(
         tag = "block",
         label = "block",
         description = "Drop traffic with a blackhole outbound.",
-    );
+    ),
+    ;
 
     companion object {
         val default = Proxy
 
-        fun fromTag(tag: String?): XrayOutbound =
-            entries.firstOrNull { it.tag == tag?.trim()?.lowercase() } ?: default
+        fun fromTag(tag: String?): XrayOutbound = entries.firstOrNull { it.tag == tag?.trim()?.lowercase() } ?: default
     }
 }

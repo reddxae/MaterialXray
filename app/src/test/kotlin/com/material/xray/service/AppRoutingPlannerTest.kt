@@ -37,8 +37,8 @@ class AppRoutingPlannerTest {
                     address = serverSpecificConfig.address,
                     port = serverSpecificConfig.port,
                     configJson = Json.encodeToString(serverSpecificConfig),
-                )
-            )
+                ),
+            ),
         )
         val planner = AppRoutingPlanner(
             appBypassDao = FakeAppBypassDao(
@@ -48,7 +48,7 @@ class AppRoutingPlannerTest {
                     assignment("server.specific", uid = 1003, excluded = false, serverId = SERVER_ID),
                     assignment("default.outbound", uid = 1004, excluded = false, routeMode = "default_outbound"),
                     assignment("direct.mode", uid = 1006, excluded = false, routeMode = "direct"),
-                )
+                ),
             ),
             serverRepository = serverRepository,
             appInventory = FakeAppInventory(
@@ -59,7 +59,7 @@ class AppRoutingPlannerTest {
                     app("default.outbound", uid = 2004),
                     app("unassigned.app", uid = 2005),
                     app("direct.mode", uid = 2006),
-                )
+                ),
             ),
             serverAddressResolver = ServerAddressResolver(),
             log = LogBuffer(),
@@ -101,7 +101,7 @@ class AppRoutingPlannerTest {
             appBypassDao = FakeAppBypassDao(
                 listOf(
                     assignment("server.specific", uid = 1003, excluded = false, serverId = SERVER_ID),
-                )
+                ),
             ),
             serverRepository = ServerRepository(FakeServerDao()),
             appInventory = FakeAppInventory(apps = listOf(app("server.specific", uid = 2003))),
@@ -131,16 +131,16 @@ class AppRoutingPlannerTest {
                 listOf(assignment("missing.server", uid = 1001, excluded = false, serverId = 1L)) +
                     validServerIds.map { id ->
                         assignment("server.$id", uid = 1000 + id.toInt(), excluded = false, serverId = id)
-                    }
+                    },
             ),
             serverRepository = ServerRepository(
                 FakeServerDao(
-                    servers = validServerIds.map { id -> serverEntity(id, server("Server $id", "203.0.113.$id")) }
-                )
+                    servers = validServerIds.map { id -> serverEntity(id, server("Server $id", "203.0.113.$id")) },
+                ),
             ),
             appInventory = FakeAppInventory(
                 apps = listOf(app("missing.server", uid = 1001)) +
-                    validServerIds.map { id -> app("server.$id", uid = 1000 + id.toInt()) }
+                    validServerIds.map { id -> app("server.$id", uid = 1000 + id.toInt()) },
             ),
             serverAddressResolver = ServerAddressResolver(),
             log = LogBuffer(),
@@ -166,16 +166,16 @@ class AppRoutingPlannerTest {
                 listOf(assignment("default.selected", uid = 1001, excluded = false, routeMode = "default_selected")) +
                     serverIds.map { id ->
                         assignment("server.$id", uid = 2000 + id.toInt(), excluded = false, serverId = id)
-                    }
+                    },
             ),
             serverRepository = ServerRepository(
                 FakeServerDao(
-                    servers = serverIds.map { id -> serverEntity(id, server("Server $id", "203.0.113.$id")) }
-                )
+                    servers = serverIds.map { id -> serverEntity(id, server("Server $id", "203.0.113.$id")) },
+                ),
             ),
             appInventory = FakeAppInventory(
                 apps = listOf(app("default.selected", uid = 1001)) +
-                    serverIds.map { id -> app("server.$id", uid = 2000 + id.toInt()) }
+                    serverIds.map { id -> app("server.$id", uid = 2000 + id.toInt()) },
             ),
             serverAddressResolver = ServerAddressResolver(),
             log = LogBuffer(),
@@ -200,11 +200,9 @@ class AppRoutingPlannerTest {
         override fun observeAll(): Flow<List<AppBypassEntity>> = flowOf(assignments)
         override suspend fun getAll(): List<AppBypassEntity> = assignments
         override suspend fun getExcluded(): List<AppBypassEntity> = assignments.filter { it.excluded }
-        override suspend fun getProxyAssignments(): List<AppBypassEntity> =
-            assignments.filter { !it.excluded && it.serverId != null }
+        override suspend fun getProxyAssignments(): List<AppBypassEntity> = assignments.filter { !it.excluded && it.serverId != null }
 
-        override suspend fun getDefaultProxyAssignments(): List<AppBypassEntity> =
-            assignments.filter { !it.excluded && it.serverId == null && it.routeMode != "default_outbound" }
+        override suspend fun getDefaultProxyAssignments(): List<AppBypassEntity> = assignments.filter { !it.excluded && it.serverId == null && it.routeMode != "default_outbound" }
 
         override suspend fun upsert(entity: AppBypassEntity) = Unit
         override suspend fun updateServerId(oldServerId: Long, newServerId: Long) = Unit
@@ -230,8 +228,7 @@ class AppRoutingPlannerTest {
     private class FakeAppInventory(
         private val apps: List<InstalledApp>,
     ) : AppInventorySource {
-        override suspend fun loadSnapshot(): AppInventorySnapshot =
-            AppInventorySnapshot(apps = apps, profileIds = setOf(0))
+        override suspend fun loadSnapshot(): AppInventorySnapshot = AppInventorySnapshot(apps = apps, profileIds = setOf(0))
     }
 
     private companion object {

@@ -1,9 +1,9 @@
 package com.material.xray.core.xray
 
-import com.material.xray.core.root.RootShell
 import com.material.xray.core.app.appUidRangeForProfile
 import com.material.xray.core.app.isApplicationUid
 import com.material.xray.core.app.profileIdForUid
+import com.material.xray.core.root.RootShell
 import kotlinx.coroutines.delay
 
 class TunManager(private val shell: RootShell) {
@@ -165,7 +165,7 @@ class TunManager(private val shell: RootShell) {
                 "ip rule del fwmark $fwmark table main prio 10 2>/dev/null",
                 "ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null",
                 "ip rule del fwmark $routeMark table $routeTable prio 20 2>/dev/null",
-            ).joinToString("; ")
+            ).joinToString("; "),
         )
         val appTables = appRouteTables(routeTable, managedAppRouteCount)
         removeManagedRoutingTables(routeTable, listOf(bypassTable) + appTables)
@@ -276,10 +276,9 @@ class TunManager(private val shell: RootShell) {
         shell.execute(command)
     }
 
-    private fun flushRouteTablesCommand(routeTables: List<Int>): String =
-        routeTables.distinct().joinToString("; ") { table ->
-            "ip route flush table $table 2>/dev/null || true"
-        }
+    private fun flushRouteTablesCommand(routeTables: List<Int>): String = routeTables.distinct().joinToString("; ") { table ->
+        "ip route flush table $table 2>/dev/null || true"
+    }
 
     private fun removeManagedRoutingTablesCommand(routeTables: List<Int>): String {
         val tables = routeTables.distinct().joinToString(" ")
@@ -353,13 +352,10 @@ class TunManager(private val shell: RootShell) {
             return baseTunName.take(prefixLength) + suffix
         }
 
-        fun appRouteTable(baseRouteTable: Int, index: Int): Int =
-            baseRouteTable + APP_ROUTE_TABLE_OFFSET + index - 1
+        fun appRouteTable(baseRouteTable: Int, index: Int): Int = baseRouteTable + APP_ROUTE_TABLE_OFFSET + index - 1
 
-        fun appTunAddressCidr(index: Int): String =
-            "10.0.${index.coerceIn(1, 254)}.1/30"
+        fun appTunAddressCidr(index: Int): String = "10.0.${index.coerceIn(1, 254)}.1/30"
 
-        private fun appRouteTables(baseRouteTable: Int, count: Int): List<Int> =
-            (1..count.coerceIn(0, MAX_APP_TUN_ROUTES)).map { appRouteTable(baseRouteTable, it) }
+        private fun appRouteTables(baseRouteTable: Int, count: Int): List<Int> = (1..count.coerceIn(0, MAX_APP_TUN_ROUTES)).map { appRouteTable(baseRouteTable, it) }
     }
 }

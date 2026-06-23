@@ -25,13 +25,11 @@ internal class AndroidLocalSocketFactory(
 
     override fun createSocket(host: String, port: Int): Socket = createAndConnect()
 
-    override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
-        createAndConnect()
+    override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket = createAndConnect()
 
     override fun createSocket(host: InetAddress, port: Int): Socket = createAndConnect()
 
-    override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket =
-        createAndConnect()
+    override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket = createAndConnect()
 
     private fun createAndConnect(): Socket = createSocket().apply {
         connect(InetSocketAddress(0))
@@ -123,7 +121,6 @@ private class AndroidLocalSocket(
     @Synchronized
     override fun isClosed(): Boolean = closed
 
-
     override fun isConnected(): Boolean = localSocket.isConnected
 
     @Synchronized
@@ -188,6 +185,5 @@ private class AndroidLocalSocket(
         socketException.initCause(this)
     }
 
-    private fun <T> unsupported(operation: String): T =
-        throw UnsupportedOperationException("$operation is not supported by Android local sockets")
+    private fun <T> unsupported(operation: String): T = throw UnsupportedOperationException("$operation is not supported by Android local sockets")
 }

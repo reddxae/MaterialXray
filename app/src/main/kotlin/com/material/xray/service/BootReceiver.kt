@@ -8,17 +8,19 @@ import com.material.xray.core.xray.CleanupManager
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
 
     @Inject lateinit var settingsRepo: SettingsRepository
+
     @Inject lateinit var serverRepository: ServerRepository
+
     @Inject lateinit var rootShell: RootShell
 
     override fun onReceive(context: Context, intent: Intent?) {

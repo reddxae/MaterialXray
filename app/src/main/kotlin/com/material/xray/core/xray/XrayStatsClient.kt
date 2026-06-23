@@ -9,9 +9,9 @@ import io.grpc.InsecureChannelCredentials
 import io.grpc.ManagedChannel
 import io.grpc.StatusRuntimeException
 import io.grpc.okhttp.OkHttpChannelBuilder
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
 
 internal class XrayStatsClient(
     private val socketName: String = XRAY_API_SOCKET_NAME_PREFIX,
@@ -25,7 +25,7 @@ internal class XrayStatsClient(
                 QueryStatsRequest.newBuilder()
                     .setPattern(pattern)
                     .setReset(reset)
-                    .build()
+                    .build(),
             )
             response.statList.associate { stat -> stat.name to stat.value }
         }.getOrElse { error ->

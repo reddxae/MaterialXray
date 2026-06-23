@@ -13,7 +13,9 @@ object ShadowsocksParser {
         val fragmentIdx = stripped.indexOf('#')
         val name = if (fragmentIdx >= 0) {
             URLDecoder.decode(stripped.substring(fragmentIdx + 1), "UTF-8")
-        } else ""
+        } else {
+            ""
+        }
         val main = if (fragmentIdx >= 0) stripped.substring(0, fragmentIdx) else stripped
 
         val atIdx = main.lastIndexOf('@')
@@ -48,27 +50,26 @@ object ShadowsocksParser {
         )
     }.getOrNull()
 
-    private fun parseLegacy(encoded: String, name: String, rawUri: String): ServerConfig? =
-        runCatching {
-            val decoded = Base64.getUrlDecoder().decode(encoded).toString(Charsets.UTF_8)
-            val atIdx = decoded.lastIndexOf('@')
-            if (atIdx < 0) return null
-            val methodPassword = decoded.substring(0, atIdx)
-            val hostPort = decoded.substring(atIdx + 1)
-            val colonIdx = methodPassword.indexOf(':')
-            if (colonIdx < 0) return null
-            val method = methodPassword.substring(0, colonIdx)
-            val password = methodPassword.substring(colonIdx + 1)
-            val parsed = URI("ss://x@$hostPort")
+    private fun parseLegacy(encoded: String, name: String, rawUri: String): ServerConfig? = runCatching {
+        val decoded = Base64.getUrlDecoder().decode(encoded).toString(Charsets.UTF_8)
+        val atIdx = decoded.lastIndexOf('@')
+        if (atIdx < 0) return null
+        val methodPassword = decoded.substring(0, atIdx)
+        val hostPort = decoded.substring(atIdx + 1)
+        val colonIdx = methodPassword.indexOf(':')
+        if (colonIdx < 0) return null
+        val method = methodPassword.substring(0, colonIdx)
+        val password = methodPassword.substring(colonIdx + 1)
+        val parsed = URI("ss://x@$hostPort")
 
-            ServerConfig(
-                protocol = Protocol.SHADOWSOCKS,
-                name = name,
-                address = parsed.host ?: return null,
-                port = parsed.port.takeIf { it > 0 } ?: return null,
-                password = password,
-                extra = mapOf("method" to method),
-                rawUri = rawUri,
-            )
-        }.getOrNull()
+        ServerConfig(
+            protocol = Protocol.SHADOWSOCKS,
+            name = name,
+            address = parsed.host ?: return null,
+            port = parsed.port.takeIf { it > 0 } ?: return null,
+            password = password,
+            extra = mapOf("method" to method),
+            rawUri = rawUri,
+        )
+    }.getOrNull()
 }

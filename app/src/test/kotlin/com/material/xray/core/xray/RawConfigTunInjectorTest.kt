@@ -14,7 +14,10 @@ import org.junit.Test
 
 class RawConfigTunInjectorTest {
 
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        prettyPrint = true
+    }
     private val injector = RawConfigTunInjector(json)
 
     @Test
@@ -43,7 +46,7 @@ class RawConfigTunInjectorTest {
                     tunName = "xray0a1",
                     outboundTag = "app-proxy-7",
                     server = server("App route"),
-                )
+                ),
             ),
             physicalInterface = "wlan0",
         )

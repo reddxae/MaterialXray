@@ -10,10 +10,10 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -148,7 +148,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                             pagerState.currentPage == RoutingTab.Rules.ordinal && selectionMode ->
                                 "${selectedRuleIds.size} selected"
                             else -> "Routing"
-                        }
+                        },
                     )
                 },
                 windowInsets = TopAppBarDefaults.windowInsets,
@@ -409,7 +409,7 @@ private fun EditRoutingRuleDialog(
                             port = port.text.trim().ifEmpty { null },
                             protocols = protocolOptions.map { it.first }.filter { it in selectedProtocols },
                             operator = selectedOperator,
-                        )
+                        ),
                     )
                 },
             ) {
@@ -640,8 +640,6 @@ private fun DropdownSelector(
     }
 }
 
-private fun Set<String>.toggle(id: String): Set<String> =
-    if (id in this) this - id else this + id
+private fun Set<String>.toggle(id: String): Set<String> = if (id in this) this - id else this + id
 
-private fun splitCsv(value: String): List<String> =
-    value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+private fun splitCsv(value: String): List<String> = value.split(",").map { it.trim() }.filter { it.isNotEmpty() }

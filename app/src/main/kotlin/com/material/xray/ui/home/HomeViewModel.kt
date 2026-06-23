@@ -17,13 +17,14 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.endpointSummary
-import com.material.xray.service.ConnectionStateHolder
 import com.material.xray.service.ConnectionEvent
+import com.material.xray.service.ConnectionStateHolder
 import com.material.xray.service.RoutingChangeManager
 import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,7 +44,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
 
 data class ServerListItem(
     val entity: ServerEntity,
@@ -146,10 +146,12 @@ class HomeViewModel @Inject constructor(
                         XrayService.restoreStatus(context)
                     }
                 }
-                detectedState == null && (currentState is ConnectionState.InterfaceBusy ||
-                    currentState is ConnectionState.RestartRequired ||
-                    (currentState is ConnectionState.Connected && currentState.corePid <= 0)
-                ) -> {
+                detectedState == null &&
+                    (
+                        currentState is ConnectionState.InterfaceBusy ||
+                            currentState is ConnectionState.RestartRequired ||
+                            (currentState is ConnectionState.Connected && currentState.corePid <= 0)
+                        ) -> {
                     connectionStateHolder.update(ConnectionState.Disconnected)
                 }
             }
@@ -388,11 +390,10 @@ class HomeViewModel @Inject constructor(
         ).toUiState()
     }
 
-    private fun LatencyProbeResult.toUiState(): ServerLatencyState =
-        ServerLatencyState(
-            latencyMs = latencyMs,
-            method = method,
-        )
+    private fun LatencyProbeResult.toUiState(): ServerLatencyState = ServerLatencyState(
+        latencyMs = latencyMs,
+        method = method,
+    )
 
     private suspend fun withRefreshTracking(block: suspend () -> Unit) {
         refreshOperations.update { it + 1 }

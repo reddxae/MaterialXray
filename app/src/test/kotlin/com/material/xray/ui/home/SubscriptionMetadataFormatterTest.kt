@@ -1,13 +1,13 @@
 package com.material.xray.ui.home
 
 import com.material.xray.data.db.entity.SubscriptionEntity
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Clock
-import java.time.Instant
-import java.time.ZoneId
 
 class SubscriptionMetadataFormatterTest {
     private val zoneId = ZoneId.of("UTC")

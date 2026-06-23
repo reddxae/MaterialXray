@@ -52,7 +52,7 @@ internal class RawConfigTunInjector(
                 dnsOutbound = buildDnsOutbound(fwmark, physicalInterface, allowIpv6),
                 blockOutbound = buildBlockOutbound(),
                 appProxyOutbounds = appProxyOutbounds,
-            ) + unmanagedOutbounds
+            ) + unmanagedOutbounds,
         )
         original["log"] = buildLogConfig(logLevel)
         original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6)

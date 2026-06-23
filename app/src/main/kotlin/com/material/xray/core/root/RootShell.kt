@@ -1,11 +1,11 @@
 package com.material.xray.core.root
 
+import java.io.BufferedReader
+import java.io.OutputStreamWriter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.OutputStreamWriter
 
 class RootShell {
     enum class NetworkNamespace {

@@ -8,25 +8,25 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.material.xray.model.LauncherIcon
+import com.material.xray.model.NotificationField
+import com.material.xray.model.NotificationSettings
+import com.material.xray.model.NotificationStyle
+import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
-import com.material.xray.model.LauncherIcon
-import com.material.xray.model.PingMethod
-import com.material.xray.model.NotificationField
-import com.material.xray.model.NotificationSettings
-import com.material.xray.model.NotificationStyle
 import com.material.xray.model.XrayRuntimeSettings
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
-import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
@@ -154,20 +154,19 @@ class SettingsRepository @Inject constructor(
         )
     }
 
-    suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings =
-        XrayRuntimeSettings(
-            tunName = tunName.first(),
-            fwmark = fwmark.first(),
-            routeTable = routeTable.first(),
-            useRootService = useRootService.first(),
-            dnsServers = dnsServers.first(),
-            domesticDnsServers = domesticDnsServers.first(),
-            logLevel = xrayLogLevel.first(),
-            defaultOutbound = defaultOutbound.first(),
-            bypassLan = bypassLan.first(),
-            allowIpv6 = allowIpv6.first(),
-            routingRules = routingRules.first(),
-        )
+    suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings = XrayRuntimeSettings(
+        tunName = tunName.first(),
+        fwmark = fwmark.first(),
+        routeTable = routeTable.first(),
+        useRootService = useRootService.first(),
+        dnsServers = dnsServers.first(),
+        domesticDnsServers = domesticDnsServers.first(),
+        logLevel = xrayLogLevel.first(),
+        defaultOutbound = defaultOutbound.first(),
+        bypassLan = bypassLan.first(),
+        allowIpv6 = allowIpv6.first(),
+        routingRules = routingRules.first(),
+    )
 
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
     suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }
@@ -333,8 +332,7 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    private fun appendLegacyFileName(baseUrl: String, fileName: String): String =
-        "${baseUrl.trim().trimEnd('/')}/$fileName"
+    private fun appendLegacyFileName(baseUrl: String, fileName: String): String = "${baseUrl.trim().trimEnd('/')}/$fileName"
 
     private fun decodeNotificationFieldOrder(encoded: String?): List<NotificationField> {
         val savedFields = encoded
@@ -346,22 +344,19 @@ class SettingsRepository @Inject constructor(
         return (savedFields + NotificationField.entries).distinct()
     }
 
-    private fun encodeNotificationFieldOrder(fields: List<NotificationField>): String =
-        (fields + NotificationField.entries)
-            .distinct()
-            .joinToString(",") { it.name }
+    private fun encodeNotificationFieldOrder(fields: List<NotificationField>): String = (fields + NotificationField.entries)
+        .distinct()
+        .joinToString(",") { it.name }
 
-    private fun decodeRoutingRuleStates(encoded: String?): Map<String, Boolean> =
-        runCatching {
-            if (encoded.isNullOrBlank()) {
-                emptyMap()
-            } else {
-                json.decodeFromString(kotlinx.serialization.builtins.MapSerializer(String.serializer(), Boolean.serializer()), encoded)
-            }
-        }.getOrDefault(emptyMap())
+    private fun decodeRoutingRuleStates(encoded: String?): Map<String, Boolean> = runCatching {
+        if (encoded.isNullOrBlank()) {
+            emptyMap()
+        } else {
+            json.decodeFromString(kotlinx.serialization.builtins.MapSerializer(String.serializer(), Boolean.serializer()), encoded)
+        }
+    }.getOrDefault(emptyMap())
 
-    private fun encodeRoutingRuleStates(states: Map<String, Boolean>): String =
-        json.encodeToString(kotlinx.serialization.builtins.MapSerializer(String.serializer(), Boolean.serializer()), states)
+    private fun encodeRoutingRuleStates(states: Map<String, Boolean>): String = json.encodeToString(kotlinx.serialization.builtins.MapSerializer(String.serializer(), Boolean.serializer()), states)
 
     private fun decodeRoutingRules(
         rulesEncoded: String?,
@@ -387,8 +382,7 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    private fun encodeRoutingRules(rules: List<RoutingRule>): String =
-        json.encodeToString(ListSerializer(RoutingRule.serializer()), rules)
+    private fun encodeRoutingRules(rules: List<RoutingRule>): String = json.encodeToString(ListSerializer(RoutingRule.serializer()), rules)
 
     private fun deletedDefaultRuleIds(rules: List<RoutingRule>): Set<String> {
         val presentRuleIds = rules.mapTo(mutableSetOf()) { it.id }

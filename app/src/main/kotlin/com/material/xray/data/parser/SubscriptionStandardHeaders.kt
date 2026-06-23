@@ -2,9 +2,9 @@ package com.material.xray.data.parser
 
 import com.material.xray.model.SubscriptionMetadata
 import com.material.xray.model.SubscriptionUserInfo
+import java.util.Base64
 import okhttp3.Headers
 import okhttp3.Request
-import java.util.Base64
 
 data class SubscriptionRequestHeaderValues(
     val userAgent: String,
@@ -60,20 +60,18 @@ object SubscriptionStandardHeaders {
         values.deviceModel?.takeIf { it.isNotBlank() }?.let { header(X_DEVICE_MODEL, it) }
     }
 
-    fun parseMetadata(headers: Headers): SubscriptionMetadata =
-        SubscriptionMetadata(
-            contentDisposition = normalizeNullableHeader(headers[CONTENT_DISPOSITION]),
-            contentType = normalizeContentType(headers[CONTENT_TYPE]),
-            profileTitle = decodeTextHeader(headers[PROFILE_TITLE]),
-            profileUpdateIntervalHours = normalizeNullableHeader(headers[PROFILE_UPDATE_INTERVAL])?.toIntOrNull(),
-            subscriptionUserInfo = parseSubscriptionUserInfo(headers[SUBSCRIPTION_USERINFO]),
-            profileWebPageUrl = normalizeNullableHeader(headers[PROFILE_WEB_PAGE_URL]),
-            announce = decodeTextHeader(headers[ANNOUNCE]),
-            supportUrl = normalizeNullableHeader(headers[SUPPORT_URL]),
-        )
+    fun parseMetadata(headers: Headers): SubscriptionMetadata = SubscriptionMetadata(
+        contentDisposition = normalizeNullableHeader(headers[CONTENT_DISPOSITION]),
+        contentType = normalizeContentType(headers[CONTENT_TYPE]),
+        profileTitle = decodeTextHeader(headers[PROFILE_TITLE]),
+        profileUpdateIntervalHours = normalizeNullableHeader(headers[PROFILE_UPDATE_INTERVAL])?.toIntOrNull(),
+        subscriptionUserInfo = parseSubscriptionUserInfo(headers[SUBSCRIPTION_USERINFO]),
+        profileWebPageUrl = normalizeNullableHeader(headers[PROFILE_WEB_PAGE_URL]),
+        announce = decodeTextHeader(headers[ANNOUNCE]),
+        supportUrl = normalizeNullableHeader(headers[SUPPORT_URL]),
+    )
 
-    fun hasKnownResponseHeader(headers: Headers): Boolean =
-        responseHeaderNames.any { headers[it] != null }
+    fun hasKnownResponseHeader(headers: Headers): Boolean = responseHeaderNames.any { headers[it] != null }
 
     fun normalizeContentType(value: String?): String? {
         val raw = normalizeNullableHeader(value) ?: return null
@@ -126,9 +124,9 @@ object SubscriptionStandardHeaders {
 
         return info.takeIf {
             it.upload != null ||
-                    it.download != null ||
-                    it.total != null ||
-                    it.expire != null
+                it.download != null ||
+                it.total != null ||
+                it.expire != null
         }
     }
 

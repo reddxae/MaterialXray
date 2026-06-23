@@ -7,7 +7,9 @@ class NftablesManager(private val shell: RootShell) {
     suspend fun apply(fwmark: Int, routeMark: Int, bypassUids: Set<Int>) {
         val uidElements = if (bypassUids.isNotEmpty()) {
             "elements = { ${bypassUids.joinToString(", ")} }"
-        } else ""
+        } else {
+            ""
+        }
 
         val ruleset = buildString {
             appendLine("table inet xray {")

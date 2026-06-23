@@ -7,17 +7,17 @@ import android.os.CancellationSignal
 import android.os.Looper
 import androidx.annotation.RequiresApi
 import com.material.xray.model.ServerConfig
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import okhttp3.Dns
 import java.net.InetAddress
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.random.Random
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.Dns
 
 class ServerAddressResolver(
     private val context: Context? = null,
@@ -121,13 +121,12 @@ class ServerAddressResolver(
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun dnsResolver(): DnsResolver =
-        if (Build.VERSION.SDK_INT >= 37 && context != null) {
-            DnsResolver(context, Looper.getMainLooper())
-        } else {
-            @Suppress("DEPRECATION")
-            DnsResolver.getInstance()
-        }
+    private fun dnsResolver(): DnsResolver = if (Build.VERSION.SDK_INT >= 37 && context != null) {
+        DnsResolver(context, Looper.getMainLooper())
+    } else {
+        @Suppress("DEPRECATION")
+        DnsResolver.getInstance()
+    }
 
     private fun resolveWithOkHttpDns(host: String): List<String> = runCatching {
         Dns.SYSTEM.lookup(host).mapNotNull { it.hostAddress }

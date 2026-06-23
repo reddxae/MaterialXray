@@ -102,13 +102,12 @@ object RoutingRuleCatalog {
         return normalizedRules + missingDefaultRules
     }
 
-    private fun RoutingRule.isUntouchedLegacyRuDirect(): Boolean =
-        id == "ru-direct" &&
-            name == "Bypass Russian domains and IPs" &&
-            outboundTag == "direct" &&
-            ips == ruDirectIps &&
-            domains in listOf(
-                listOf("domain:ru"),
-                listOf("domain:ru", "geosite:ru"),
-            )
+    private fun RoutingRule.isUntouchedLegacyRuDirect(): Boolean = id == "ru-direct" &&
+        name == "Bypass Russian domains and IPs" &&
+        outboundTag == "direct" &&
+        ips == ruDirectIps &&
+        domains in listOf(
+            listOf("domain:ru"),
+            listOf("domain:ru", "geosite:ru"),
+        )
 }

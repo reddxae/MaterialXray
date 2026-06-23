@@ -8,10 +8,10 @@ import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class InstalledApp(
     val appKey: String,
@@ -41,11 +41,9 @@ class AppInventory @Inject constructor(
 ) : AppInventorySource {
     suspend fun loadInstalledApps(): List<InstalledApp> = loadSnapshot().apps
 
-    override suspend fun loadSnapshot(): AppInventorySnapshot =
-        loadSnapshot(includeUiMetadata = true)
+    override suspend fun loadSnapshot(): AppInventorySnapshot = loadSnapshot(includeUiMetadata = true)
 
-    override suspend fun loadRoutingSnapshot(): AppInventorySnapshot =
-        loadSnapshot(includeUiMetadata = false)
+    override suspend fun loadRoutingSnapshot(): AppInventorySnapshot = loadSnapshot(includeUiMetadata = false)
 
     private suspend fun loadSnapshot(includeUiMetadata: Boolean): AppInventorySnapshot = withContext(Dispatchers.IO) {
         val pm = context.packageManager
@@ -133,14 +131,12 @@ class AppInventory @Inject constructor(
         )
     }
 
-    private fun userProfiles(): List<UserHandle> =
-        runCatching {
-            context.getSystemService(UserManager::class.java)?.userProfiles.orEmpty()
-        }.getOrDefault(emptyList())
-            .ifEmpty { listOf(Process.myUserHandle()) }
+    private fun userProfiles(): List<UserHandle> = runCatching {
+        context.getSystemService(UserManager::class.java)?.userProfiles.orEmpty()
+    }.getOrDefault(emptyList())
+        .ifEmpty { listOf(Process.myUserHandle()) }
 
-    private fun UserHandle.identifierOrNull(): Int? =
-        runCatching {
-            javaClass.getMethod("getIdentifier").invoke(this) as? Int
-        }.getOrNull()
+    private fun UserHandle.identifierOrNull(): Int? = runCatching {
+        javaClass.getMethod("getIdentifier").invoke(this) as? Int
+    }.getOrNull()
 }

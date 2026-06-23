@@ -13,7 +13,7 @@ import androidx.room.PrimaryKey
             parentColumns = ["id"],
             childColumns = ["subscriptionId"],
             onDelete = ForeignKey.CASCADE,
-        )
+        ),
     ],
     indices = [Index("subscriptionId")],
 )

@@ -1,10 +1,10 @@
 package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
-import com.material.xray.model.ServerConfig
 import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
 import com.material.xray.model.SERVER_EXTRA_SPIDER_X
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
+import com.material.xray.model.ServerConfig
 import java.net.URI
 import java.net.URLDecoder
 
@@ -50,6 +50,5 @@ object VlessParser {
         )
     }.getOrNull()
 
-    private fun decodeUriComponent(value: String): String =
-        URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
+    private fun decodeUriComponent(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
 }

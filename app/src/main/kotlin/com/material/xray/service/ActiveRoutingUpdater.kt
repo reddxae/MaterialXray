@@ -1,7 +1,7 @@
 package com.material.xray.service
 
-import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.StateFile
+import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayState
 import com.material.xray.model.ConnectionState
 import kotlinx.serialization.SerializationException
@@ -52,15 +52,13 @@ internal class StateFileRoutingStateStore(
 internal class TunManagerRoutingGateway(
     private val tunManager: TunManager,
 ) : TunRoutingGateway {
-    override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? =
-        tunManager.detectPhysicalRoute(tunName)
+    override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? = tunManager.detectPhysicalRoute(tunName)
 
     override suspend fun configureTun(
         tunName: String,
         addressCidr: String,
         isProcessAlive: suspend () -> Boolean,
-    ): TunManager.TunSetupResult =
-        tunManager.configureTun(tunName, addressCidr, isProcessAlive)
+    ): TunManager.TunSetupResult = tunManager.configureTun(tunName, addressCidr, isProcessAlive)
 
     override suspend fun applyRouting(
         tunName: String,
@@ -72,18 +70,17 @@ internal class TunManagerRoutingGateway(
         appTunRoutes: List<TunManager.AppTunRoute>,
         managedAppRouteCount: Int,
         routeProfileIds: Set<Int>,
-    ): TunManager.RoutingResult =
-        tunManager.applyRouting(
-            tunName = tunName,
-            fwmark = fwmark,
-            routeTable = routeTable,
-            bypassTable = bypassTable,
-            physicalRoute = physicalRoute,
-            bypassUids = bypassUids,
-            appTunRoutes = appTunRoutes,
-            managedAppRouteCount = managedAppRouteCount,
-            routeProfileIds = routeProfileIds,
-        )
+    ): TunManager.RoutingResult = tunManager.applyRouting(
+        tunName = tunName,
+        fwmark = fwmark,
+        routeTable = routeTable,
+        bypassTable = bypassTable,
+        physicalRoute = physicalRoute,
+        bypassUids = bypassUids,
+        appTunRoutes = appTunRoutes,
+        managedAppRouteCount = managedAppRouteCount,
+        routeProfileIds = routeProfileIds,
+    )
 }
 
 internal class ActiveRoutingUpdater(
@@ -178,7 +175,7 @@ internal class ActiveRoutingUpdater(
                 physicalInterface = physicalRoute.dev,
                 physicalGateway = physicalRoute.gateway,
                 physicalTable = physicalRoute.table,
-            )
+            ),
         )
         log.append(LogSource.APP, "App routing changes applied in ${elapsedRealtime() - startedAt} ms")
         return true
@@ -262,7 +259,7 @@ internal class ActiveRoutingUpdater(
                 physicalInterface = physicalRoute.dev,
                 physicalGateway = physicalRoute.gateway,
                 physicalTable = physicalRoute.table,
-            )
+            ),
         )
         log.append(LogSource.APP, "Physical routing refreshed in ${elapsedRealtime() - startedAt} ms")
         return PhysicalRouteUpdateResult.Applied(physicalRoute)

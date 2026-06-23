@@ -30,10 +30,11 @@ import com.material.xray.service.ConnectionStateHolder
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -44,7 +45,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -59,7 +59,10 @@ class SettingsViewModel @Inject constructor(
     private val rootShell: RootShell,
 ) : ViewModel() {
 
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        prettyPrint = true
+    }
     private val _geoipUpdating = MutableStateFlow(false)
     private val _geositeUpdating = MutableStateFlow(false)
     private val _assetUpdateEvents = MutableSharedFlow<String>()
@@ -143,10 +146,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
-    fun setDnsServers(servers: String) =
-        updateXrayConfigStringSetting(servers, dnsServers.value, settingsRepo::setDnsServers)
-    fun setDomesticDnsServers(servers: String) =
-        updateXrayConfigStringSetting(servers, domesticDnsServers.value, settingsRepo::setDomesticDnsServers)
+    fun setDnsServers(servers: String) = updateXrayConfigStringSetting(servers, dnsServers.value, settingsRepo::setDnsServers)
+    fun setDomesticDnsServers(servers: String) = updateXrayConfigStringSetting(servers, domesticDnsServers.value, settingsRepo::setDomesticDnsServers)
     fun setLatencyDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setLatencyDnsServers(servers) }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
     fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
@@ -304,7 +305,7 @@ class SettingsViewModel @Inject constructor(
                             url = sub.url,
                             autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
                             descriptionHidden = sub.descriptionHidden,
-                        ).withSubscriptionMetadata(sub.metadata)
+                        ).withSubscriptionMetadata(sub.metadata),
                     )
                 }
                 backup.bypassedApps.forEach { value ->
@@ -315,7 +316,7 @@ class SettingsViewModel @Inject constructor(
                             profileId = app.profileId,
                             uid = 0,
                             excluded = true,
-                        )
+                        ),
                     )
                 }
                 settingsRepo.restoreFromMap(backup.settings)

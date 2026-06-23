@@ -14,12 +14,12 @@ enum class PingMethod(
         value = "tcping",
         label = "tcping",
         description = "TCP handshake test. Only indicates basic connectivity status and one-way delay.",
-    );
+    ),
+    ;
 
     companion object {
         val default = Httping
 
-        fun fromValue(value: String?): PingMethod =
-            entries.firstOrNull { it.value == value } ?: default
+        fun fromValue(value: String?): PingMethod = entries.firstOrNull { it.value == value } ?: default
     }
 }

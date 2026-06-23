@@ -44,23 +44,22 @@ internal fun buildSubscriptionMetadataUiState(
     subscription: SubscriptionEntity,
     clock: Clock = Clock.systemDefaultZone(),
     zoneId: ZoneId = ZoneId.systemDefault(),
-): SubscriptionMetadataUiState =
-    SubscriptionMetadataUiState(
-        announcement = subscription.announce?.trim().orEmpty(),
-        traffic = buildSubscriptionTrafficUiState(
-            upload = subscription.subscriptionUploadBytes,
-            download = subscription.subscriptionDownloadBytes,
-            total = subscription.subscriptionTotalBytes,
-        ),
-        expiry = subscription.subscriptionExpireAt?.let { expireAt ->
-            formatSubscriptionExpiryUiState(
-                epochSeconds = expireAt,
-                clock = clock,
-                zoneId = zoneId,
-            )
-        },
-        updateIntervalText = formatAutoUpdateInterval(subscription.autoUpdateIntervalHours),
-    )
+): SubscriptionMetadataUiState = SubscriptionMetadataUiState(
+    announcement = subscription.announce?.trim().orEmpty(),
+    traffic = buildSubscriptionTrafficUiState(
+        upload = subscription.subscriptionUploadBytes,
+        download = subscription.subscriptionDownloadBytes,
+        total = subscription.subscriptionTotalBytes,
+    ),
+    expiry = subscription.subscriptionExpireAt?.let { expireAt ->
+        formatSubscriptionExpiryUiState(
+            epochSeconds = expireAt,
+            clock = clock,
+            zoneId = zoneId,
+        )
+    },
+    updateIntervalText = formatAutoUpdateInterval(subscription.autoUpdateIntervalHours),
+)
 
 internal fun SubscriptionTrafficUiState.detailText(expiry: SubscriptionExpiryUiState?): String? {
     val downloaded = downloadText
@@ -152,14 +151,13 @@ internal fun normalizeSubscriptionExpireInstant(
     }.getOrNull()
 }
 
-internal fun formatAutoUpdateInterval(intervalHours: Int): String =
-    when (intervalHours) {
-        0 -> "Manual update only"
-        1 -> "Auto update every hour"
-        24 -> "Auto update every day"
-        72 -> "Auto update every 3 days"
-        else -> "Auto update every $intervalHours hours"
-    }
+internal fun formatAutoUpdateInterval(intervalHours: Int): String = when (intervalHours) {
+    0 -> "Manual update only"
+    1 -> "Auto update every hour"
+    24 -> "Auto update every day"
+    72 -> "Auto update every 3 days"
+    else -> "Auto update every $intervalHours hours"
+}
 
 internal fun metadataTextSegments(text: String): List<MetadataTextSegment> {
     val segments = mutableListOf<MetadataTextSegment>()
@@ -190,14 +188,13 @@ private data class EmphasizedToken(
     val value: String,
 )
 
-private fun parseBasicDateExpireInstant(value: Long, zoneId: ZoneId): Instant? =
-    try {
-        LocalDate.parse(value.toString(), DateTimeFormatter.BASIC_ISO_DATE)
-            .atStartOfDay(zoneId)
-            .toInstant()
-    } catch (_: DateTimeParseException) {
-        null
-    }
+private fun parseBasicDateExpireInstant(value: Long, zoneId: ZoneId): Instant? = try {
+    LocalDate.parse(value.toString(), DateTimeFormatter.BASIC_ISO_DATE)
+        .atStartOfDay(zoneId)
+        .toInstant()
+} catch (_: DateTimeParseException) {
+    null
+}
 
 private fun formatGigabyteCount(bytes: Long): String {
     val value = bytes.coerceAtLeast(0).toDouble() / BYTES_PER_GB

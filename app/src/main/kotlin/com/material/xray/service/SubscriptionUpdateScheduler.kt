@@ -47,10 +47,9 @@ class SubscriptionUpdateScheduler @Inject constructor(
         )
     }
 
-    private fun networkConstraints(): Constraints =
-        Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+    private fun networkConstraints(): Constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
 
     private companion object {
         const val PERIODIC_WORK_NAME = "subscription_auto_update"

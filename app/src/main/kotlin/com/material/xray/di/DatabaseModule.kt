@@ -19,22 +19,23 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "material-xray.db")
-            .addMigrations(AppDatabase.MIGRATION_1_2)
-            .addMigrations(AppDatabase.MIGRATION_2_3)
-            .addMigrations(AppDatabase.MIGRATION_3_4)
-            .addMigrations(AppDatabase.MIGRATION_4_5)
-            .addMigrations(AppDatabase.MIGRATION_5_6)
-            .addMigrations(AppDatabase.MIGRATION_6_7)
-            .addMigrations(AppDatabase.MIGRATION_7_8)
-            .fallbackToDestructiveMigration(dropAllTables = true)
-            .build()
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase = Room.databaseBuilder(context, AppDatabase::class.java, "material-xray.db")
+        .addMigrations(AppDatabase.MIGRATION_1_2)
+        .addMigrations(AppDatabase.MIGRATION_2_3)
+        .addMigrations(AppDatabase.MIGRATION_3_4)
+        .addMigrations(AppDatabase.MIGRATION_4_5)
+        .addMigrations(AppDatabase.MIGRATION_5_6)
+        .addMigrations(AppDatabase.MIGRATION_6_7)
+        .addMigrations(AppDatabase.MIGRATION_7_8)
+        .fallbackToDestructiveMigration(dropAllTables = true)
+        .build()
 
     @Provides
     fun provideServerDao(db: AppDatabase): ServerDao = db.serverDao()
+
     @Provides
     fun provideSubscriptionDao(db: AppDatabase): SubscriptionDao = db.subscriptionDao()
+
     @Provides
     fun provideAppBypassDao(db: AppDatabase): AppBypassDao = db.appBypassDao()
 }

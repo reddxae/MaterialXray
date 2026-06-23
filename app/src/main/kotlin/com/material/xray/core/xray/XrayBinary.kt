@@ -104,15 +104,14 @@ class XrayBinary internal constructor(
         File(environment.filesDir, "config.json").writeText(configJson)
     }
 
-    private fun extractAsset(assetName: String, targetName: String, executable: Boolean): Boolean =
-        runCatching {
-            val target = File(binaryDir, targetName)
-            environment.openAsset(assetName).use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
-            }
-            if (executable) target.setExecutable(true, false)
-            true
-        }.getOrDefault(false)
+    private fun extractAsset(assetName: String, targetName: String, executable: Boolean): Boolean = runCatching {
+        val target = File(binaryDir, targetName)
+        environment.openAsset(assetName).use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        }
+        if (executable) target.setExecutable(true, false)
+        true
+    }.getOrDefault(false)
 
     private fun getAppVersion(): String = environment.appVersion()
 
@@ -123,7 +122,6 @@ class XrayBinary internal constructor(
 
 private val XRAY_VERSION_REGEX = Regex("^Xray\\s+v?([^\\s]+)")
 
-internal fun parseXrayVersion(output: String): String? =
-    output.lineSequence()
-        .mapNotNull { line -> XRAY_VERSION_REGEX.find(line.trim())?.groupValues?.getOrNull(1) }
-        .firstOrNull()
+internal fun parseXrayVersion(output: String): String? = output.lineSequence()
+    .mapNotNull { line -> XRAY_VERSION_REGEX.find(line.trim())?.groupValues?.getOrNull(1) }
+    .firstOrNull()

@@ -7,9 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.app.appKey
 import com.material.xray.data.db.dao.AppBypassDao
+import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.AppRouteAssignment
 import com.material.xray.data.db.entity.AppRouteMode
-import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.isManualRouteOverride
 import com.material.xray.data.db.entity.routeAssignment
@@ -21,6 +21,7 @@ import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,7 +30,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.inject.Inject
 
 data class AppItem(
     val appKey: String,
@@ -98,7 +98,7 @@ class AppsViewModel @Inject constructor(
     private val bypassedApps = appBypassDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _installedApps = MutableStateFlow<List<AppItem>>(emptyList())
+    private val installedApps = MutableStateFlow<List<AppItem>>(emptyList())
     private val _hasWorkProfileApps = MutableStateFlow(false)
     val hasWorkProfileApps: StateFlow<Boolean> = _hasWorkProfileApps
 
@@ -107,17 +107,17 @@ class AppsViewModel @Inject constructor(
         settingsRepository.showAdvancedOptions,
         settingsRepository.useRootService,
     ) { servers, showAdvancedOptions, useRootService ->
-            if (!useRootService) {
-                return@combine listOf(DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION)
-            }
-            buildList {
-                if (showAdvancedOptions) add(INHERIT_ROUTE_OPTION)
-                add(DEFAULT_ROUTE_OPTION)
-                add(DIRECT_ROUTE_OPTION)
-                if (showAdvancedOptions) add(BYPASS_ROUTE_OPTION)
-                servers.forEach { server -> add(server.toRouteOption()) }
-            }
+        if (!useRootService) {
+            return@combine listOf(DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION)
         }
+        buildList {
+            if (showAdvancedOptions) add(INHERIT_ROUTE_OPTION)
+            add(DEFAULT_ROUTE_OPTION)
+            add(DIRECT_ROUTE_OPTION)
+            if (showAdvancedOptions) add(BYPASS_ROUTE_OPTION)
+            servers.forEach { server -> add(server.toRouteOption()) }
+        }
+    }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
@@ -137,7 +137,7 @@ class AppsViewModel @Inject constructor(
     }
 
     val apps: StateFlow<List<AppItem>> = combine(
-        _installedApps,
+        installedApps,
         bypassedApps,
         appListFilters,
         routeOptions,
@@ -175,7 +175,9 @@ class AppsViewModel @Inject constructor(
             )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    init { loadApps() }
+    init {
+        loadApps()
+    }
 
     fun refreshApps() {
         loadApps()
@@ -212,7 +214,7 @@ class AppsViewModel @Inject constructor(
                     )
                 }
                 .sortedBy { it.name.lowercase() }
-            _installedApps.value = apps
+            installedApps.value = apps
             _isLoadingApps.value = false
         }
     }
@@ -226,13 +228,15 @@ class AppsViewModel @Inject constructor(
                     profileId = app.profileId,
                     uid = app.uid,
                     manual = option.kind != AppRouteKind.DEFAULT,
-                )
+                ),
             )
             routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
         }
     }
 
-    fun setSearchQuery(query: String) { _searchQuery.value = query }
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
 
     fun setShowSystemApps(show: Boolean) {
         _showSystemApps.value = show
@@ -250,14 +254,14 @@ class AppsViewModel @Inject constructor(
 
     fun bypassAllApps() {
         viewModelScope.launch {
-            _installedApps.value.forEach {
+            installedApps.value.forEach {
                 appBypassDao.upsert(
                     AppRouteAssignment(AppRouteMode.Direct).toAppBypassEntity(
                         packageName = it.packageName,
                         profileId = it.profileId,
                         uid = it.uid,
                         manual = false,
-                    )
+                    ),
                 )
             }
             routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
@@ -266,14 +270,14 @@ class AppsViewModel @Inject constructor(
 
     fun resetAllToDefault() {
         viewModelScope.launch {
-            _installedApps.value.forEach {
+            installedApps.value.forEach {
                 appBypassDao.upsert(
                     AppRouteAssignment(AppRouteMode.DefaultSelected).toAppBypassEntity(
                         packageName = it.packageName,
                         profileId = it.profileId,
                         uid = it.uid,
                         manual = false,
-                    )
+                    ),
                 )
             }
             routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
@@ -289,7 +293,8 @@ class AppsViewModel @Inject constructor(
         if (!useRootService) {
             return when (assignment.routeAssignment()) {
                 AppRouteAssignment(AppRouteMode.Direct),
-                AppRouteAssignment(AppRouteMode.Bypass) -> DIRECT_ROUTE_OPTION
+                AppRouteAssignment(AppRouteMode.Bypass),
+                -> DIRECT_ROUTE_OPTION
                 else -> DEFAULT_ROUTE_OPTION
             }
         }
@@ -356,13 +361,12 @@ class AppsViewModel @Inject constructor(
 
         fun serverRouteKey(serverId: Long): String = "server:$serverId"
 
-        private fun AppRouteOption.toRouteAssignment(): AppRouteAssignment? =
-            when (kind) {
-                AppRouteKind.INHERIT -> AppRouteAssignment(AppRouteMode.DefaultOutbound)
-                AppRouteKind.DEFAULT -> AppRouteAssignment(AppRouteMode.DefaultSelected)
-                AppRouteKind.DIRECT -> AppRouteAssignment(AppRouteMode.Direct)
-                AppRouteKind.BYPASS -> AppRouteAssignment(AppRouteMode.Bypass)
-                AppRouteKind.SERVER -> serverId?.let { AppRouteAssignment(AppRouteMode.Server, it) }
-            }
+        private fun AppRouteOption.toRouteAssignment(): AppRouteAssignment? = when (kind) {
+            AppRouteKind.INHERIT -> AppRouteAssignment(AppRouteMode.DefaultOutbound)
+            AppRouteKind.DEFAULT -> AppRouteAssignment(AppRouteMode.DefaultSelected)
+            AppRouteKind.DIRECT -> AppRouteAssignment(AppRouteMode.Direct)
+            AppRouteKind.BYPASS -> AppRouteAssignment(AppRouteMode.Bypass)
+            AppRouteKind.SERVER -> serverId?.let { AppRouteAssignment(AppRouteMode.Server, it) }
+        }
     }
 }

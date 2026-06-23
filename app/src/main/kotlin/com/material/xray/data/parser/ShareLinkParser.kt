@@ -15,9 +15,8 @@ class ShareLinkParser {
         }
     }
 
-    fun parseMultiple(text: String): List<ServerConfig> =
-        text.lines()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .mapNotNull { parse(it) }
+    fun parseMultiple(text: String): List<ServerConfig> = text.lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .mapNotNull { parse(it) }
 }

@@ -37,6 +37,7 @@ import com.material.xray.model.NotificationStyle
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,18 +55,24 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class XrayService : VpnService() {
 
     @Inject lateinit var rootShell: RootShell
+
     @Inject lateinit var appBypassDao: AppBypassDao
+
     @Inject lateinit var serverRepository: ServerRepository
+
     @Inject lateinit var settingsRepo: SettingsRepository
+
     @Inject lateinit var connectionStateHolder: ConnectionStateHolder
+
     @Inject lateinit var logBuffer: LogBuffer
+
     @Inject lateinit var geoDataManager: GeoDataManager
+
     @Inject lateinit var appInventory: AppInventory
 
     private lateinit var connectionManager: ConnectionManager
@@ -412,7 +419,7 @@ class XrayService : VpnService() {
         val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid) ?: return true
         if (residentMemoryMb > MAX_XRAY_PROCESS_MEMORY_MB) {
             recoverNativeProcess(
-                reason = "xray process $pid exceeded ${MAX_XRAY_PROCESS_MEMORY_MB} MiB RSS (${residentMemoryMb} MiB); restarting...",
+                reason = "xray process $pid exceeded ${MAX_XRAY_PROCESS_MEMORY_MB} MiB RSS ($residentMemoryMb MiB); restarting...",
                 pidToKill = pid,
             )
             return false
@@ -628,87 +635,88 @@ class XrayService : VpnService() {
         updateNotification("Waiting for physical route")
     }
 
-    private suspend fun retargetNetwork(reason: String, attempt: Int): NetworkRetargetResult =
-        connectionCommandMutex.withLock {
-            val latestConfig = activeConfig ?: return@withLock NetworkRetargetResult.Done
-            val latestState = connectionStateHolder.state.value as? ConnectionState.Connected
-                ?: return@withLock NetworkRetargetResult.Done
-            val previousNetwork = activePhysicalNetwork
-            val currentNetwork = currentPhysicalNetworkSnapshot()
-            val currentRoute = withContext(Dispatchers.IO) {
-                connectionManager.detectPhysicalRoute(latestState.tunName)
-            }
+    private suspend fun retargetNetwork(reason: String, attempt: Int): NetworkRetargetResult = connectionCommandMutex.withLock {
+        val latestConfig = activeConfig ?: return@withLock NetworkRetargetResult.Done
+        val latestState = connectionStateHolder.state.value as? ConnectionState.Connected
+            ?: return@withLock NetworkRetargetResult.Done
+        val previousNetwork = activePhysicalNetwork
+        val currentNetwork = currentPhysicalNetworkSnapshot()
+        val currentRoute = withContext(Dispatchers.IO) {
+            connectionManager.detectPhysicalRoute(latestState.tunName)
+        }
 
-            if (currentRoute == null) {
-                if (attempt == 1) {
-                    logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for a usable physical route")
-                }
-                updateNotification("Waiting for physical route")
-                return@withLock NetworkRetargetResult.Retry
+        if (currentRoute == null) {
+            if (attempt == 1) {
+                logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for a usable physical route")
             }
+            updateNotification("Waiting for physical route")
+            return@withLock NetworkRetargetResult.Retry
+        }
 
-            val androidNetworkChanged = previousNetwork != null &&
-                currentNetwork != null &&
-                !previousNetwork.sameNetwork(currentNetwork)
-            val physicalRouteChanged = !currentRoute.matches(latestState)
-            if (previousNetwork != null && currentNetwork == null) {
-                if (attempt == 1) {
-                    logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for an active physical network")
-                }
-                updateNotification("Waiting for physical network")
-                return@withLock NetworkRetargetResult.Retry
+        val androidNetworkChanged = previousNetwork != null &&
+            currentNetwork != null &&
+            !previousNetwork.sameNetwork(currentNetwork)
+        val physicalRouteChanged = !currentRoute.matches(latestState)
+        if (previousNetwork != null && currentNetwork == null) {
+            if (attempt == 1) {
+                logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for an active physical network")
             }
+            updateNotification("Waiting for physical network")
+            return@withLock NetworkRetargetResult.Retry
+        }
 
-            if (!androidNetworkChanged && !physicalRouteChanged) {
-                activePhysicalNetwork = currentNetwork ?: previousNetwork
-                updateNotification()
-                return@withLock NetworkRetargetResult.Done
-            }
+        if (!androidNetworkChanged && !physicalRouteChanged) {
+            activePhysicalNetwork = currentNetwork ?: previousNetwork
+            updateNotification()
+            return@withLock NetworkRetargetResult.Done
+        }
 
-            if (androidNetworkChanged || currentRoute.dev != latestState.physicalInterface) {
-                logBuffer.append(
-                    LogSource.APP,
-                    "Network changed ($reason): ${describeNetworkChange(previousNetwork, currentNetwork)}, " +
-                        "${latestState.physicalInterface} -> ${currentRoute.describe()}, reconnecting...",
-                )
-                reconnectForPhysicalRouteChange(latestConfig, latestState, currentRoute)
-                return@withLock NetworkRetargetResult.Done
-            }
-
+        if (androidNetworkChanged || currentRoute.dev != latestState.physicalInterface) {
             logBuffer.append(
                 LogSource.APP,
-                "Network route changed ($reason): ${latestState.describePhysicalRoute()} -> " +
-                    "${currentRoute.describe()}, refreshing routing...",
+                "Network changed ($reason): ${describeNetworkChange(previousNetwork, currentNetwork)}, " +
+                    "${latestState.physicalInterface} -> ${currentRoute.describe()}, reconnecting...",
             )
-            updateNotification("Refreshing physical route")
-            when (val result = withContext(Dispatchers.IO) {
+            reconnectForPhysicalRouteChange(latestConfig, latestState, currentRoute)
+            return@withLock NetworkRetargetResult.Done
+        }
+
+        logBuffer.append(
+            LogSource.APP,
+            "Network route changed ($reason): ${latestState.describePhysicalRoute()} -> " +
+                "${currentRoute.describe()}, refreshing routing...",
+        )
+        updateNotification("Refreshing physical route")
+        when (
+            val result = withContext(Dispatchers.IO) {
                 connectionManager.reapplyPhysicalRoutingForNetworkChange(
                     connectedState = latestState,
                     runtimeSettings = settingsRepo.runtimeSettingsSnapshot(),
                 )
-            }) {
-                is PhysicalRouteUpdateResult.Applied -> {
-                    connectionStateHolder.update(
-                        latestState.copy(
-                            physicalInterface = result.route.dev,
-                            physicalGateway = result.route.gateway,
-                            physicalTable = result.route.table,
-                        )
-                    )
-                    activePhysicalNetwork = currentPhysicalNetworkSnapshot() ?: currentNetwork ?: previousNetwork
-                    updateNotification()
-                    NetworkRetargetResult.Done
-                }
-                PhysicalRouteUpdateResult.RouteUnavailable -> {
-                    updateNotification("Waiting for physical route")
-                    NetworkRetargetResult.Retry
-                }
-                PhysicalRouteUpdateResult.RequiresReconnect -> {
-                    reconnectForPhysicalRouteChange(latestConfig, latestState, currentRoute)
-                    NetworkRetargetResult.Done
-                }
+            }
+        ) {
+            is PhysicalRouteUpdateResult.Applied -> {
+                connectionStateHolder.update(
+                    latestState.copy(
+                        physicalInterface = result.route.dev,
+                        physicalGateway = result.route.gateway,
+                        physicalTable = result.route.table,
+                    ),
+                )
+                activePhysicalNetwork = currentPhysicalNetworkSnapshot() ?: currentNetwork ?: previousNetwork
+                updateNotification()
+                NetworkRetargetResult.Done
+            }
+            PhysicalRouteUpdateResult.RouteUnavailable -> {
+                updateNotification("Waiting for physical route")
+                NetworkRetargetResult.Retry
+            }
+            PhysicalRouteUpdateResult.RequiresReconnect -> {
+                reconnectForPhysicalRouteChange(latestConfig, latestState, currentRoute)
+                NetworkRetargetResult.Done
             }
         }
+    }
 
     private suspend fun reconnectForPhysicalRouteChange(
         config: ServerConfig,
@@ -751,7 +759,8 @@ class XrayService : VpnService() {
             .filter { entity ->
                 when (entity.routeAssignment()) {
                     AppRouteAssignment(AppRouteMode.Direct),
-                    AppRouteAssignment(AppRouteMode.Bypass) -> true
+                    AppRouteAssignment(AppRouteMode.Bypass),
+                    -> true
                     else -> false
                 }
             }
@@ -827,7 +836,7 @@ class XrayService : VpnService() {
             .mapNotNull { network -> network.toPhysicalNetworkSnapshot(connectivityManager) }
             .sortedWith(
                 compareByDescending<PhysicalNetworkSnapshot> { it.validated }
-                    .thenBy { it.priority }
+                    .thenBy { it.priority },
             )
             .firstOrNull()
     }
@@ -849,12 +858,11 @@ class XrayService : VpnService() {
         )
     }
 
-    private fun NetworkCapabilities.physicalTransports(): List<String> =
-        buildList {
-            if (hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add(TRANSPORT_LABEL_WIFI)
-            if (hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add(TRANSPORT_LABEL_ETHERNET)
-            if (hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add(TRANSPORT_LABEL_CELLULAR)
-        }
+    private fun NetworkCapabilities.physicalTransports(): List<String> = buildList {
+        if (hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add(TRANSPORT_LABEL_WIFI)
+        if (hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add(TRANSPORT_LABEL_ETHERNET)
+        if (hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add(TRANSPORT_LABEL_CELLULAR)
+    }
 
     private fun transportPriority(label: String): Int = when (label) {
         TRANSPORT_LABEL_WIFI -> 0
@@ -863,24 +871,21 @@ class XrayService : VpnService() {
         else -> 3
     }
 
-    private fun TunManager.PhysicalRoute.matches(state: ConnectionState.Connected): Boolean =
-        dev == state.physicalInterface &&
-            gateway == state.physicalGateway &&
-            table == state.physicalTable
+    private fun TunManager.PhysicalRoute.matches(state: ConnectionState.Connected): Boolean = dev == state.physicalInterface &&
+        gateway == state.physicalGateway &&
+        table == state.physicalTable
 
-    private fun ConnectionState.Connected.describePhysicalRoute(): String =
-        buildString {
-            append(physicalInterface)
-            if (!physicalGateway.isNullOrBlank()) append(" via $physicalGateway")
-            if (!physicalTable.isNullOrBlank()) append(" table $physicalTable")
-        }
+    private fun ConnectionState.Connected.describePhysicalRoute(): String = buildString {
+        append(physicalInterface)
+        if (!physicalGateway.isNullOrBlank()) append(" via $physicalGateway")
+        if (!physicalTable.isNullOrBlank()) append(" table $physicalTable")
+    }
 
-    private fun TunManager.PhysicalRoute.describe(): String =
-        buildString {
-            append(dev)
-            if (!gateway.isNullOrBlank()) append(" via $gateway")
-            if (!table.isNullOrBlank()) append(" table $table")
-        }
+    private fun TunManager.PhysicalRoute.describe(): String = buildString {
+        append(dev)
+        if (!gateway.isNullOrBlank()) append(" via $gateway")
+        if (!table.isNullOrBlank()) append(" table $table")
+    }
 
     private fun describeNetworkChange(
         previousNetwork: PhysicalNetworkSnapshot?,
@@ -967,18 +972,15 @@ class XrayService : VpnService() {
         }
     }
 
-    private fun Map<String, Long>.outboundBytes(tag: String): Long =
-        get("outbound>>>$tag>>>traffic>>>uplink").orZero() +
-            get("outbound>>>$tag>>>traffic>>>downlink").orZero()
+    private fun Map<String, Long>.outboundBytes(tag: String): Long = get("outbound>>>$tag>>>traffic>>>uplink").orZero() +
+        get("outbound>>>$tag>>>traffic>>>downlink").orZero()
 
-    private fun Map<String, Long>.hasOutboundTrafficStats(tag: String): Boolean =
-        containsKey("outbound>>>$tag>>>traffic>>>uplink") ||
-            containsKey("outbound>>>$tag>>>traffic>>>downlink")
+    private fun Map<String, Long>.hasOutboundTrafficStats(tag: String): Boolean = containsKey("outbound>>>$tag>>>traffic>>>uplink") ||
+        containsKey("outbound>>>$tag>>>traffic>>>downlink")
 
     private fun Long?.orZero(): Long = this ?: 0L
 
-    private fun formatNullableBytesPerSecond(bytesPerSecond: Long?): String =
-        bytesPerSecond?.let(::formatBytesPerSecond) ?: "--"
+    private fun formatNullableBytesPerSecond(bytesPerSecond: Long?): String = bytesPerSecond?.let(::formatBytesPerSecond) ?: "--"
 
     private fun formatBytesPerSecond(bytesPerSecond: Long): String {
         val units = listOf("B/s", "KiB/s", "MiB/s", "GiB/s")
@@ -1003,10 +1005,14 @@ class XrayService : VpnService() {
     private fun buildNotification(title: String, text: String, showDisconnectAction: Boolean): Notification {
         val openAppIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent()
         val openIntent = PendingIntent.getActivity(
-            this, 0, openAppIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            this,
+            0,
+            openAppIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val disconnectIntent = PendingIntent.getService(
-            this, 1,
+            this,
+            1,
             Intent(this, XrayService::class.java).setAction(ACTION_DISCONNECT),
             PendingIntent.FLAG_IMMUTABLE,
         )
@@ -1042,8 +1048,7 @@ class XrayService : VpnService() {
     ) {
         fun sameNetwork(other: PhysicalNetworkSnapshot): Boolean = handle == other.handle
 
-        fun describe(): String =
-            "$label#$handle" + if (validated) " validated" else " unvalidated"
+        fun describe(): String = "$label#$handle" + if (validated) " validated" else " unvalidated"
     }
 
     private data class NotificationMetrics(
@@ -1118,25 +1123,25 @@ class XrayService : VpnService() {
 
         fun disconnect(context: Context) {
             context.startService(
-                Intent(context, XrayService::class.java).setAction(ACTION_DISCONNECT)
+                Intent(context, XrayService::class.java).setAction(ACTION_DISCONNECT),
             )
         }
 
         fun reload(context: Context) {
             context.startService(
-                Intent(context, XrayService::class.java).setAction(ACTION_RELOAD)
+                Intent(context, XrayService::class.java).setAction(ACTION_RELOAD),
             )
         }
 
         fun reloadAppRouting(context: Context) {
             context.startService(
-                Intent(context, XrayService::class.java).setAction(ACTION_RELOAD_APP_ROUTING)
+                Intent(context, XrayService::class.java).setAction(ACTION_RELOAD_APP_ROUTING),
             )
         }
 
         fun restoreStatus(context: Context) {
             context.startForegroundService(
-                Intent(context, XrayService::class.java).setAction(ACTION_RESTORE_STATUS)
+                Intent(context, XrayService::class.java).setAction(ACTION_RESTORE_STATUS),
             )
         }
     }

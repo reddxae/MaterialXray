@@ -70,8 +70,7 @@ class XrayConfigRoutingTest {
         assertEquals("app-in-rules", rules.last().array("inboundTag").single())
     }
 
-    private fun JsonObject.array(key: String): List<String> =
-        getValue(key).jsonArray.map { it.jsonPrimitive.content }
+    private fun JsonObject.array(key: String): List<String> = getValue(key).jsonArray.map { it.jsonPrimitive.content }
 
     private fun directRule() = RoutingRule(
         id = "direct",

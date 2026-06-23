@@ -88,7 +88,7 @@ class ShareLinkParserTest {
     fun `parse Shadowsocks SIP002 link`() {
         val methodPassword = java.util.Base64.getUrlEncoder().withoutPadding()
             .encodeToString("aes-256-gcm:testpassword".toByteArray())
-        val uri = "ss://${methodPassword}@1.2.3.4:8388#SS%20Server"
+        val uri = "ss://$methodPassword@1.2.3.4:8388#SS%20Server"
         val config = parser.parse(uri)
         assertNotNull(config)
         config!!

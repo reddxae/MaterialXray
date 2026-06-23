@@ -17,12 +17,15 @@ internal fun buildStatsApi(socketName: String = XRAY_API_SOCKET_NAME_PREFIX) = b
 }
 
 internal fun buildStatsPolicy() = buildJsonObject {
-    put("system", buildJsonObject {
-        put("statsInboundUplink", true)
-        put("statsInboundDownlink", true)
-        put("statsOutboundUplink", true)
-        put("statsOutboundDownlink", true)
-    })
+    put(
+        "system",
+        buildJsonObject {
+            put("statsInboundUplink", true)
+            put("statsInboundDownlink", true)
+            put("statsOutboundUplink", true)
+            put("statsOutboundDownlink", true)
+        },
+    )
 }
 
 internal fun buildStatsConfig() = buildJsonObject { }

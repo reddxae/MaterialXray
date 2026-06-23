@@ -26,40 +26,37 @@ data class AppRouteAssignment(
     val serverId: Long? = null,
 )
 
-fun AppBypassEntity.routeAssignment(): AppRouteAssignment =
-    when {
-        excluded || routeMode == AppRouteMode.Bypass.persistedValue -> {
-            AppRouteAssignment(AppRouteMode.Bypass)
-        }
-        routeMode == AppRouteMode.Direct.persistedValue -> {
-            AppRouteAssignment(AppRouteMode.Direct)
-        }
-        routeMode == AppRouteMode.DefaultOutbound.persistedValue -> {
-            AppRouteAssignment(AppRouteMode.DefaultOutbound)
-        }
-        serverId != null -> {
-            AppRouteAssignment(AppRouteMode.Server, serverId)
-        }
-        else -> {
-            AppRouteAssignment(AppRouteMode.DefaultSelected)
-        }
+fun AppBypassEntity.routeAssignment(): AppRouteAssignment = when {
+    excluded || routeMode == AppRouteMode.Bypass.persistedValue -> {
+        AppRouteAssignment(AppRouteMode.Bypass)
     }
+    routeMode == AppRouteMode.Direct.persistedValue -> {
+        AppRouteAssignment(AppRouteMode.Direct)
+    }
+    routeMode == AppRouteMode.DefaultOutbound.persistedValue -> {
+        AppRouteAssignment(AppRouteMode.DefaultOutbound)
+    }
+    serverId != null -> {
+        AppRouteAssignment(AppRouteMode.Server, serverId)
+    }
+    else -> {
+        AppRouteAssignment(AppRouteMode.DefaultSelected)
+    }
+}
 
-fun AppBypassEntity.isManualRouteOverride(): Boolean =
-    manual && routeAssignment().mode != AppRouteMode.DefaultSelected
+fun AppBypassEntity.isManualRouteOverride(): Boolean = manual && routeAssignment().mode != AppRouteMode.DefaultSelected
 
 fun AppRouteAssignment.toAppBypassEntity(
     packageName: String,
     profileId: Int,
     uid: Int,
     manual: Boolean,
-): AppBypassEntity =
-    AppBypassEntity(
-        packageName = packageName,
-        profileId = profileId,
-        uid = uid,
-        excluded = mode == AppRouteMode.Bypass,
-        serverId = serverId.takeIf { mode == AppRouteMode.Server },
-        manual = manual,
-        routeMode = mode.persistedValue,
-    )
+): AppBypassEntity = AppBypassEntity(
+    packageName = packageName,
+    profileId = profileId,
+    uid = uid,
+    excluded = mode == AppRouteMode.Bypass,
+    serverId = serverId.takeIf { mode == AppRouteMode.Server },
+    manual = manual,
+    routeMode = mode.persistedValue,
+)

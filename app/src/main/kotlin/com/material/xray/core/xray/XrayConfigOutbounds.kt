@@ -1,11 +1,13 @@
 package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
-import com.material.xray.model.ServerConfig
 import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
 import com.material.xray.model.SERVER_EXTRA_SPIDER_X
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
+import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayOutbound
+import java.net.URI
+import java.net.URLDecoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -18,27 +20,34 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import java.net.URI
-import java.net.URLDecoder
 
 internal val SPECIAL_OUTBOUND_PROTOCOLS = setOf("freedom", "dns", "blackhole")
 
 internal fun buildTunInbound(tunName: String, tag: String) = buildJsonObject {
     put("port", 0)
     put("protocol", "tun")
-    put("settings", buildJsonObject {
-        put("name", tunName)
-        put("MTU", 1500)
-    })
-    put("sniffing", buildJsonObject {
-        put("enabled", true)
-        put("routeOnly", true)
-        put("destOverride", buildJsonArray {
-            add("http")
-            add("tls")
-            add("quic")
-        })
-    })
+    put(
+        "settings",
+        buildJsonObject {
+            put("name", tunName)
+            put("MTU", 1500)
+        },
+    )
+    put(
+        "sniffing",
+        buildJsonObject {
+            put("enabled", true)
+            put("routeOnly", true)
+            put(
+                "destOverride",
+                buildJsonArray {
+                    add("http")
+                    add("tls")
+                    add("quic")
+                },
+            )
+        },
+    )
     put("tag", tag)
 }
 
@@ -64,11 +73,14 @@ internal fun buildProxyOutbound(
 internal fun buildDirectOutbound(fwmark: Int, physicalInterface: String?, allowIpv6: Boolean = false) = buildJsonObject {
     put("tag", "direct")
     put("protocol", "freedom")
-    put("settings", buildJsonObject {
-        if (!allowIpv6) {
-            put("domainStrategy", "UseIPv4")
-        }
-    })
+    put(
+        "settings",
+        buildJsonObject {
+            if (!allowIpv6) {
+                put("domainStrategy", "UseIPv4")
+            }
+        },
+    )
     put("streamSettings", buildJsonObject { put("sockopt", buildSockopt(fwmark, physicalInterface, allowIpv6)) })
 }
 
@@ -143,56 +155,86 @@ private fun buildRawProxyOutbound(
 
 private fun buildOutboundSettings(server: ServerConfig): JsonObject = when (server.protocol) {
     Protocol.VLESS -> buildJsonObject {
-        put("vnext", buildJsonArray {
-            add(buildJsonObject {
-                put("address", server.address)
-                put("port", server.port)
-                put("users", buildJsonArray {
-                    add(buildJsonObject {
-                        put("id", server.password)
-                        put("encryption", server.extra["encryption"] ?: "none")
-                        server.extra["flow"]?.let { put("flow", it) }
-                    })
-                })
-            })
-        })
+        put(
+            "vnext",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("address", server.address)
+                        put("port", server.port)
+                        put(
+                            "users",
+                            buildJsonArray {
+                                add(
+                                    buildJsonObject {
+                                        put("id", server.password)
+                                        put("encryption", server.extra["encryption"] ?: "none")
+                                        server.extra["flow"]?.let { put("flow", it) }
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
     }
 
     Protocol.VMESS -> buildJsonObject {
-        put("vnext", buildJsonArray {
-            add(buildJsonObject {
-                put("address", server.address)
-                put("port", server.port)
-                put("users", buildJsonArray {
-                    add(buildJsonObject {
-                        put("id", server.password)
-                        put("alterId", server.extra["alterId"]?.toIntOrNull() ?: 0)
-                        put("security", "auto")
-                    })
-                })
-            })
-        })
+        put(
+            "vnext",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("address", server.address)
+                        put("port", server.port)
+                        put(
+                            "users",
+                            buildJsonArray {
+                                add(
+                                    buildJsonObject {
+                                        put("id", server.password)
+                                        put("alterId", server.extra["alterId"]?.toIntOrNull() ?: 0)
+                                        put("security", "auto")
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+            },
+        )
     }
 
     Protocol.TROJAN -> buildJsonObject {
-        put("servers", buildJsonArray {
-            add(buildJsonObject {
-                put("address", server.address)
-                put("port", server.port)
-                put("password", server.password)
-            })
-        })
+        put(
+            "servers",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("address", server.address)
+                        put("port", server.port)
+                        put("password", server.password)
+                    },
+                )
+            },
+        )
     }
 
     Protocol.SHADOWSOCKS -> buildJsonObject {
-        put("servers", buildJsonArray {
-            add(buildJsonObject {
-                put("address", server.address)
-                put("port", server.port)
-                put("method", server.extra["method"] ?: "aes-256-gcm")
-                put("password", server.password)
-            })
-        })
+        put(
+            "servers",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("address", server.address)
+                        put("port", server.port)
+                        put("method", server.extra["method"] ?: "aes-256-gcm")
+                        put("password", server.password)
+                    },
+                )
+            },
+        )
     }
 
     Protocol.RAW -> error("Raw JSON configs must be handled before outbound generation")
@@ -213,57 +255,74 @@ private fun buildStreamSettings(
 
 private fun JsonObjectBuilder.putSecuritySettings(server: ServerConfig) {
     when (server.security.type) {
-        "tls" -> put("tlsSettings", buildJsonObject {
-            if (server.security.sni.isNotEmpty()) put("serverName", server.security.sni)
-            if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
-            if (server.security.alpn.isNotEmpty()) {
-                put("alpn", buildJsonArray { server.security.alpn.forEach { add(it) } })
-            }
-        })
+        "tls" -> put(
+            "tlsSettings",
+            buildJsonObject {
+                if (server.security.sni.isNotEmpty()) put("serverName", server.security.sni)
+                if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
+                if (server.security.alpn.isNotEmpty()) {
+                    put("alpn", buildJsonArray { server.security.alpn.forEach { add(it) } })
+                }
+            },
+        )
 
-        "reality" -> put("realitySettings", buildJsonObject {
-            if (server.security.sni.isNotEmpty()) put("serverName", server.security.sni)
-            if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
-            if (server.security.publicKey.isNotEmpty()) put("publicKey", server.security.publicKey)
-            if (server.security.shortId.isNotEmpty()) put("shortId", server.security.shortId)
-            server.extraOrRawUri(SERVER_EXTRA_MLDSA65_VERIFY, "pqv")?.let { put("mldsa65Verify", it) }
-            server.extraOrRawUri(SERVER_EXTRA_SPIDER_X, "spx")?.let { put("spiderX", it) }
-        })
+        "reality" -> put(
+            "realitySettings",
+            buildJsonObject {
+                if (server.security.sni.isNotEmpty()) put("serverName", server.security.sni)
+                if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
+                if (server.security.publicKey.isNotEmpty()) put("publicKey", server.security.publicKey)
+                if (server.security.shortId.isNotEmpty()) put("shortId", server.security.shortId)
+                server.extraOrRawUri(SERVER_EXTRA_MLDSA65_VERIFY, "pqv")?.let { put("mldsa65Verify", it) }
+                server.extraOrRawUri(SERVER_EXTRA_SPIDER_X, "spx")?.let { put("spiderX", it) }
+            },
+        )
     }
 }
 
 private fun JsonObjectBuilder.putTransportSettings(server: ServerConfig) {
     when (server.transport.type) {
-        "ws" -> put("wsSettings", buildJsonObject {
-            if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
-            if (server.transport.host.isNotEmpty()) {
-                put("headers", buildJsonObject { put("Host", server.transport.host) })
-            }
-        })
+        "ws" -> put(
+            "wsSettings",
+            buildJsonObject {
+                if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
+                if (server.transport.host.isNotEmpty()) {
+                    put("headers", buildJsonObject { put("Host", server.transport.host) })
+                }
+            },
+        )
 
-        "grpc" -> put("grpcSettings", buildJsonObject {
-            if (server.transport.serviceName.isNotEmpty()) put("serviceName", server.transport.serviceName)
-        })
+        "grpc" -> put(
+            "grpcSettings",
+            buildJsonObject {
+                if (server.transport.serviceName.isNotEmpty()) put("serviceName", server.transport.serviceName)
+            },
+        )
 
-        "xhttp" -> put("xhttpSettings", buildJsonObject {
-            if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
-            if (server.transport.host.isNotEmpty()) put("host", server.transport.host)
-            if (server.transport.mode.isNotEmpty()) put("mode", server.transport.mode)
-            server.extraOrRawUri(SERVER_EXTRA_XHTTP_EXTRA, "extra")
-                ?.let { rawExtra -> runCatching { Json.parseToJsonElement(rawExtra) }.getOrNull() }
-                ?.let { put("extra", it) }
-        })
+        "xhttp" -> put(
+            "xhttpSettings",
+            buildJsonObject {
+                if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
+                if (server.transport.host.isNotEmpty()) put("host", server.transport.host)
+                if (server.transport.mode.isNotEmpty()) put("mode", server.transport.mode)
+                server.extraOrRawUri(SERVER_EXTRA_XHTTP_EXTRA, "extra")
+                    ?.let { rawExtra -> runCatching { Json.parseToJsonElement(rawExtra) }.getOrNull() }
+                    ?.let { put("extra", it) }
+            },
+        )
 
-        "httpupgrade" -> put("httpupgradeSettings", buildJsonObject {
-            if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
-            if (server.transport.host.isNotEmpty()) put("host", server.transport.host)
-        })
+        "httpupgrade" -> put(
+            "httpupgradeSettings",
+            buildJsonObject {
+                if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
+                if (server.transport.host.isNotEmpty()) put("host", server.transport.host)
+            },
+        )
     }
 }
 
-private fun ServerConfig.extraOrRawUri(extraKey: String, rawUriParam: String): String? =
-    extra[extraKey]?.takeIf { it.isNotBlank() }
-        ?: rawUriQueryParam(rawUriParam)
+private fun ServerConfig.extraOrRawUri(extraKey: String, rawUriParam: String): String? = extra[extraKey]?.takeIf { it.isNotBlank() }
+    ?: rawUriQueryParam(rawUriParam)
 
 private fun ServerConfig.rawUriQueryParam(name: String): String? = runCatching {
     val query = URI(rawUri).rawQuery ?: return@runCatching null
@@ -280,5 +339,4 @@ private fun ServerConfig.rawUriQueryParam(name: String): String? = runCatching {
         .firstOrNull { it.isNotBlank() }
 }.getOrNull()
 
-private fun decodeUriComponent(value: String): String =
-    URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
+private fun decodeUriComponent(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")

@@ -5,9 +5,9 @@ import android.os.Build
 import android.os.PowerManager
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.XrayBinary
-import kotlinx.coroutines.delay
-import java.io.FileOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.delay
 
 internal interface XrayProcessProbe {
     suspend fun isAlive(pid: Int): Boolean
@@ -62,11 +62,9 @@ internal class AndroidXrayRuntimeEnvironment(
     override val packageUid: Int
         get() = context.applicationInfo.uid
 
-    override fun isIgnoringBatteryOptimizations(): Boolean? =
-        context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(packageName)
+    override fun isIgnoringBatteryOptimizations(): Boolean? = context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(packageName)
 
-    override fun isExemptFromLowPowerStandby(): Boolean? =
-        context.getSystemService(PowerManager::class.java)?.isExemptFromLowPowerStandby()
+    override fun isExemptFromLowPowerStandby(): Boolean? = context.getSystemService(PowerManager::class.java)?.isExemptFromLowPowerStandby()
 }
 
 internal class XrayProcessSupervisor(
@@ -264,12 +262,11 @@ internal class UserXrayProcessSupervisor(
         return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
     }
 
-    suspend fun readCrashReason(lines: Int = 80): String =
-        logFile.takeIf { it.isFile }
-            ?.readLines()
-            ?.takeLast(lines)
-            ?.lastOrNull { it.isNotBlank() }
-            ?: "xray process exited"
+    suspend fun readCrashReason(lines: Int = 80): String = logFile.takeIf { it.isFile }
+        ?.readLines()
+        ?.takeLast(lines)
+        ?.lastOrNull { it.isNotBlank() }
+        ?: "xray process exited"
 
     private companion object {
         private const val KILOBYTES_PER_MEGABYTE = 1024L
@@ -346,10 +343,9 @@ class AndroidUserXrayProcessLauncher : UserXrayProcessLauncher {
     }
 }
 
-private fun xrayAssetEnvironment(assetDir: String): Map<String, String> =
-    mapOf(
-        "xray.location.asset" to assetDir,
-        "XRAY_LOCATION_ASSET" to assetDir,
-    )
+private fun xrayAssetEnvironment(assetDir: String): Map<String, String> = mapOf(
+    "xray.location.asset" to assetDir,
+    "XRAY_LOCATION_ASSET" to assetDir,
+)
 
 internal fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"

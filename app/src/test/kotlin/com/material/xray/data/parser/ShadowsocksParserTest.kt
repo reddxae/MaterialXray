@@ -1,10 +1,10 @@
 package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
+import java.util.Base64
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import java.util.Base64
 
 class ShadowsocksParserTest {
 
@@ -12,7 +12,7 @@ class ShadowsocksParserTest {
     fun `parse SIP002 link with url-safe encoded user info`() {
         val methodPassword = Base64.getUrlEncoder().withoutPadding()
             .encodeToString("aes-256-gcm:testpassword".toByteArray())
-        val uri = "ss://${methodPassword}@1.2.3.4:8388#SS%20Server"
+        val uri = "ss://$methodPassword@1.2.3.4:8388#SS%20Server"
 
         val config = ShadowsocksParser.parse(uri)!!
 
@@ -29,7 +29,7 @@ class ShadowsocksParserTest {
     fun `parse SIP002 link falls back to standard base64 user info`() {
         val methodPassword = Base64.getEncoder()
             .encodeToString("chacha20-ietf-poly1305:p/a+s/s".toByteArray())
-        val uri = "ss://${methodPassword}@example.com:443"
+        val uri = "ss://$methodPassword@example.com:443"
 
         val config = ShadowsocksParser.parse(uri)!!
 

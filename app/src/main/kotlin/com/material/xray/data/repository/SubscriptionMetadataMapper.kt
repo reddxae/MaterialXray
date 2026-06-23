@@ -5,22 +5,21 @@ import com.material.xray.model.SubscriptionMetadata
 import com.material.xray.model.SubscriptionUserInfo
 import com.material.xray.model.normalized
 
-fun SubscriptionEntity.toSubscriptionMetadata(): SubscriptionMetadata? =
-    SubscriptionMetadata(
-        contentDisposition = contentDisposition,
-        contentType = contentType,
-        profileTitle = profileTitle,
-        profileUpdateIntervalHours = profileUpdateIntervalHours,
-        subscriptionUserInfo = SubscriptionUserInfo(
-            upload = subscriptionUploadBytes,
-            download = subscriptionDownloadBytes,
-            total = subscriptionTotalBytes,
-            expire = subscriptionExpireAt,
-        ).normalized(),
-        profileWebPageUrl = profileWebPageUrl,
-        announce = announce,
-        supportUrl = supportUrl,
-    ).normalized()
+fun SubscriptionEntity.toSubscriptionMetadata(): SubscriptionMetadata? = SubscriptionMetadata(
+    contentDisposition = contentDisposition,
+    contentType = contentType,
+    profileTitle = profileTitle,
+    profileUpdateIntervalHours = profileUpdateIntervalHours,
+    subscriptionUserInfo = SubscriptionUserInfo(
+        upload = subscriptionUploadBytes,
+        download = subscriptionDownloadBytes,
+        total = subscriptionTotalBytes,
+        expire = subscriptionExpireAt,
+    ).normalized(),
+    profileWebPageUrl = profileWebPageUrl,
+    announce = announce,
+    supportUrl = supportUrl,
+).normalized()
 
 fun SubscriptionEntity.withSubscriptionMetadata(
     metadata: SubscriptionMetadata?,

@@ -1,0 +1,28 @@
+# https://editorconfig.org
+# ktlint reads this file for code style and rule configuration:
+# https://pinterest.github.io/ktlint/latest/rules/configuration-ktlint/
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 4
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+ktlint_code_style = android_studio
+# detekt already opts out of a hard line-length limit; keep ktlint consistent.
+max_line_length = off
+# Keep multiline diffs clean by requiring trailing commas where Kotlin supports them.
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+# Jetpack Compose @Composable functions intentionally use PascalCase.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

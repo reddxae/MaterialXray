@@ -1,13 +1,13 @@
 package com.material.xray.service
 
 import com.material.xray.model.ConnectionState
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import javax.inject.Inject
-import javax.inject.Singleton
 
 @Singleton
 class ConnectionStateHolder @Inject constructor() {

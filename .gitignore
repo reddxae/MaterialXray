@@ -8,6 +8,11 @@ local.properties
 # IDE
 *.iml
 .idea/
+.project
+.settings/
+app/.classpath
+app/.project
+app/.settings/
 
 # xray binaries (downloaded via scripts/download-xray.sh)
 app/src/main/jniLibs/

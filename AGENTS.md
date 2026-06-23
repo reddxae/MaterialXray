@@ -29,5 +29,7 @@
 - `.github/workflows/android-ci.yml` is manual only (`workflow_dispatch`) and builds a signed release APK with Java 21 and release signing secrets; it does not run tests/lint on push.
 - The README CI section describes push/debug behavior, but the workflow file is the executable source of truth.
 
-## Workflow
-- After implementing a change, you should check whether a device is attached over ADB. If it is, you should install the app on the device to let the User verify the change.
+## Agent Workflow
+- After implementing a change, you should check whether a device is attached over ADB. If it is, you should install the *release build* of the app on the device to let the User verify the change.
+- If a `review` subagent or similar is available to you and the change you made is significant/big, run it with the instruction to review your diff. If unsure about the significance - ask the User whether you should run the review.
+- When asked to commit your changes, follow conventional commits and try to keep your commits atomic - one commit is one 'thing done'.

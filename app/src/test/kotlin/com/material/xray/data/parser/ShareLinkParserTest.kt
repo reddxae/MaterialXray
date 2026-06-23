@@ -101,6 +101,21 @@ class ShareLinkParserTest {
     }
 
     @Test
+    fun `parse Hysteria2 link`() {
+        val uri = "hysteria2://secret@example.com:443?sni=real.example.com#HY2%20Server"
+        val config = parser.parse(uri)
+        assertNotNull(config)
+        config!!
+        assertEquals(Protocol.HYSTERIA2, config.protocol)
+        assertEquals("example.com", config.address)
+        assertEquals(443, config.port)
+        assertEquals("secret", config.password)
+        assertEquals("hysteria", config.transport.type)
+        assertEquals("tls", config.security.type)
+        assertEquals("HY2 Server", config.name)
+    }
+
+    @Test
     fun `parse unknown scheme returns null`() {
         assertNull(parser.parse("http://example.com"))
     }

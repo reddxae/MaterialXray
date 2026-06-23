@@ -11,6 +11,7 @@ class ShareLinkParser {
             trimmed.startsWith("vmess://") -> VmessParser.parse(trimmed)
             trimmed.startsWith("trojan://") -> TrojanParser.parse(trimmed)
             trimmed.startsWith("ss://") -> ShadowsocksParser.parse(trimmed)
+            trimmed.startsWith("hysteria2://") || trimmed.startsWith("hy2://") -> Hysteria2Parser.parse(trimmed)
             else -> null
         }
     }

@@ -3,6 +3,17 @@ package com.material.xray.data.parser
 import android.content.Context
 import android.os.Build
 import com.material.xray.model.Protocol
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_CONGESTION
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_DOWN
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_INSECURE
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PACKET_SIZE
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_PIN_SHA256
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionMetadata
 import java.io.IOException
@@ -219,6 +230,7 @@ class SubscriptionFetcher @Inject constructor(
             "vmess" -> deriveVmessOutbound(outbound, settings)
             "trojan" -> deriveServerOutbound(outbound, settings, Protocol.TROJAN, passwordKey = "password")
             "shadowsocks", "ss" -> deriveShadowsocksOutbound(outbound, settings)
+            "hysteria" -> deriveHysteriaOutbound(outbound, settings)
             else -> deriveRawOutbound(outbound)
         }
     }
@@ -265,6 +277,38 @@ class SubscriptionFetcher @Inject constructor(
         )
     }
 
+    private fun deriveHysteriaOutbound(outbound: JsonObject, settings: JsonObject?): DerivedOutbound {
+        val streamSettings = outbound.findObject("streamSettings")
+        val hysteriaSettings = streamSettings?.findObject("hysteriaSettings")
+        val tlsSettings = streamSettings?.findObject("tlsSettings")
+        val finalMask = streamSettings?.findObject("finalmask")
+        val quicParams = finalMask?.findObject("quicParams")
+        val udpHop = quicParams?.findObject("udpHop") ?: hysteriaSettings?.findObject("udphop")
+        val udpMask = finalMask?.findArray("udp")?.firstObject()
+            ?: streamSettings?.findArray("udpmasks")?.firstObject()
+        val udpMaskSettings = udpMask?.findObject("settings")
+
+        return DerivedOutbound(
+            protocol = Protocol.HYSTERIA2,
+            address = firstString(settings, outbound, "address"),
+            port = firstInt(settings, outbound, "port"),
+            password = firstString(hysteriaSettings, outbound, "auth"),
+            extra = buildMap {
+                tlsSettings?.findString("allowInsecure")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_HYSTERIA_INSECURE, it) }
+                tlsSettings?.findString("pinnedPeerCertSha256")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_HYSTERIA_PIN_SHA256, it) }
+                udpMask?.findString("type")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_HYSTERIA_OBFS, it) }
+                udpMaskSettings?.findString("password")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD, it) }
+                udpMaskSettings?.findString("packetSize")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_HYSTERIA_OBFS_PACKET_SIZE, it) }
+                firstString(quicParams, hysteriaSettings, "brutalUp", "up")?.let { put(SERVER_EXTRA_HYSTERIA_UP, it) }
+                firstString(quicParams, hysteriaSettings, "brutalDown", "down")?.let { put(SERVER_EXTRA_HYSTERIA_DOWN, it) }
+                firstString(udpHop, hysteriaSettings, "ports", "port")?.let { put(SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS, it) }
+                udpHop?.findString("interval")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL, it) }
+                hysteriaSettings?.findString("udpIdleTimeout")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT, it) }
+                firstString(quicParams, hysteriaSettings, "congestion")?.let { put(SERVER_EXTRA_HYSTERIA_CONGESTION, it) }
+            },
+        )
+    }
+
     private fun deriveServerOutbound(
         outbound: JsonObject,
         settings: JsonObject?,
@@ -293,6 +337,14 @@ class SubscriptionFetcher @Inject constructor(
     )
 
     private fun firstString(primary: JsonObject?, fallback: JsonObject, key: String): String = primary?.findString(key) ?: fallback.findFirstStringRecursive(key) ?: ""
+
+    private fun firstString(primary: JsonObject?, fallback: JsonObject?, vararg keys: String): String? {
+        for (key in keys) {
+            primary?.findString(key)?.takeIf { it.isNotBlank() }?.let { return it }
+            fallback?.findString(key)?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return null
+    }
 
     private fun firstInt(primary: JsonObject?, fallback: JsonObject, key: String): Int = primary?.findInt(key) ?: fallback.findFirstIntRecursive(key) ?: 0
 

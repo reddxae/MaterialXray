@@ -1,6 +1,16 @@
 package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_CONGESTION
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_DOWN
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PACKET_SIZE
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_PIN_SHA256
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
 import com.material.xray.model.SERVER_EXTRA_SPIDER_X
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
@@ -237,6 +247,12 @@ private fun buildOutboundSettings(server: ServerConfig): JsonObject = when (serv
         )
     }
 
+    Protocol.HYSTERIA2 -> buildJsonObject {
+        put("version", 2)
+        put("address", server.address)
+        put("port", server.port)
+    }
+
     Protocol.RAW -> error("Raw JSON configs must be handled before outbound generation")
 }
 
@@ -258,11 +274,17 @@ private fun JsonObjectBuilder.putSecuritySettings(server: ServerConfig) {
         "tls" -> put(
             "tlsSettings",
             buildJsonObject {
+                val alpn = if (server.protocol == Protocol.HYSTERIA2 && server.security.alpn.isEmpty()) {
+                    listOf("h3")
+                } else {
+                    server.security.alpn
+                }
                 if (server.security.sni.isNotEmpty()) put("serverName", server.security.sni)
                 if (server.security.fingerprint.isNotEmpty()) put("fingerprint", server.security.fingerprint)
-                if (server.security.alpn.isNotEmpty()) {
-                    put("alpn", buildJsonArray { server.security.alpn.forEach { add(it) } })
+                if (alpn.isNotEmpty()) {
+                    put("alpn", buildJsonArray { alpn.forEach { add(it) } })
                 }
+                server.extra[SERVER_EXTRA_HYSTERIA_PIN_SHA256]?.takeIf { it.isNotBlank() }?.let { put("pinnedPeerCertSha256", it) }
             },
         )
 
@@ -316,6 +338,74 @@ private fun JsonObjectBuilder.putTransportSettings(server: ServerConfig) {
             buildJsonObject {
                 if (server.transport.path.isNotEmpty()) put("path", server.transport.path)
                 if (server.transport.host.isNotEmpty()) put("host", server.transport.host)
+            },
+        )
+
+        "hysteria" -> {
+            put(
+                "hysteriaSettings",
+                buildJsonObject {
+                    put("version", 2)
+                    put("auth", server.password)
+                    server.extra[SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT]
+                        ?.toIntOrNull()
+                        ?.let { put("udpIdleTimeout", it) }
+                },
+            )
+            val finalMask = buildHysteriaFinalMask(server)
+            if (finalMask.isNotEmpty()) {
+                put("finalmask", finalMask)
+            }
+        }
+    }
+}
+
+private fun buildHysteriaFinalMask(server: ServerConfig): JsonObject = buildJsonObject {
+    buildHysteriaUdpMask(server)?.let { udpMask ->
+        put("udp", buildJsonArray { add(udpMask) })
+    }
+
+    val quicParams = buildHysteriaQuicParams(server)
+    if (quicParams.isNotEmpty()) {
+        put("quicParams", quicParams)
+    }
+}
+
+private fun buildHysteriaUdpMask(server: ServerConfig): JsonObject? {
+    val obfs = server.extra[SERVER_EXTRA_HYSTERIA_OBFS]?.takeIf { it.isNotBlank() } ?: return null
+    val password = server.extra[SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD]?.takeIf { it.isNotBlank() } ?: return null
+    val normalizedObfs = obfs.lowercase()
+    val type = if (normalizedObfs == "gecko") "salamander" else obfs
+
+    return buildJsonObject {
+        put("type", type)
+        put(
+            "settings",
+            buildJsonObject {
+                put("password", password)
+                if (normalizedObfs == "gecko") {
+                    put("packetSize", server.extra[SERVER_EXTRA_HYSTERIA_OBFS_PACKET_SIZE] ?: "512-1200")
+                }
+            },
+        )
+    }
+}
+
+private fun buildHysteriaQuicParams(server: ServerConfig): JsonObject = buildJsonObject {
+    server.extra[SERVER_EXTRA_HYSTERIA_CONGESTION]?.takeIf { it.isNotBlank() }?.let { put("congestion", it) }
+    server.extra[SERVER_EXTRA_HYSTERIA_UP]?.takeIf { it.isNotBlank() }?.let { put("brutalUp", it) }
+    server.extra[SERVER_EXTRA_HYSTERIA_DOWN]?.takeIf { it.isNotBlank() }?.let { put("brutalDown", it) }
+
+    server.extra[SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS]?.takeIf { it.isNotBlank() }?.let { ports ->
+        put(
+            "udpHop",
+            buildJsonObject {
+                put("ports", ports)
+                server.extra[SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL]
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { interval ->
+                        interval.toIntOrNull()?.let { put("interval", it) } ?: put("interval", interval)
+                    }
             },
         )
     }

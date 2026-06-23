@@ -1,12 +1,23 @@
 package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_CONGESTION
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_DOWN
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_INSECURE
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_PIN_SHA256
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -158,6 +169,99 @@ class XrayConfigOutboundsTest {
         val sockopt = outbound.getValue("streamSettings").jsonObject.getValue("sockopt").jsonObject
         assertEquals("9", sockopt.getValue("mark").jsonPrimitive.content)
         assertEquals("wlan1", sockopt.getValue("interface").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `buildProxyOutbound creates Hysteria2 outbound settings and transport`() {
+        val outbound = buildProxyOutbound(
+            server = ServerConfig(
+                protocol = Protocol.HYSTERIA2,
+                name = "HY2",
+                address = "hy.example.com",
+                port = 443,
+                password = "authSecret",
+                transport = ServerConfig.Transport(type = "hysteria"),
+                security = ServerConfig.Security(type = "tls", sni = "real.example.com"),
+                extra = mapOf(
+                    SERVER_EXTRA_HYSTERIA_INSECURE to "1",
+                    SERVER_EXTRA_HYSTERIA_PIN_SHA256 to "deadbeef",
+                    SERVER_EXTRA_HYSTERIA_OBFS to "salamander",
+                    SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD to "obfsSecret",
+                    SERVER_EXTRA_HYSTERIA_UP to "100 mbps",
+                    SERVER_EXTRA_HYSTERIA_DOWN to "200 mbps",
+                    SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS to "20000-30000",
+                    SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL to "30",
+                    SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT to "120",
+                    SERVER_EXTRA_HYSTERIA_CONGESTION to "brutal",
+                ),
+            ),
+            fwmark = 100,
+            physicalInterface = null,
+            tag = "proxy",
+        )
+
+        assertEquals("hysteria", outbound.getValue("protocol").jsonPrimitive.content)
+        val settings = outbound.getValue("settings").jsonObject
+        assertEquals(2, settings.getValue("version").jsonPrimitive.int)
+        assertEquals("hy.example.com", settings.getValue("address").jsonPrimitive.content)
+        assertEquals(443, settings.getValue("port").jsonPrimitive.int)
+
+        val stream = outbound.getValue("streamSettings").jsonObject
+        assertEquals("hysteria", stream.getValue("network").jsonPrimitive.content)
+        assertEquals("tls", stream.getValue("security").jsonPrimitive.content)
+
+        val tls = stream.getValue("tlsSettings").jsonObject
+        assertEquals("real.example.com", tls.getValue("serverName").jsonPrimitive.content)
+        assertEquals("h3", tls.getValue("alpn").jsonArray.single().jsonPrimitive.content)
+        assertFalse("allowInsecure" in tls)
+        assertEquals("deadbeef", tls.getValue("pinnedPeerCertSha256").jsonPrimitive.content)
+
+        val hysteria = stream.getValue("hysteriaSettings").jsonObject
+        assertEquals(2, hysteria.getValue("version").jsonPrimitive.int)
+        assertEquals("authSecret", hysteria.getValue("auth").jsonPrimitive.content)
+        assertEquals(120, hysteria.getValue("udpIdleTimeout").jsonPrimitive.int)
+
+        val finalMask = stream.getValue("finalmask").jsonObject
+        val udpMask = finalMask.getValue("udp").jsonArray.single().jsonObject
+        assertEquals("salamander", udpMask.getValue("type").jsonPrimitive.content)
+        assertEquals("obfsSecret", udpMask.getValue("settings").jsonObject.getValue("password").jsonPrimitive.content)
+
+        val quicParams = finalMask.getValue("quicParams").jsonObject
+        assertEquals("brutal", quicParams.getValue("congestion").jsonPrimitive.content)
+        assertEquals("100 mbps", quicParams.getValue("brutalUp").jsonPrimitive.content)
+        assertEquals("200 mbps", quicParams.getValue("brutalDown").jsonPrimitive.content)
+        val udpHop = quicParams.getValue("udpHop").jsonObject
+        assertEquals("20000-30000", udpHop.getValue("ports").jsonPrimitive.content)
+        assertEquals(30, udpHop.getValue("interval").jsonPrimitive.int)
+    }
+
+    @Test
+    fun `buildProxyOutbound maps Hysteria2 gecko obfs to salamander packet size`() {
+        val outbound = buildProxyOutbound(
+            server = ServerConfig(
+                protocol = Protocol.HYSTERIA2,
+                name = "HY2 Gecko",
+                address = "hy.example.com",
+                port = 443,
+                password = "authSecret",
+                transport = ServerConfig.Transport(type = "hysteria"),
+                security = ServerConfig.Security(type = "tls"),
+                extra = mapOf(
+                    SERVER_EXTRA_HYSTERIA_OBFS to "gecko",
+                    SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD to "obfsSecret",
+                ),
+            ),
+            fwmark = 100,
+            physicalInterface = null,
+            tag = "proxy",
+        )
+
+        val udpMask = outbound.getValue("streamSettings").jsonObject
+            .getValue("finalmask").jsonObject
+            .getValue("udp").jsonArray
+            .single().jsonObject
+        assertEquals("salamander", udpMask.getValue("type").jsonPrimitive.content)
+        assertEquals("512-1200", udpMask.getValue("settings").jsonObject.getValue("packetSize").jsonPrimitive.content)
     }
 
     private fun tagged(tag: String) = buildJsonObject { put("tag", tag) }

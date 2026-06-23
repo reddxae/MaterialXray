@@ -1,6 +1,11 @@
 package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_INSECURE
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
+import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import java.util.Base64
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
@@ -82,6 +87,60 @@ class SubscriptionFetcherTest {
         assertEquals("uuid", config.password)
         assertEquals("none", config.extra["encryption"])
         assertEquals(link, config.rawUri)
+    }
+
+    @Test
+    fun `fetch parses json Hysteria outbound`() = runTest {
+        val body = """
+            {
+              "remarks": "HY2 JSON",
+              "outbounds": [
+                {
+                  "protocol": "hysteria",
+                  "settings": {
+                    "version": 2,
+                    "address": "hy.example.com",
+                    "port": 443
+                  },
+                  "streamSettings": {
+                    "network": "hysteria",
+                    "security": "tls",
+                    "hysteriaSettings": { "version": 2, "auth": "authSecret" },
+                    "tlsSettings": { "serverName": "real.example.com", "allowInsecure": true, "alpn": ["h3"] },
+                    "finalmask": {
+                      "udp": [
+                        { "type": "salamander", "settings": { "password": "obfsSecret" } }
+                      ],
+                      "quicParams": {
+                        "brutalUp": "100 mbps",
+                        "udpHop": { "ports": "20000-30000", "interval": 30 }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+        val fetcher = fetcherReturning(body, contentType = "application/json")
+
+        val subscription = fetcher.fetchWithMetadata("https://subscriptions.example/json-hy2")
+
+        val config = subscription.configs.single()
+        assertEquals(Protocol.HYSTERIA2, config.protocol)
+        assertEquals("HY2 JSON", config.name)
+        assertEquals("hy.example.com", config.address)
+        assertEquals(443, config.port)
+        assertEquals("authSecret", config.password)
+        assertEquals("hysteria", config.transport.type)
+        assertEquals("tls", config.security.type)
+        assertEquals("real.example.com", config.security.sni)
+        assertEquals(listOf("h3"), config.security.alpn)
+        assertEquals("true", config.extra[SERVER_EXTRA_HYSTERIA_INSECURE])
+        assertEquals("salamander", config.extra[SERVER_EXTRA_HYSTERIA_OBFS])
+        assertEquals("obfsSecret", config.extra[SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD])
+        assertEquals("100 mbps", config.extra[SERVER_EXTRA_HYSTERIA_UP])
+        assertEquals("20000-30000", config.extra[SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS])
+        assertTrue(config.rawConfigJson.isNotBlank())
     }
 
     private fun fetcherReturning(body: String, contentType: String): SubscriptionFetcher {

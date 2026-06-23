@@ -22,4 +22,7 @@ data class SubscriptionEntity(
     val announce: String? = null,
     val supportUrl: String? = null,
     val descriptionHidden: Boolean = false,
+    val userAgentMode: String? = null,
+    val customUserAgent: String? = null,
+    val customHeaders: String? = null,
 )

@@ -70,7 +70,6 @@ import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
-import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.components.ScrolledTopAppBar
@@ -93,10 +92,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val notificationSettings by viewModel.notificationSettings.collectAsStateWithLifecycle()
-    val subscriptionUserAgentMode by viewModel.subscriptionUserAgentMode.collectAsStateWithLifecycle()
     val subscriptionSendHardwareId by viewModel.subscriptionSendHardwareId.collectAsStateWithLifecycle()
-    val subscriptionCustomUserAgent by viewModel.subscriptionCustomUserAgent.collectAsStateWithLifecycle()
-    val subscriptionCustomHeadersText by viewModel.subscriptionCustomHeadersText.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
     val latencyCheckUrl by viewModel.latencyCheckUrl.collectAsStateWithLifecycle()
@@ -111,7 +107,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var showNotificationFieldsDialog by remember { mutableStateOf(false) }
     var showFieldStyleDialog by remember { mutableStateOf(false) }
     var showUpdateFrequencyDialog by remember { mutableStateOf(false) }
-    var showUserAgentDialog by remember { mutableStateOf(false) }
     val rootServiceAvailable = rootAvailable == true
     val rootServiceActive = useRootService && rootServiceAvailable
     val appVersion = remember(context) {
@@ -570,12 +565,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 )
             }
 
-            SettingsActionRow(
-                title = "User-Agent",
-                subtitle = userAgentSummary(subscriptionUserAgentMode, subscriptionCustomUserAgent),
-                onClick = { showUserAgentDialog = true },
-            )
-
             HorizontalDivider()
             Text("Data", style = MaterialTheme.typography.titleMedium)
 
@@ -606,19 +595,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         onUpdateFrequency = viewModel::setNotificationUpdateIntervalMs,
         onSelectFieldStyle = viewModel::setNotificationStyle,
     )
-
-    if (showUserAgentDialog) {
-        SubscriptionUserAgentDialog(
-            currentMode = subscriptionUserAgentMode,
-            currentCustomUserAgent = subscriptionCustomUserAgent,
-            currentCustomHeadersText = subscriptionCustomHeadersText,
-            onDismiss = { showUserAgentDialog = false },
-            onConfirm = { mode, customUserAgent, customHeaders ->
-                viewModel.setSubscriptionUserAgent(mode, customUserAgent, customHeaders)
-                showUserAgentDialog = false
-            },
-        )
-    }
 }
 
 @Composable
@@ -747,84 +723,6 @@ private fun SettingsActionRow(
             tint = subtitleColor,
         )
     }
-}
-
-@Composable
-private fun SubscriptionUserAgentDialog(
-    currentMode: SubscriptionUserAgentMode,
-    currentCustomUserAgent: String,
-    currentCustomHeadersText: String,
-    onDismiss: () -> Unit,
-    onConfirm: (SubscriptionUserAgentMode, String, String) -> Unit,
-) {
-    var selectedMode by remember { mutableStateOf(currentMode) }
-    var customUserAgent by remember { mutableStateOf(currentCustomUserAgent) }
-    var customHeaders by remember { mutableStateOf(currentCustomHeadersText) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Subscription User-Agent") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SubscriptionUserAgentMode.entries.forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { selectedMode = mode }
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = mode == selectedMode,
-                            onClick = { selectedMode = mode },
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(mode.label, style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                mode.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-
-                if (selectedMode == SubscriptionUserAgentMode.CUSTOM) {
-                    OutlinedTextField(
-                        value = customUserAgent,
-                        onValueChange = { customUserAgent = it },
-                        label = { Text("User-Agent") },
-                        placeholder = { Text("e.g. Happ/3.23.0") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = customHeaders,
-                        onValueChange = { customHeaders = it },
-                        label = { Text("Headers") },
-                        minLines = 3,
-                        modifier = Modifier.fillMaxWidth(),
-                        supportingText = { Text("One per line, e.g. X-Hwid: 0123456789abcdef") },
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(selectedMode, customUserAgent, customHeaders) },
-            ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
 }
 
 @Composable
@@ -1055,11 +953,4 @@ private fun notificationFieldSummary(settings: NotificationSettings): String {
         .filter(settings::isFieldEnabled)
         .map(NotificationField::label)
     return if (enabledFields.isEmpty()) "No custom fields selected" else enabledFields.joinToString(" • ")
-}
-
-private fun userAgentSummary(mode: SubscriptionUserAgentMode, customUserAgent: String): String = when (mode) {
-    SubscriptionUserAgentMode.CUSTOM -> customUserAgent.trim().takeIf { it.isNotEmpty() }
-        ?.let { "${mode.label}: $it" }
-        ?: mode.label
-    else -> mode.label
 }

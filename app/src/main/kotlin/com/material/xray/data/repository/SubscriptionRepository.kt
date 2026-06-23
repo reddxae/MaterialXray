@@ -6,6 +6,9 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.FetchedSubscription
 import com.material.xray.data.parser.SubscriptionFetcher
+import com.material.xray.model.SubscriptionRequestIdentity
+import com.material.xray.model.SubscriptionUserAgentMode
+import com.material.xray.model.parseSubscriptionHeaders
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
@@ -29,13 +32,22 @@ class SubscriptionRepository @Inject constructor(
         val serverIdReplacements: Map<Long, Long>,
     )
 
-    suspend fun add(name: String, url: String): Long {
+    suspend fun add(
+        name: String,
+        url: String,
+        userAgentMode: SubscriptionUserAgentMode = SubscriptionUserAgentMode.default,
+        customUserAgent: String = "",
+        customHeaders: String = "",
+    ): Long {
         val trimmedName = name.trim()
         val trimmedUrl = url.trim()
         val id = subscriptionDao.insert(
             SubscriptionEntity(
                 name = trimmedName.ifEmpty { nextFallbackName() },
                 url = trimmedUrl,
+                userAgentMode = userAgentMode.value,
+                customUserAgent = customUserAgent.trim().ifBlank { null },
+                customHeaders = customHeaders.trim().ifBlank { null },
             ),
         )
         refresh(id, trimmedUrl)
@@ -45,7 +57,7 @@ class SubscriptionRepository @Inject constructor(
     suspend fun refresh(subId: Long, url: String): RefreshResult? {
         val existing = subscriptionDao.getById(subId) ?: return null
         val existingServers = serverDao.getBySubscription(subId)
-        val identity = settingsRepository.subscriptionRequestIdentity.first()
+        val identity = existing.requestIdentity(settingsRepository.subscriptionSendHardwareId.first())
         val fetched = fetcher.fetchWithMetadata(url, identity)
         val servers = fetched.configs.mapIndexed { index, config ->
             ServerEntity(
@@ -149,6 +161,13 @@ class SubscriptionRepository @Inject constructor(
         }
         return "Subscription $index"
     }
+
+    private fun SubscriptionEntity.requestIdentity(sendHardwareId: Boolean): SubscriptionRequestIdentity = SubscriptionRequestIdentity(
+        mode = SubscriptionUserAgentMode.fromValue(userAgentMode),
+        sendHardwareId = sendHardwareId,
+        customUserAgent = customUserAgent.orEmpty(),
+        customHeaders = parseSubscriptionHeaders(customHeaders.orEmpty()),
+    )
 
     private fun String?.trimToNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 

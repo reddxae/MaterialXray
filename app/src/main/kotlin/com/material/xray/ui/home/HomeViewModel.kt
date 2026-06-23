@@ -16,6 +16,7 @@ import com.material.xray.data.repository.SubscriptionRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.service.ConnectionStateHolder
@@ -228,8 +229,16 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun addSubscription(name: String, url: String) {
-        viewModelScope.launch { runCatching { subscriptionRepo.add(name, url) } }
+    fun addSubscription(
+        name: String,
+        url: String,
+        userAgentMode: SubscriptionUserAgentMode,
+        customUserAgent: String,
+        customHeaders: String,
+    ) {
+        viewModelScope.launch {
+            runCatching { subscriptionRepo.add(name, url, userAgentMode, customUserAgent, customHeaders) }
+        }
     }
 
     fun deleteSubscription(sub: SubscriptionEntity) {
@@ -241,17 +250,30 @@ class HomeViewModel @Inject constructor(
         name: String,
         url: String,
         autoUpdateIntervalHours: Int,
+        userAgentMode: SubscriptionUserAgentMode,
+        customUserAgent: String,
+        customHeaders: String,
     ) {
         viewModelScope.launch {
             val normalizedIntervalHours = autoUpdateIntervalHours.coerceAtLeast(0)
-            val hasSubscriptionChanges = name.trim() != sub.name || url.trim() != sub.url
+            val normalizedCustomUserAgent = customUserAgent.trim().ifBlank { null }
+            val normalizedCustomHeaders = customHeaders.trim().ifBlank { null }
+            val identityChanged = userAgentMode != SubscriptionUserAgentMode.fromValue(sub.userAgentMode) ||
+                normalizedCustomUserAgent != sub.customUserAgent ||
+                normalizedCustomHeaders != sub.customHeaders
+            val hasSubscriptionChanges = name.trim() != sub.name || url.trim() != sub.url || identityChanged
             val hasIntervalChanges = normalizedIntervalHours != sub.autoUpdateIntervalHours
 
             if (hasSubscriptionChanges) {
                 withRefreshTracking {
                     runCatching {
                         subscriptionRefreshCoordinator.updateSubscription(
-                            sub.copy(autoUpdateIntervalHours = normalizedIntervalHours),
+                            sub.copy(
+                                autoUpdateIntervalHours = normalizedIntervalHours,
+                                userAgentMode = userAgentMode.value,
+                                customUserAgent = normalizedCustomUserAgent,
+                                customHeaders = normalizedCustomHeaders,
+                            ),
                             name,
                             url,
                         )

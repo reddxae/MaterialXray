@@ -35,11 +35,12 @@ data class ServerConfig(
     )
 }
 
-fun ServerConfig.endpointSummary(): String = listOf(
-    protocol.displayName.lowercase(),
-    transport.type.lowercase(),
-    security.type.lowercase(),
-).joinToString(" • ")
+fun ServerConfig.endpointSummary(): String = buildList {
+    add(protocol.displayName.lowercase())
+    add(transport.type.lowercase())
+    add(security.type.lowercase())
+    if (rawConfigJson.isNotBlank()) add("raw")
+}.joinToString(" • ")
 
 internal const val SERVER_EXTRA_XHTTP_EXTRA = "xhttpExtra"
 internal const val SERVER_EXTRA_MLDSA65_VERIFY = "mldsa65Verify"

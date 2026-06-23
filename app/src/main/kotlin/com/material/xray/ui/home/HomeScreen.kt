@@ -61,6 +61,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -106,6 +107,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
@@ -257,8 +259,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     if (showAddDialog) {
         AddSubscriptionDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { name, url ->
-                viewModel.addSubscription(name, url)
+            onConfirm = { name, url, userAgentMode, customUserAgent, customHeaders ->
+                viewModel.addSubscription(name, url, userAgentMode, customUserAgent, customHeaders)
                 showAddDialog = false
             },
         )
@@ -290,8 +292,16 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         EditSubscriptionDialog(
             subscription = subscription,
             onDismiss = { editingSubscription = null },
-            onConfirm = { name, url, autoUpdateIntervalHours ->
-                viewModel.updateSubscription(subscription, name, url, autoUpdateIntervalHours)
+            onConfirm = { name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
+                viewModel.updateSubscription(
+                    subscription,
+                    name,
+                    url,
+                    autoUpdateIntervalHours,
+                    userAgentMode,
+                    customUserAgent,
+                    customHeaders,
+                )
                 editingSubscription = null
             },
         )
@@ -1272,16 +1282,28 @@ private fun AutoUpdateIntervalIndicator(selected: Boolean) {
 private fun EditSubscriptionDialog(
     subscription: SubscriptionEntity,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Int) -> Unit,
+    onConfirm: (String, String, Int, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
     var name by remember(subscription.id) { mutableStateOf(subscription.name) }
     var url by remember(subscription.id) { mutableStateOf(subscription.url) }
     var autoUpdateIntervalHours by remember(subscription.id) {
         mutableStateOf(subscription.autoUpdateIntervalHours)
     }
+    var userAgentMode by remember(subscription.id) {
+        mutableStateOf(SubscriptionUserAgentMode.fromValue(subscription.userAgentMode))
+    }
+    var customUserAgent by remember(subscription.id) {
+        mutableStateOf(subscription.customUserAgent.orEmpty())
+    }
+    var customHeaders by remember(subscription.id) {
+        mutableStateOf(subscription.customHeaders.orEmpty())
+    }
     val hasChanges = name.trim() != subscription.name ||
         url.trim() != subscription.url ||
-        autoUpdateIntervalHours != subscription.autoUpdateIntervalHours
+        autoUpdateIntervalHours != subscription.autoUpdateIntervalHours ||
+        userAgentMode != SubscriptionUserAgentMode.fromValue(subscription.userAgentMode) ||
+        customUserAgent.trim().ifBlank { null } != subscription.customUserAgent ||
+        customHeaders.trim().ifBlank { null } != subscription.customHeaders
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1319,11 +1341,22 @@ private fun EditSubscriptionDialog(
                         onSelected = { autoUpdateIntervalHours = option.intervalHours },
                     )
                 }
+                Spacer(modifier = Modifier.height(16.dp))
+                SubscriptionUserAgentSection(
+                    selectedMode = userAgentMode,
+                    customUserAgent = customUserAgent,
+                    customHeaders = customHeaders,
+                    onModeChange = { userAgentMode = it },
+                    onCustomUserAgentChange = { customUserAgent = it },
+                    onCustomHeadersChange = { customHeaders = it },
+                )
             }
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(name.trim(), url.trim(), autoUpdateIntervalHours) },
+                onClick = {
+                    onConfirm(name.trim(), url.trim(), autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
+                },
                 enabled = url.isNotBlank() && hasChanges,
             ) {
                 Text("Save")
@@ -1334,15 +1367,23 @@ private fun EditSubscriptionDialog(
 }
 
 @Composable
-private fun AddSubscriptionDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
+private fun AddSubscriptionDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, SubscriptionUserAgentMode, String, String) -> Unit,
+) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+    var userAgentMode by remember { mutableStateOf(SubscriptionUserAgentMode.default) }
+    var customUserAgent by remember { mutableStateOf("") }
+    var customHeaders by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Subscription") },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -1359,11 +1400,20 @@ private fun AddSubscriptionDialog(onDismiss: () -> Unit, onConfirm: (String, Str
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                SubscriptionUserAgentSection(
+                    selectedMode = userAgentMode,
+                    customUserAgent = customUserAgent,
+                    customHeaders = customHeaders,
+                    onModeChange = { userAgentMode = it },
+                    onCustomUserAgentChange = { customUserAgent = it },
+                    onCustomHeadersChange = { customHeaders = it },
+                )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name.trim(), url.trim()) },
+                onClick = { onConfirm(name.trim(), url.trim(), userAgentMode, customUserAgent, customHeaders) },
                 enabled = url.isNotBlank(),
             ) {
                 Text("Add")
@@ -1371,4 +1421,64 @@ private fun AddSubscriptionDialog(onDismiss: () -> Unit, onConfirm: (String, Str
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun SubscriptionUserAgentSection(
+    selectedMode: SubscriptionUserAgentMode,
+    customUserAgent: String,
+    customHeaders: String,
+    onModeChange: (SubscriptionUserAgentMode) -> Unit,
+    onCustomUserAgentChange: (String) -> Unit,
+    onCustomHeadersChange: (String) -> Unit,
+) {
+    Text(
+        text = "User-Agent",
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+    )
+    SubscriptionUserAgentMode.entries.forEach { mode ->
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectable(
+                    selected = mode == selectedMode,
+                    role = Role.RadioButton,
+                    onClick = { onModeChange(mode) },
+                )
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(selected = mode == selectedMode, onClick = { onModeChange(mode) })
+            Column(modifier = Modifier.weight(1f)) {
+                Text(mode.label, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    mode.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+    if (selectedMode == SubscriptionUserAgentMode.CUSTOM) {
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = customUserAgent,
+            onValueChange = onCustomUserAgentChange,
+            label = { Text("User-Agent") },
+            placeholder = { Text("e.g. Happ/3.23.0") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = customHeaders,
+            onValueChange = onCustomHeadersChange,
+            label = { Text("Headers") },
+            minLines = 3,
+            modifier = Modifier.fillMaxWidth(),
+            supportingText = { Text("One per line, e.g. X-Hwid: 0123456789abcdef") },
+        )
+    }
 }

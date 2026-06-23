@@ -16,6 +16,9 @@ data class BackupData(
         val url: String,
         val autoUpdateIntervalHours: Int = 1,
         val descriptionHidden: Boolean = false,
+        val userAgentMode: String? = null,
+        val customUserAgent: String? = null,
+        val customHeaders: String? = null,
         val metadata: SubscriptionMetadata? = null,
     )
 

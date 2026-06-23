@@ -24,7 +24,6 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationStyle
-import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.service.ConnectionStateHolder
@@ -119,25 +118,10 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         com.material.xray.model.NotificationSettings(),
     )
-    val subscriptionUserAgentMode = settingsRepo.subscriptionUserAgentMode.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        SubscriptionUserAgentMode.default,
-    )
     val subscriptionSendHardwareId = settingsRepo.subscriptionSendHardwareId.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         true,
-    )
-    val subscriptionCustomUserAgent = settingsRepo.subscriptionCustomUserAgent.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        "",
-    )
-    val subscriptionCustomHeadersText = settingsRepo.subscriptionCustomHeadersText.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        "",
     )
     val geoipUrl = settingsRepo.geoipUrl.stateIn(
         viewModelScope,
@@ -256,13 +240,6 @@ class SettingsViewModel @Inject constructor(
     fun setSubscriptionSendHardwareId(enabled: Boolean) = viewModelScope.launch {
         settingsRepo.setSubscriptionSendHardwareId(enabled)
     }
-    fun setSubscriptionUserAgent(
-        mode: SubscriptionUserAgentMode,
-        customUserAgent: String,
-        customHeadersText: String,
-    ) = viewModelScope.launch {
-        settingsRepo.setSubscriptionUserAgent(mode, customUserAgent, customHeadersText)
-    }
 
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }
     fun setGeositeUrl(url: String) = viewModelScope.launch { settingsRepo.setGeositeUrl(url) }
@@ -304,6 +281,9 @@ class SettingsViewModel @Inject constructor(
                             url = sub.url,
                             autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
                             descriptionHidden = sub.descriptionHidden,
+                            userAgentMode = sub.userAgentMode,
+                            customUserAgent = sub.customUserAgent,
+                            customHeaders = sub.customHeaders,
                             metadata = sub.toSubscriptionMetadata(),
                         )
                     },
@@ -337,6 +317,9 @@ class SettingsViewModel @Inject constructor(
                             url = sub.url,
                             autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
                             descriptionHidden = sub.descriptionHidden,
+                            userAgentMode = sub.userAgentMode,
+                            customUserAgent = sub.customUserAgent,
+                            customHeaders = sub.customHeaders,
                         ).withSubscriptionMetadata(sub.metadata),
                     )
                 }

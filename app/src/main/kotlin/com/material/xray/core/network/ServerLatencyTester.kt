@@ -177,7 +177,20 @@ class ServerLatencyTester @Inject constructor(
             put(
                 "outbounds",
                 buildJsonArray {
-                    add(buildProxyOutbound(server, fwmark = 0, physicalInterface = null, tag = "proxy", allowIpv6 = allowIpv6))
+                    add(
+                        buildProxyOutbound(
+                            server = server,
+                            fwmark = 0,
+                            physicalInterface = null,
+                            tag = "proxy",
+                            allowIpv6 = allowIpv6,
+                            // The probe runs as a standalone process outside the TUN, so let the
+                            // proxy outbound resolve its server hostname via the system resolver.
+                            // Raw JSON configs keep their hostname (they are not pre-resolved), and
+                            // the minimal probe config has no DNS egress for Xray-internal lookups.
+                            domainStrategyOverride = "AsIs",
+                        ),
+                    )
                 },
             )
             put(

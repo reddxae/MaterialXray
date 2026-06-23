@@ -172,6 +172,42 @@ class XrayConfigOutboundsTest {
     }
 
     @Test
+    fun `buildProxyOutbound applies domain strategy override to raw proxy sockopt`() {
+        val outbound = buildProxyOutbound(
+            server = server("Raw").copy(
+                rawConfigJson = """
+                    {
+                      "outbounds": [
+                        {"protocol":"vless","tag":"proxy","settings":{},"streamSettings":{}}
+                      ]
+                    }
+                """.trimIndent(),
+            ),
+            fwmark = 0,
+            physicalInterface = null,
+            tag = "proxy",
+            domainStrategyOverride = "AsIs",
+        )
+
+        val sockopt = outbound.getValue("streamSettings").jsonObject.getValue("sockopt").jsonObject
+        assertEquals("AsIs", sockopt.getValue("domainStrategy").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `buildProxyOutbound applies domain strategy override to generated proxy sockopt`() {
+        val outbound = buildProxyOutbound(
+            server = server("Generated"),
+            fwmark = 0,
+            physicalInterface = null,
+            tag = "proxy",
+            domainStrategyOverride = "AsIs",
+        )
+
+        val sockopt = outbound.getValue("streamSettings").jsonObject.getValue("sockopt").jsonObject
+        assertEquals("AsIs", sockopt.getValue("domainStrategy").jsonPrimitive.content)
+    }
+
+    @Test
     fun `buildProxyOutbound creates Hysteria2 outbound settings and transport`() {
         val outbound = buildProxyOutbound(
             server = ServerConfig(

@@ -67,16 +67,17 @@ internal fun buildProxyOutbound(
     physicalInterface: String?,
     tag: String,
     allowIpv6: Boolean = false,
+    domainStrategyOverride: String? = null,
 ): JsonObject {
     if (server.rawConfigJson.isNotBlank()) {
-        return buildRawProxyOutbound(server.rawConfigJson, fwmark, physicalInterface, tag, allowIpv6)
+        return buildRawProxyOutbound(server.rawConfigJson, fwmark, physicalInterface, tag, allowIpv6, domainStrategyOverride)
     }
 
     return buildJsonObject {
         put("tag", tag)
         put("protocol", server.protocol.scheme)
         put("settings", buildOutboundSettings(server))
-        put("streamSettings", buildStreamSettings(server, fwmark, physicalInterface, allowIpv6))
+        put("streamSettings", buildStreamSettings(server, fwmark, physicalInterface, allowIpv6, domainStrategyOverride))
     }
 }
 
@@ -129,11 +130,16 @@ internal fun buildCoreOutbounds(
     }
 }
 
-internal fun buildSockopt(fwmark: Int, physicalInterface: String?, allowIpv6: Boolean = false) = buildJsonObject {
+internal fun buildSockopt(
+    fwmark: Int,
+    physicalInterface: String?,
+    allowIpv6: Boolean = false,
+    domainStrategyOverride: String? = null,
+) = buildJsonObject {
     if (fwmark > 0) {
         put("mark", fwmark)
     }
-    put("domainStrategy", if (allowIpv6) "UseIP" else "UseIPv4")
+    put("domainStrategy", domainStrategyOverride ?: if (allowIpv6) "UseIP" else "UseIPv4")
     if (!physicalInterface.isNullOrBlank()) {
         put("interface", physicalInterface)
     }
@@ -145,6 +151,7 @@ private fun buildRawProxyOutbound(
     physicalInterface: String?,
     tag: String,
     allowIpv6: Boolean,
+    domainStrategyOverride: String? = null,
 ): JsonObject {
     val rawObject = Json.parseToJsonElement(rawJson).jsonObject
     val outbounds = rawObject["outbounds"]?.jsonArray?.mapNotNull { it as? JsonObject }.orEmpty()
@@ -157,7 +164,7 @@ private fun buildRawProxyOutbound(
 
     val outbound = candidate.toMutableMap()
     val stream = (outbound["streamSettings"] as? JsonObject)?.toMutableMap() ?: mutableMapOf()
-    stream["sockopt"] = buildSockopt(fwmark, physicalInterface, allowIpv6)
+    stream["sockopt"] = buildSockopt(fwmark, physicalInterface, allowIpv6, domainStrategyOverride)
     outbound["tag"] = JsonPrimitive(tag)
     outbound["streamSettings"] = JsonObject(stream)
     return JsonObject(outbound)
@@ -261,10 +268,11 @@ private fun buildStreamSettings(
     fwmark: Int,
     physicalInterface: String?,
     allowIpv6: Boolean,
+    domainStrategyOverride: String? = null,
 ) = buildJsonObject {
     put("network", server.transport.type)
     put("security", server.security.type)
-    put("sockopt", buildSockopt(fwmark, physicalInterface, allowIpv6))
+    put("sockopt", buildSockopt(fwmark, physicalInterface, allowIpv6, domainStrategyOverride))
     putSecuritySettings(server)
     putTransportSettings(server)
 }

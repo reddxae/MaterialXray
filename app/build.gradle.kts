@@ -51,6 +51,7 @@ val grpcVersion = libsCatalog.findVersion("grpc").get().requiredVersion
 android {
     namespace = "com.material.xray"
     compileSdk = 37
+    compileSdkMinor = 0
 
     defaultConfig {
         applicationId = "com.material.xray"

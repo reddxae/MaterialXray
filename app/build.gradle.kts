@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.protobuf)
+    id("dev.detekt") version("2.0.0-alpha.5")
 }
 
 val localProperties = Properties().apply {
@@ -101,6 +102,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(rootProject.files("config/detekt/detekt.yml"))
+    basePath.set(rootDir)
 }
 
 protobuf {

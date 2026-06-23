@@ -37,13 +37,23 @@ import com.material.xray.model.NotificationStyle
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -381,28 +391,33 @@ class XrayService : VpnService() {
         stopProcessWatchdog()
         processWatchdogPid = state.corePid
         processWatchdogJob = scope.launch(Dispatchers.IO) {
-            while (isActive) {
+            var keepWatching = true
+            while (isActive && keepWatching) {
                 delay(PROCESS_WATCHDOG_INTERVAL_MS)
-
-                val currentState = connectionStateHolder.state.value as? ConnectionState.Connected ?: break
-                val pid = currentState.corePid
-                if (!connectionManager.isProcessAlive(pid)) {
-                    recoverNativeProcess(
-                        reason = "xray process $pid exited unexpectedly; reconnecting...",
-                    )
-                    break
-                }
-
-                val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid) ?: continue
-                if (residentMemoryMb > MAX_XRAY_PROCESS_MEMORY_MB) {
-                    recoverNativeProcess(
-                        reason = "xray process $pid exceeded ${MAX_XRAY_PROCESS_MEMORY_MB} MiB RSS (${residentMemoryMb} MiB); restarting...",
-                        pidToKill = pid,
-                    )
-                    break
-                }
+                keepWatching = checkXrayProcessHealth()
             }
         }
+    }
+
+    private suspend fun checkXrayProcessHealth(): Boolean {
+        val currentState = connectionStateHolder.state.value as? ConnectionState.Connected ?: return false
+        val pid = currentState.corePid
+        if (!connectionManager.isProcessAlive(pid)) {
+            recoverNativeProcess(
+                reason = "xray process $pid exited unexpectedly; reconnecting...",
+            )
+            return false
+        }
+
+        val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid) ?: return true
+        if (residentMemoryMb > MAX_XRAY_PROCESS_MEMORY_MB) {
+            recoverNativeProcess(
+                reason = "xray process $pid exceeded ${MAX_XRAY_PROCESS_MEMORY_MB} MiB RSS (${residentMemoryMb} MiB); restarting...",
+                pidToKill = pid,
+            )
+            return false
+        }
+        return true
     }
 
     private fun stopProcessWatchdog() {
@@ -530,7 +545,7 @@ class XrayService : VpnService() {
 
     private fun registerNetworkCallback() {
         val connectivityManager = getSystemService(ConnectivityManager::class.java)
-        registerNetworkWatcher(connectivityManager, "default") { callback ->
+        registerNetworkWatcher("default") { callback ->
             connectivityManager.registerDefaultNetworkCallback(callback)
         }
 
@@ -538,13 +553,12 @@ class XrayService : VpnService() {
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
-        registerNetworkWatcher(connectivityManager, "physical") { callback ->
+        registerNetworkWatcher("physical") { callback ->
             connectivityManager.registerNetworkCallback(physicalNetworkRequest, callback)
         }
     }
 
     private fun registerNetworkWatcher(
-        connectivityManager: ConnectivityManager,
         source: String,
         register: (ConnectivityManager.NetworkCallback) -> Unit,
     ) {

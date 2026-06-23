@@ -61,20 +61,10 @@ internal class AppRoutingPlanner(
             .toSet()
         val routeProfileIds = (appSnapshot.profileIds + assignmentUids.map(::profileIdForUid)).ifEmpty { setOf(0) }
 
-        val directUids = assignmentsWithUid
-            .filter { it.route.mode == AppRouteMode.Direct || it.route.mode == AppRouteMode.Bypass }
-            .map { it.uid }
-            .filter { it > 0 }
-            .toSet()
+        val directUids = assignmentsWithUid.directUids()
 
         if (!includeTunRoutes) {
-            return AppRoutingPlan(
-                directUids = directUids,
-                proxyRoutes = emptyList(),
-                tunRoutes = emptyList(),
-                proxyServerIds = emptyList(),
-                routeProfileIds = routeProfileIds,
-            )
+            return emptyPlan(directUids, routeProfileIds)
         }
 
         val defaultProxyUids = assignmentsWithUid
@@ -83,35 +73,188 @@ internal class AppRoutingPlanner(
             .filter { it > 0 }
             .toSet() + defaultSelectedUidsForUnassignedApps(appSnapshot.apps.map { it.uid }, assignmentUids)
 
-        val proxyAssignments = assignmentsWithUid
-            .filter { it.uid > 0 && it.route.mode == AppRouteMode.Server && it.route.serverId != null }
-            .groupBy { requireNotNull(it.route.serverId) }
-            .toSortedMap()
+        val proxyAssignments = assignmentsWithUid.proxyAssignments()
 
         if (defaultProxyUids.isEmpty() && proxyAssignments.isEmpty()) {
-            return AppRoutingPlan(
-                directUids = directUids,
-                proxyRoutes = emptyList(),
-                tunRoutes = emptyList(),
-                proxyServerIds = emptyList(),
-                routeProfileIds = routeProfileIds,
-            )
+            return emptyPlan(directUids, routeProfileIds)
         }
 
-        val routeGroupCount = proxyAssignments.size + if (defaultProxyUids.isNotEmpty()) 1 else 0
-        if (routeGroupCount > MAX_APP_PROXY_ROUTES) {
+        return buildProxyRoutingPlan(
+            directUids = directUids,
+            routeProfileIds = routeProfileIds,
+            baseTunName = baseTunName,
+            baseRouteTable = baseRouteTable,
+            includeProxyRoutes = includeProxyRoutes,
+            defaultProxyServer = defaultProxyServer,
+            defaultProxyUids = defaultProxyUids,
+            proxyAssignments = proxyAssignments,
+            allowIpv6 = allowIpv6,
+        )
+    }
+
+    private suspend fun buildProxyRoutingPlan(
+        directUids: Set<Int>,
+        routeProfileIds: Set<Int>,
+        baseTunName: String,
+        baseRouteTable: Int,
+        includeProxyRoutes: Boolean,
+        defaultProxyServer: ServerConfig?,
+        defaultProxyUids: Set<Int>,
+        proxyAssignments: Map<Long, List<RoutedAppAssignment>>,
+        allowIpv6: Boolean,
+    ): AppRoutingPlan {
+        val routeBuilder = AppProxyRouteBuilder(baseTunName, baseRouteTable)
+
+        if (defaultProxyUids.isNotEmpty()) {
+            addDefaultProxyRoute(routeBuilder, defaultProxyUids, includeProxyRoutes, defaultProxyServer)
+        }
+
+        var routeCapReached = false
+        for ((serverId, assignments) in proxyAssignments) {
+            if (routeBuilder.tunRouteCount >= MAX_APP_PROXY_ROUTES) {
+                routeCapReached = true
+                break
+            }
+            addServerProxyRoute(routeBuilder, serverId, assignments, includeProxyRoutes, allowIpv6)
+        }
+        if (routeCapReached) {
             log.append(
                 LogSource.APP,
                 "Only the first $MAX_APP_PROXY_ROUTES app proxy server groups can be active at once; extra groups are ignored",
             )
         }
 
+        return AppRoutingPlan(
+            directUids = directUids,
+            proxyRoutes = routeBuilder.proxyRoutes,
+            tunRoutes = routeBuilder.tunRoutes,
+            proxyServerIds = routeBuilder.proxyServerIds,
+            routeProfileIds = routeProfileIds,
+        )
+    }
+
+    private fun addDefaultProxyRoute(
+        routeBuilder: AppProxyRouteBuilder,
+        defaultProxyUids: Set<Int>,
+        includeProxyRoutes: Boolean,
+        defaultProxyServer: ServerConfig?,
+    ) {
+        val routeTunName = routeBuilder.addTunRoute(DEFAULT_SELECTED_CONFIG_ROUTE_ID, defaultProxyUids)
+        if (!includeProxyRoutes) return
+
+        val activeServer = defaultProxyServer
+        if (activeServer == null) {
+            log.append(LogSource.APP, "Skipping default selected config app route: active server is not ready")
+            routeBuilder.removeLastTunRoute()
+            return
+        }
+
+        routeBuilder.proxyRoutes += AppProxyRoute(
+            inboundTag = DEFAULT_SELECTED_CONFIG_INBOUND_TAG,
+            tunName = routeTunName,
+            outboundTag = DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG,
+            server = activeServer,
+            applyRoutingRules = true,
+        )
+    }
+
+    private suspend fun addServerProxyRoute(
+        routeBuilder: AppProxyRouteBuilder,
+        serverId: Long,
+        assignments: List<RoutedAppAssignment>,
+        includeProxyRoutes: Boolean,
+        allowIpv6: Boolean,
+    ) {
+        val uids = assignments.map { it.uid }.filter { it > 0 }.toSet()
+        if (uids.isEmpty()) return
+        val routeTunName = routeBuilder.addTunRoute(serverId, uids)
+
+        if (!includeProxyRoutes) return
+
+        val serverEntity = serverRepository.getById(serverId)
+        if (serverEntity == null) {
+            log.append(LogSource.APP, "Skipping app route for missing server id=$serverId")
+            routeBuilder.removeLastTunRoute()
+            return
+        }
+
+        val parsedServerResult = runCatching { serverRepository.parseConfig(serverEntity) }
+        if (parsedServerResult.isFailure) {
+            log.append(
+                LogSource.APP,
+                "Skipping app route for ${serverEntity.name}: ${parsedServerResult.exceptionOrNull()?.message}",
+            )
+            routeBuilder.removeLastTunRoute()
+            return
+        }
+
+        routeBuilder.proxyRoutes += buildServerProxyRoute(
+            serverId = serverId,
+            routeTunName = routeTunName,
+            parsedServer = parsedServerResult.getOrThrow(),
+            allowIpv6 = allowIpv6,
+        )
+    }
+
+    private suspend fun buildServerProxyRoute(
+        serverId: Long,
+        routeTunName: String,
+        parsedServer: ServerConfig,
+        allowIpv6: Boolean,
+    ): AppProxyRoute {
+        val routedServer = if (parsedServer.rawConfigJson.isNotBlank()) {
+            log.append(LogSource.APP, "Using raw outbound from ${parsedServer.name} for app routing")
+            parsedServer
+        } else {
+            val resolvedServer = serverAddressResolver.resolve(parsedServer, allowIpv6)
+            if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
+                error("Could not resolve ${parsedServer.address} for app route ${parsedServer.name}")
+            }
+            resolvedServer.server
+        }
+
+        return AppProxyRoute(
+            inboundTag = "app-in-$serverId",
+            tunName = routeTunName,
+            outboundTag = "app-proxy-$serverId",
+            server = routedServer,
+        )
+    }
+
+    private fun emptyPlan(directUids: Set<Int>, routeProfileIds: Set<Int>): AppRoutingPlan = AppRoutingPlan(
+        directUids = directUids,
+        proxyRoutes = emptyList(),
+        tunRoutes = emptyList(),
+        proxyServerIds = emptyList(),
+        routeProfileIds = routeProfileIds,
+    )
+
+    private fun List<RoutedAppAssignment>.directUids(): Set<Int> = filter {
+        it.route.mode == AppRouteMode.Direct || it.route.mode == AppRouteMode.Bypass
+    }
+        .map { it.uid }
+        .filter { it > 0 }
+        .toSet()
+
+    private fun List<RoutedAppAssignment>.proxyAssignments(): Map<Long, List<RoutedAppAssignment>> = filter {
+        it.uid > 0 && it.route.mode == AppRouteMode.Server && it.route.serverId != null
+    }
+        .groupBy { requireNotNull(it.route.serverId) }
+        .toSortedMap()
+
+    private class AppProxyRouteBuilder(
+        private val baseTunName: String,
+        private val baseRouteTable: Int,
+    ) {
         val proxyRoutes = mutableListOf<AppProxyRoute>()
         val tunRoutes = mutableListOf<TunManager.AppTunRoute>()
         val proxyServerIds = mutableListOf<Long>()
 
-        fun <T> MutableList<T>.removeLastItem() {
-            if (isNotEmpty()) removeAt(lastIndex)
+        val tunRouteCount: Int get() = tunRoutes.size
+
+        fun removeLastTunRoute() {
+            proxyServerIds.removeLastItem()
+            tunRoutes.removeLastItem()
         }
 
         fun addTunRoute(routeKey: Long, uids: Set<Int>): String {
@@ -126,83 +269,9 @@ internal class AppRoutingPlanner(
             return routeTunName
         }
 
-        if (defaultProxyUids.isNotEmpty()) {
-            val routeTunName = addTunRoute(DEFAULT_SELECTED_CONFIG_ROUTE_ID, defaultProxyUids)
-            if (includeProxyRoutes) {
-                val activeServer = defaultProxyServer
-                if (activeServer == null) {
-                    log.append(LogSource.APP, "Skipping default selected config app route: active server is not ready")
-                    proxyServerIds.removeLastItem()
-                    tunRoutes.removeLastItem()
-                } else {
-                    proxyRoutes += AppProxyRoute(
-                        inboundTag = DEFAULT_SELECTED_CONFIG_INBOUND_TAG,
-                        tunName = routeTunName,
-                        outboundTag = DEFAULT_SELECTED_CONFIG_OUTBOUND_TAG,
-                        server = activeServer,
-                        applyRoutingRules = true,
-                    )
-                }
-            }
+        private fun <T> MutableList<T>.removeLastItem() {
+            if (isNotEmpty()) removeAt(lastIndex)
         }
-
-        proxyAssignments.entries.take(MAX_APP_PROXY_ROUTES - tunRoutes.size).forEach { (serverId, assignments) ->
-            val uids = assignments.map { it.uid }.filter { it > 0 }.toSet()
-            if (uids.isEmpty()) return@forEach
-            val routeTunName = addTunRoute(serverId, uids)
-
-            if (!includeProxyRoutes) {
-                return@forEach
-            }
-
-            val serverEntity = serverRepository.getById(serverId)
-            if (serverEntity == null) {
-                log.append(LogSource.APP, "Skipping app route for missing server id=$serverId")
-                proxyServerIds.removeLastItem()
-                tunRoutes.removeLastItem()
-                return@forEach
-            }
-
-            val parsedServerResult = runCatching { serverRepository.parseConfig(serverEntity) }
-            if (parsedServerResult.isFailure) {
-                log.append(
-                    LogSource.APP,
-                    "Skipping app route for ${serverEntity.name}: ${parsedServerResult.exceptionOrNull()?.message}",
-                )
-                proxyServerIds.removeLastItem()
-                tunRoutes.removeLastItem()
-                return@forEach
-            }
-            val parsedServer = parsedServerResult.getOrThrow()
-
-            val routedServer = if (parsedServer.rawConfigJson.isNotBlank()) {
-                log.append(LogSource.APP, "Using raw outbound from ${parsedServer.name} for app routing")
-                parsedServer
-            } else {
-                val resolvedServer = serverAddressResolver.resolve(parsedServer, allowIpv6)
-                if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
-                    error("Could not resolve ${parsedServer.address} for app route ${parsedServer.name}")
-                }
-                resolvedServer.server
-            }
-
-            val inboundTag = "app-in-$serverId"
-            val outboundTag = "app-proxy-$serverId"
-            proxyRoutes += AppProxyRoute(
-                inboundTag = inboundTag,
-                tunName = routeTunName,
-                outboundTag = outboundTag,
-                server = routedServer,
-            )
-        }
-
-        return AppRoutingPlan(
-            directUids = directUids,
-            proxyRoutes = proxyRoutes,
-            tunRoutes = tunRoutes,
-            proxyServerIds = proxyServerIds,
-            routeProfileIds = routeProfileIds,
-        )
     }
 
     private fun defaultSelectedUidsForUnassignedApps(

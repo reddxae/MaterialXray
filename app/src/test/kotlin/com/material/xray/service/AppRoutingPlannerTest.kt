@@ -123,6 +123,77 @@ class AppRoutingPlannerTest {
         assertTrue(plan.proxyRoutes.isEmpty())
     }
 
+    @Test
+    fun `missing server route does not consume proxy route cap`() = runTest {
+        val validServerIds = 2L..65L
+        val planner = AppRoutingPlanner(
+            appBypassDao = FakeAppBypassDao(
+                listOf(assignment("missing.server", uid = 1001, excluded = false, serverId = 1L)) +
+                    validServerIds.map { id ->
+                        assignment("server.$id", uid = 1000 + id.toInt(), excluded = false, serverId = id)
+                    }
+            ),
+            serverRepository = ServerRepository(
+                FakeServerDao(
+                    servers = validServerIds.map { id -> serverEntity(id, server("Server $id", "203.0.113.$id")) }
+                )
+            ),
+            appInventory = FakeAppInventory(
+                apps = listOf(app("missing.server", uid = 1001)) +
+                    validServerIds.map { id -> app("server.$id", uid = 1000 + id.toInt()) }
+            ),
+            serverAddressResolver = ServerAddressResolver(),
+            log = LogBuffer(),
+        )
+
+        val plan = planner.build(
+            baseTunName = BASE_TUN,
+            baseRouteTable = BASE_TABLE,
+            includeProxyRoutes = true,
+        )
+
+        assertEquals(validServerIds.toList(), plan.proxyServerIds)
+        assertEquals(64, plan.tunRoutes.size)
+        assertEquals(64, plan.proxyRoutes.size)
+    }
+
+    @Test
+    fun `default selected route occupies one proxy route cap slot`() = runTest {
+        val serverIds = 1L..64L
+        val defaultServer = server("Default", "198.51.100.1")
+        val planner = AppRoutingPlanner(
+            appBypassDao = FakeAppBypassDao(
+                listOf(assignment("default.selected", uid = 1001, excluded = false, routeMode = "default_selected")) +
+                    serverIds.map { id ->
+                        assignment("server.$id", uid = 2000 + id.toInt(), excluded = false, serverId = id)
+                    }
+            ),
+            serverRepository = ServerRepository(
+                FakeServerDao(
+                    servers = serverIds.map { id -> serverEntity(id, server("Server $id", "203.0.113.$id")) }
+                )
+            ),
+            appInventory = FakeAppInventory(
+                apps = listOf(app("default.selected", uid = 1001)) +
+                    serverIds.map { id -> app("server.$id", uid = 2000 + id.toInt()) }
+            ),
+            serverAddressResolver = ServerAddressResolver(),
+            log = LogBuffer(),
+        )
+
+        val plan = planner.build(
+            baseTunName = BASE_TUN,
+            baseRouteTable = BASE_TABLE,
+            includeProxyRoutes = true,
+            defaultProxyServer = defaultServer,
+        )
+
+        assertEquals(listOf(Long.MIN_VALUE) + (1L..63L).toList(), plan.proxyServerIds)
+        assertEquals(64, plan.tunRoutes.size)
+        assertEquals(64, plan.proxyRoutes.size)
+        assertTrue(plan.proxyRoutes.none { it.inboundTag == "app-in-64" })
+    }
+
     private class FakeAppBypassDao(
         private val assignments: List<AppBypassEntity>,
     ) : AppBypassDao {
@@ -143,12 +214,13 @@ class AppRoutingPlannerTest {
     }
 
     private class FakeServerDao(
-        private val server: ServerEntity? = null,
+        server: ServerEntity? = null,
+        private val servers: List<ServerEntity> = server?.let(::listOf).orEmpty(),
     ) : ServerDao {
-        override fun observeAll(): Flow<List<ServerEntity>> = flowOf(server?.let(::listOf).orEmpty())
+        override fun observeAll(): Flow<List<ServerEntity>> = flowOf(servers)
         override fun observeBySubscription(subId: Long): Flow<List<ServerEntity>> = observeAll()
-        override suspend fun getBySubscription(subId: Long): List<ServerEntity> = server?.let(::listOf).orEmpty()
-        override suspend fun getById(id: Long): ServerEntity? = server?.takeIf { it.id == id }
+        override suspend fun getBySubscription(subId: Long): List<ServerEntity> = servers
+        override suspend fun getById(id: Long): ServerEntity? = servers.firstOrNull { it.id == id }
         override suspend fun insertAll(servers: List<ServerEntity>): List<Long> = servers.map { it.id }
         override suspend fun deleteBySubscription(subId: Long) = Unit
         override suspend fun updateLatency(id: Long, latency: Int) = Unit
@@ -201,6 +273,16 @@ class AppRoutingPlannerTest {
             password = "uuid",
             transport = ServerConfig.Transport(type = "tcp"),
             security = ServerConfig.Security(type = "none"),
+        )
+
+        fun serverEntity(id: Long, config: ServerConfig) = ServerEntity(
+            id = id,
+            subscriptionId = 1,
+            name = config.name,
+            protocol = config.protocol.name,
+            address = config.address,
+            port = config.port,
+            configJson = Json.encodeToString(config),
         )
     }
 }

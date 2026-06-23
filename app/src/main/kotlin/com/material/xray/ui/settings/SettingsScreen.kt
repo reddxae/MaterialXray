@@ -140,11 +140,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val hasLatencyCheckUrlChanges by remember(editingLatencyCheckUrl, latencyCheckUrl) {
         derivedStateOf { editingLatencyCheckUrl.trim() != latencyCheckUrl }
     }
-    val xrayCoreVersionText = when (xrayCoreVersion) {
-        null -> "xray-core version detecting..."
-        "unknown" -> "xray-core version unknown"
-        else -> "xray-core v$xrayCoreVersion"
-    }
+    val xrayCoreVersionText = xrayCoreVersionText(xrayCoreVersion)
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -366,19 +362,13 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             HorizontalDivider()
             Text("Network", style = MaterialTheme.typography.titleMedium)
 
-            if (rootServiceActive) {
-                OutlinedTextField(
-                    value = editingTunName,
-                    onValueChange = { editingTunName = it },
-                    label = { Text("TUN Interface Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Default: xray0") },
-                )
-                if (hasTunNameChanges) {
-                    Button(onClick = { viewModel.setTunName(editingTunName) }) { Text("Save") }
-                }
-            }
+            RootTunNameSetting(
+                visible = rootServiceActive,
+                editingTunName = editingTunName,
+                hasTunNameChanges = hasTunNameChanges,
+                onEditingTunNameChange = { editingTunName = it },
+                onSave = { viewModel.setTunName(editingTunName) },
+            )
 
             if (showAdvancedOptions) {
                 ExposedDropdownMenuBox(
@@ -565,12 +555,45 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         }
     }
 
+    SettingsDialogs(
+        showRootAccessDeniedDialog = showRootAccessDeniedDialog,
+        showNotificationFieldsDialog = showNotificationFieldsDialog,
+        showUpdateFrequencyDialog = showUpdateFrequencyDialog,
+        showFieldStyleDialog = showFieldStyleDialog,
+        notificationSettings = notificationSettings,
+        onDismissRootAccessDenied = { showRootAccessDeniedDialog = false },
+        onDismissNotificationFields = { showNotificationFieldsDialog = false },
+        onDismissUpdateFrequency = { showUpdateFrequencyDialog = false },
+        onDismissFieldStyle = { showFieldStyleDialog = false },
+        onFieldEnabledChange = viewModel::setNotificationFieldEnabled,
+        onReorderFields = viewModel::setNotificationFieldOrder,
+        onUpdateFrequency = viewModel::setNotificationUpdateIntervalMs,
+        onSelectFieldStyle = viewModel::setNotificationStyle,
+    )
+}
+
+@Composable
+private fun SettingsDialogs(
+    showRootAccessDeniedDialog: Boolean,
+    showNotificationFieldsDialog: Boolean,
+    showUpdateFrequencyDialog: Boolean,
+    showFieldStyleDialog: Boolean,
+    notificationSettings: NotificationSettings,
+    onDismissRootAccessDenied: () -> Unit,
+    onDismissNotificationFields: () -> Unit,
+    onDismissUpdateFrequency: () -> Unit,
+    onDismissFieldStyle: () -> Unit,
+    onFieldEnabledChange: (NotificationField, Boolean) -> Unit,
+    onReorderFields: (List<NotificationField>) -> Unit,
+    onUpdateFrequency: (Int) -> Unit,
+    onSelectFieldStyle: (NotificationStyle) -> Unit,
+) {
     if (showRootAccessDeniedDialog) {
         AlertDialog(
-            onDismissRequest = { showRootAccessDeniedDialog = false },
+            onDismissRequest = onDismissRootAccessDenied,
             text = { Text("Unable to access root on device") },
             confirmButton = {
-                Button(onClick = { showRootAccessDeniedDialog = false }) {
+                Button(onClick = onDismissRootAccessDenied) {
                     Text("OK")
                 }
             },
@@ -580,19 +603,19 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     if (showNotificationFieldsDialog) {
         NotificationFieldsDialog(
             settings = notificationSettings,
-            onDismiss = { showNotificationFieldsDialog = false },
-            onFieldEnabledChange = viewModel::setNotificationFieldEnabled,
-            onReorder = viewModel::setNotificationFieldOrder,
+            onDismiss = onDismissNotificationFields,
+            onFieldEnabledChange = onFieldEnabledChange,
+            onReorder = onReorderFields,
         )
     }
 
     if (showUpdateFrequencyDialog) {
         UpdateFrequencyDialog(
             currentValue = notificationSettings.updateIntervalMs,
-            onDismiss = { showUpdateFrequencyDialog = false },
+            onDismiss = onDismissUpdateFrequency,
             onConfirm = {
-                viewModel.setNotificationUpdateIntervalMs(it)
-                showUpdateFrequencyDialog = false
+                onUpdateFrequency(it)
+                onDismissUpdateFrequency()
             },
         )
     }
@@ -600,9 +623,38 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     if (showFieldStyleDialog) {
         FieldStyleDialog(
             selected = notificationSettings.style,
-            onDismiss = { showFieldStyleDialog = false },
-            onSelect = viewModel::setNotificationStyle,
+            onDismiss = onDismissFieldStyle,
+            onSelect = onSelectFieldStyle,
         )
+    }
+}
+
+private fun xrayCoreVersionText(xrayCoreVersion: String?): String = when (xrayCoreVersion) {
+    null -> "xray-core version detecting..."
+    "unknown" -> "xray-core version unknown"
+    else -> "xray-core v$xrayCoreVersion"
+}
+
+@Composable
+private fun RootTunNameSetting(
+    visible: Boolean,
+    editingTunName: String,
+    hasTunNameChanges: Boolean,
+    onEditingTunNameChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    if (!visible) return
+
+    OutlinedTextField(
+        value = editingTunName,
+        onValueChange = onEditingTunNameChange,
+        label = { Text("TUN Interface Name") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        supportingText = { Text("Default: xray0") },
+    )
+    if (hasTunNameChanges) {
+        Button(onClick = onSave) { Text("Save") }
     }
 }
 

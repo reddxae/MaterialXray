@@ -97,38 +97,51 @@ class RootShell {
         var exitCode = -1
         val deadline = System.nanoTime() + timeoutMs * NANOS_PER_MILLI
 
-        while (true) {
+        var commandFinished = false
+        while (!commandFinished) {
             if (!reader.ready()) {
-                if (System.nanoTime() >= deadline) {
-                    close()
-                    return Result(-1, outputLines.joinToString("\n"), "Root command timed out after ${timeoutMs}ms: $command")
-                }
-                if (process?.isAlive == false) {
-                    close()
-                    return Result(-1, outputLines.joinToString("\n"), "Root shell exited while running: $command")
-                }
+                pollCommandFailure(command, outputLines, deadline, timeoutMs)?.let { return it }
                 Thread.sleep(COMMAND_POLL_INTERVAL_MS)
-                continue
-            }
-
-            val line = reader.readLine() ?: break
-            if (line == marker) break
-            if (line.startsWith(exitMarker)) {
-                exitCode = line.removePrefix(exitMarker).toIntOrNull() ?: -1
             } else {
-                outputLines.add(line)
+                val line = reader.readLine()
+                when {
+                    line == null || line == marker -> commandFinished = true
+                    line.startsWith(exitMarker) -> exitCode = line.removePrefix(exitMarker).toIntOrNull() ?: -1
+                    else -> outputLines.add(line)
+                }
             }
         }
 
         val errorOutput = buildString {
             val errReader = stderr ?: return@buildString
             while (errReader.ready()) {
-                append(errReader.readLine())
+                val line = errReader.readLine() ?: break
+                append(line)
                 append('\n')
             }
         }
 
         return Result(exitCode, outputLines.joinToString("\n"), errorOutput.trimEnd())
+    }
+
+    private fun pollCommandFailure(
+        command: String,
+        outputLines: List<String>,
+        deadline: Long,
+        timeoutMs: Long,
+    ): Result? {
+        val output = outputLines.joinToString("\n")
+        return when {
+            System.nanoTime() >= deadline -> {
+                close()
+                Result(-1, output, "Root command timed out after ${timeoutMs}ms: $command")
+            }
+            process?.isAlive == false -> {
+                close()
+                Result(-1, output, "Root shell exited while running: $command")
+            }
+            else -> null
+        }
     }
 
     private fun wrapCommand(command: String, namespace: NetworkNamespace): String = when (namespace) {

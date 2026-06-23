@@ -64,7 +64,11 @@ internal class XrayStatsClient(
             Result.success(block(stub))
         } catch (e: StatusRuntimeException) {
             Result.failure(e)
-        } catch (e: RuntimeException) {
+        } catch (e: IllegalArgumentException) {
+            Result.failure(e)
+        } catch (e: IllegalStateException) {
+            Result.failure(e)
+        } catch (e: SecurityException) {
             Result.failure(e)
         } finally {
             channel?.shutdownNow()

@@ -215,97 +215,88 @@ class SubscriptionFetcher @Inject constructor(
         val settings = outbound.findObject("settings")
 
         return when (protocolName) {
-            "vless" -> {
-                val vnext = settings?.findArray("vnext")?.firstObject()
-                val user = vnext?.findArray("users")?.firstObject()
-                val extra = buildMap {
-                    user?.findString("encryption")?.takeIf { it.isNotBlank() }?.let { put("encryption", it) }
-                    user?.findString("flow")?.takeIf { it.isNotBlank() }?.let { put("flow", it) }
-                }
-                DerivedOutbound(
-                    protocol = Protocol.VLESS,
-                    address = vnext?.findString("address")
-                        ?: outbound.findFirstStringRecursive("address")
-                        ?: "",
-                    port = vnext?.findInt("port")
-                        ?: outbound.findFirstIntRecursive("port")
-                        ?: 0,
-                    password = user?.findString("id")
-                        ?: outbound.findFirstStringRecursive("id")
-                        ?: "",
-                    extra = extra,
-                )
-            }
-
-            "vmess" -> {
-                val vnext = settings?.findArray("vnext")?.firstObject()
-                val user = vnext?.findArray("users")?.firstObject()
-                val extra = buildMap {
-                    user?.findString("alterId")?.takeIf { it.isNotBlank() }?.let { put("alterId", it) }
-                }
-                DerivedOutbound(
-                    protocol = Protocol.VMESS,
-                    address = vnext?.findString("address")
-                        ?: outbound.findFirstStringRecursive("address")
-                        ?: "",
-                    port = vnext?.findInt("port")
-                        ?: outbound.findFirstIntRecursive("port")
-                        ?: 0,
-                    password = user?.findString("id")
-                        ?: outbound.findFirstStringRecursive("id")
-                        ?: "",
-                    extra = extra,
-                )
-            }
-
-            "trojan" -> {
-                val server = settings?.findArray("servers")?.firstObject()
-                DerivedOutbound(
-                    protocol = Protocol.TROJAN,
-                    address = server?.findString("address")
-                        ?: outbound.findFirstStringRecursive("address")
-                        ?: "",
-                    port = server?.findInt("port")
-                        ?: outbound.findFirstIntRecursive("port")
-                        ?: 0,
-                    password = server?.findString("password")
-                        ?: outbound.findFirstStringRecursive("password")
-                        ?: "",
-                    extra = emptyMap(),
-                )
-            }
-
-            "shadowsocks", "ss" -> {
-                val server = settings?.findArray("servers")?.firstObject()
-                val extra = buildMap {
-                    server?.findString("method")?.takeIf { it.isNotBlank() }?.let { put("method", it) }
-                }
-                DerivedOutbound(
-                    protocol = Protocol.SHADOWSOCKS,
-                    address = server?.findString("address")
-                        ?: outbound.findFirstStringRecursive("address")
-                        ?: "",
-                    port = server?.findInt("port")
-                        ?: outbound.findFirstIntRecursive("port")
-                        ?: 0,
-                    password = server?.findString("password")
-                        ?: outbound.findFirstStringRecursive("password")
-                        ?: "",
-                    extra = extra,
-                )
-            }
-
-            else -> DerivedOutbound(
-                protocol = Protocol.RAW,
-                address = outbound.findFirstStringRecursive("address").orEmpty(),
-                port = outbound.findFirstIntRecursive("port") ?: 0,
-                password = outbound.findFirstStringRecursive("id")
-                    ?: outbound.findFirstStringRecursive("password")
-                    ?: "",
-                extra = emptyMap(),
-            )
+            "vless" -> deriveVlessOutbound(outbound, settings)
+            "vmess" -> deriveVmessOutbound(outbound, settings)
+            "trojan" -> deriveServerOutbound(outbound, settings, Protocol.TROJAN, passwordKey = "password")
+            "shadowsocks", "ss" -> deriveShadowsocksOutbound(outbound, settings)
+            else -> deriveRawOutbound(outbound)
         }
     }
+
+    private fun deriveVlessOutbound(outbound: JsonObject, settings: JsonObject?): DerivedOutbound {
+        val vnext = settings?.findArray("vnext")?.firstObject()
+        val user = vnext?.findArray("users")?.firstObject()
+        return DerivedOutbound(
+            protocol = Protocol.VLESS,
+            address = firstString(vnext, outbound, "address"),
+            port = firstInt(vnext, outbound, "port"),
+            password = firstString(user, outbound, "id"),
+            extra = buildMap {
+                user?.findString("encryption")?.takeIf { it.isNotBlank() }?.let { put("encryption", it) }
+                user?.findString("flow")?.takeIf { it.isNotBlank() }?.let { put("flow", it) }
+            },
+        )
+    }
+
+    private fun deriveVmessOutbound(outbound: JsonObject, settings: JsonObject?): DerivedOutbound {
+        val vnext = settings?.findArray("vnext")?.firstObject()
+        val user = vnext?.findArray("users")?.firstObject()
+        return DerivedOutbound(
+            protocol = Protocol.VMESS,
+            address = firstString(vnext, outbound, "address"),
+            port = firstInt(vnext, outbound, "port"),
+            password = firstString(user, outbound, "id"),
+            extra = buildMap {
+                user?.findString("alterId")?.takeIf { it.isNotBlank() }?.let { put("alterId", it) }
+            },
+        )
+    }
+
+    private fun deriveShadowsocksOutbound(outbound: JsonObject, settings: JsonObject?): DerivedOutbound {
+        val server = settings?.findArray("servers")?.firstObject()
+        return deriveServerOutbound(
+            outbound = outbound,
+            settings = settings,
+            protocol = Protocol.SHADOWSOCKS,
+            passwordKey = "password",
+            extra = buildMap {
+                server?.findString("method")?.takeIf { it.isNotBlank() }?.let { put("method", it) }
+            },
+        )
+    }
+
+    private fun deriveServerOutbound(
+        outbound: JsonObject,
+        settings: JsonObject?,
+        protocol: Protocol,
+        passwordKey: String,
+        extra: Map<String, String> = emptyMap(),
+    ): DerivedOutbound {
+        val server = settings?.findArray("servers")?.firstObject()
+        return DerivedOutbound(
+            protocol = protocol,
+            address = firstString(server, outbound, "address"),
+            port = firstInt(server, outbound, "port"),
+            password = firstString(server, outbound, passwordKey),
+            extra = extra,
+        )
+    }
+
+    private fun deriveRawOutbound(outbound: JsonObject): DerivedOutbound = DerivedOutbound(
+        protocol = Protocol.RAW,
+        address = outbound.findFirstStringRecursive("address").orEmpty(),
+        port = outbound.findFirstIntRecursive("port") ?: 0,
+        password = outbound.findFirstStringRecursive("id")
+            ?: outbound.findFirstStringRecursive("password")
+            ?: "",
+        extra = emptyMap(),
+    )
+
+    private fun firstString(primary: JsonObject?, fallback: JsonObject, key: String): String =
+        primary?.findString(key) ?: fallback.findFirstStringRecursive(key) ?: ""
+
+    private fun firstInt(primary: JsonObject?, fallback: JsonObject, key: String): Int =
+        primary?.findInt(key) ?: fallback.findFirstIntRecursive(key) ?: 0
 
     private fun parseMetadata(response: Response): SubscriptionMetadata =
         SubscriptionStandardHeaders.parseMetadata(response.headers)

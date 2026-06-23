@@ -79,6 +79,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -104,6 +105,7 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
+import com.material.xray.model.ServerConfig
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
@@ -111,43 +113,15 @@ import com.material.xray.ui.components.ScrolledTopAppBar
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
-    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
-    val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
-    val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
-    val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
-    val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
-    val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
-    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
-    val runningConfig by viewModel.runningConfig.collectAsStateWithLifecycle()
-    val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
-
-    val isConnected = connectionState is ConnectionState.Connected
-    val isRestartRequired = connectionState is ConnectionState.RestartRequired
-    val isInterfaceBusy = connectionState is ConnectionState.InterfaceBusy
-    val isTransitioning = connectionState is ConnectionState.Connecting ||
-            connectionState is ConnectionState.ApplyingRoutingChanges ||
-            connectionState is ConnectionState.UpdatingRoutingData ||
-            connectionState is ConnectionState.Disconnecting
-
-    val buttonColor = when {
-        isConnected || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
-        isTransitioning -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
+    val uiState = collectHomeUiState(viewModel)
+    val connectionUiState = buildConnectionUiState(uiState.connectionState, uiState.selectedServer)
 
     var showAddDialog by remember { mutableStateOf(false) }
     var editingSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
     var showRootFallbackDialog by remember { mutableStateOf(false) }
-    val selectedServerName = remember(selectedServer) { selectedServer?.name ?: "No server selected" }
-    val selectedServerDetail = remember(selectedServer) {
-        selectedServer?.endpointSummary() ?: "Select a server below"
-    }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
-    val displayServerName = remember(connectionState, selectedServerName) {
-        (connectionState as? ConnectionState.Connected)?.serverName ?: selectedServerName
-    }
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -208,52 +182,53 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         ) {
             item {
                 ConnectionPanel(
-                    connectionState = connectionState,
-                    selectedServerName = displayServerName,
-                    selectedServerDetail = selectedServerDetail,
-                    buttonColor = buttonColor,
-                    isConnected = isConnected,
-                    isRestartRequired = isRestartRequired,
-                    isInterfaceBusy = isInterfaceBusy,
-                    isTransitioning = isTransitioning,
-                    canStart = selectedServer != null,
+                    connectionState = uiState.connectionState,
+                    selectedServerName = connectionUiState.displayServerName,
+                    selectedServerDetail = connectionUiState.selectedServerDetail,
+                    buttonColor = connectionUiState.buttonColor,
+                    isConnected = connectionUiState.isConnected,
+                    isRestartRequired = connectionUiState.isRestartRequired,
+                    isInterfaceBusy = connectionUiState.isInterfaceBusy,
+                    isTransitioning = connectionUiState.isTransitioning,
+                    canStart = uiState.selectedServer != null,
                     onClick = {
-                        if (isConnected) viewModel.disconnect()
-                        else if (!isTransitioning) {
-                            if (useRootService) viewModel.connect() else startRootlessConnection()
+                        if (connectionUiState.isConnected) viewModel.disconnect()
+                        else if (!connectionUiState.isTransitioning) {
+                            if (uiState.useRootService) viewModel.connect() else startRootlessConnection()
                         }
                     },
                     onViewConfig = { viewModel.showRunningConfig() },
                 )
             }
 
-            if (isRefreshing) {
+            if (uiState.isRefreshing) {
                 item {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
 
-            if (connectionState is ConnectionState.Error) {
+            val errorState = uiState.connectionState as? ConnectionState.Error
+            if (errorState != null) {
                 item {
-                    ErrorCard(message = (connectionState as ConnectionState.Error).message)
+                    ErrorCard(message = errorState.message)
                 }
             }
 
-            if (subscriptions.isEmpty()) {
+            if (uiState.subscriptions.isEmpty()) {
                 item {
                     EmptySubscriptionsCard(onAddSubscription = { showAddDialog = true })
                 }
             } else {
                 items(
-                    items = subscriptions,
+                    items = uiState.subscriptions,
                     key = { it.id },
                     contentType = { "subscription" },
                 ) { subscription ->
                     SubscriptionCard(
                         subscription = subscription,
-                        servers = serversBySubscription[subscription.id].orEmpty(),
-                        selectedServerId = selectedServerId,
-                        defaultPingMethod = defaultPingMethod,
+                        servers = uiState.serversBySubscription[subscription.id].orEmpty(),
+                        selectedServerId = uiState.selectedServerId,
+                        defaultPingMethod = uiState.defaultPingMethod,
                         onDelete = { viewModel.deleteSubscription(subscription) },
                         onEdit = { editingSubscription = subscription },
                         onRefresh = { viewModel.refreshSubscription(subscription) },
@@ -321,24 +296,100 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         )
     }
 
-    if (runningConfig != null) {
+    if (uiState.runningConfig != null) {
         RawConfigDialog(
-            config = runningConfig.orEmpty(),
+            config = uiState.runningConfig.orEmpty(),
             onDismiss = viewModel::dismissRunningConfig,
             onCopy = {
                 val clipboard = context.getSystemService(ClipboardManager::class.java)
-                clipboard?.setPrimaryClip(ClipData.newPlainText("Xray config", runningConfig.orEmpty()))
+                clipboard?.setPrimaryClip(ClipData.newPlainText("Xray config", uiState.runningConfig.orEmpty()))
             },
         )
     }
 }
 
 @Composable
+private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
+    val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
+    val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
+    val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+    val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val runningConfig by viewModel.runningConfig.collectAsStateWithLifecycle()
+    val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
+
+    return HomeUiState(
+        connectionState = connectionState,
+        selectedServer = selectedServer,
+        selectedServerId = selectedServerId,
+        useRootService = useRootService,
+        subscriptions = subscriptions,
+        serversBySubscription = serversBySubscription,
+        isRefreshing = isRefreshing,
+        runningConfig = runningConfig,
+        defaultPingMethod = defaultPingMethod,
+    )
+}
+
+@Composable
+private fun buildConnectionUiState(
+    connectionState: ConnectionState,
+    selectedServer: ServerConfig?,
+): ConnectionUiState {
+    val isConnected = connectionState is ConnectionState.Connected
+    val isRestartRequired = connectionState is ConnectionState.RestartRequired
+    val isInterfaceBusy = connectionState is ConnectionState.InterfaceBusy
+    val isTransitioning = connectionState is ConnectionState.Connecting ||
+        connectionState is ConnectionState.ApplyingRoutingChanges ||
+        connectionState is ConnectionState.UpdatingRoutingData ||
+        connectionState is ConnectionState.Disconnecting
+    val selectedServerName = selectedServer?.name ?: "No server selected"
+
+    return ConnectionUiState(
+        isConnected = isConnected,
+        isRestartRequired = isRestartRequired,
+        isInterfaceBusy = isInterfaceBusy,
+        isTransitioning = isTransitioning,
+        buttonColor = when {
+            isConnected || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
+            isTransitioning -> MaterialTheme.colorScheme.tertiary
+            else -> MaterialTheme.colorScheme.primary
+        },
+        displayServerName = (connectionState as? ConnectionState.Connected)?.serverName ?: selectedServerName,
+        selectedServerDetail = selectedServer?.endpointSummary() ?: "Select a server below",
+    )
+}
+
+private data class HomeUiState(
+    val connectionState: ConnectionState,
+    val selectedServer: ServerConfig?,
+    val selectedServerId: Long,
+    val useRootService: Boolean,
+    val subscriptions: List<SubscriptionEntity>,
+    val serversBySubscription: Map<Long, List<ServerListItem>>,
+    val isRefreshing: Boolean,
+    val runningConfig: String?,
+    val defaultPingMethod: PingMethod,
+)
+
+private data class ConnectionUiState(
+    val isConnected: Boolean,
+    val isRestartRequired: Boolean,
+    val isInterfaceBusy: Boolean,
+    val isTransitioning: Boolean,
+    val buttonColor: Color,
+    val displayServerName: String,
+    val selectedServerDetail: String,
+)
+
+@Composable
 private fun ConnectionPanel(
     connectionState: ConnectionState,
     selectedServerName: String,
     selectedServerDetail: String,
-    buttonColor: androidx.compose.ui.graphics.Color,
+    buttonColor: Color,
     isConnected: Boolean,
     isRestartRequired: Boolean,
     isInterfaceBusy: Boolean,

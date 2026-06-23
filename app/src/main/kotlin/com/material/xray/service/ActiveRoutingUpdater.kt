@@ -4,6 +4,7 @@ import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.XrayState
 import com.material.xray.model.ConnectionState
+import kotlinx.serialization.SerializationException
 
 sealed interface PhysicalRouteUpdateResult {
     data class Applied(val route: TunManager.PhysicalRoute) : PhysicalRouteUpdateResult
@@ -115,12 +116,11 @@ internal class ActiveRoutingUpdater(
             return false
         }
 
-        val appRoutingPlan = try {
-            routingPlanBuilder.build(tunName, routeTable, includeProxyRoutes = false)
-        } catch (error: Exception) {
-            log.append(LogSource.APP, "Fast app routing update skipped: ${error.message ?: "could not build app routing plan"}")
-            return false
-        }
+        val appRoutingPlan = buildAppRoutingPlan(
+            tunName = tunName,
+            routeTable = routeTable,
+            failurePrefix = "Fast app routing update skipped",
+        ) ?: return false
 
         if (appRoutingPlan.proxyServerIds != persistedState.appProxyServerIds) {
             log.append(
@@ -205,12 +205,11 @@ internal class ActiveRoutingUpdater(
             return PhysicalRouteUpdateResult.RequiresReconnect
         }
 
-        val appRoutingPlan = try {
-            routingPlanBuilder.build(tunName, routeTable, includeProxyRoutes = false)
-        } catch (error: Exception) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: ${error.message ?: "could not build app routing plan"}")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
+        val appRoutingPlan = buildAppRoutingPlan(
+            tunName = tunName,
+            routeTable = routeTable,
+            failurePrefix = "Physical routing refresh requires reconnect",
+        ) ?: return PhysicalRouteUpdateResult.RequiresReconnect
 
         if (appRoutingPlan.proxyServerIds != persistedState.appProxyServerIds) {
             log.append(LogSource.APP, "Physical routing refresh requires reconnect: app proxy routes changed")
@@ -272,6 +271,27 @@ internal class ActiveRoutingUpdater(
     private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
         val appUid = appUidProvider()
         return if (appUid > 0) directUids + appUid else directUids
+    }
+
+    private suspend fun buildAppRoutingPlan(
+        tunName: String,
+        routeTable: Int,
+        failurePrefix: String,
+    ): AppRoutingPlan? = try {
+        routingPlanBuilder.build(tunName, routeTable, includeProxyRoutes = false)
+    } catch (error: IllegalArgumentException) {
+        logRoutingPlanFailure(failurePrefix, error)
+        null
+    } catch (error: IllegalStateException) {
+        logRoutingPlanFailure(failurePrefix, error)
+        null
+    } catch (error: SerializationException) {
+        logRoutingPlanFailure(failurePrefix, error)
+        null
+    }
+
+    private fun logRoutingPlanFailure(prefix: String, error: Throwable) {
+        log.append(LogSource.APP, "$prefix: ${error.message ?: "could not build app routing plan"}")
     }
 
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {

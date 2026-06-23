@@ -132,10 +132,6 @@ tasks.named("check") {
     dependsOn("ktlintFormat")
 }
 
-tasks.named("ktlintCheck") {
-    dependsOn("ktlintFormat")
-}
-
 protobuf {
     protoc {
         // Match grpc-protobuf-lite's 3.x javalite runtime; protobuf 4.x jars currently break Hilt metadata parsing.

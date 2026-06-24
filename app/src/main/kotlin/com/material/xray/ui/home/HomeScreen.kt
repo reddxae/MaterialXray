@@ -1154,6 +1154,9 @@ private fun SubscriptionHeader(
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                 DropdownMenuItem(
                     text = { Text("Edit") },
+                    leadingIcon = {
+                        Icon(painterResource(R.drawable.edit_24px), contentDescription = null)
+                    },
                     onClick = {
                         showMenu = false
                         onEdit()
@@ -1162,6 +1165,9 @@ private fun SubscriptionHeader(
                 if (supportUrl.isNotEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Support") },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.support_24px), contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             uriHandler.openUri(supportUrl)
@@ -1173,6 +1179,18 @@ private fun SubscriptionHeader(
                         text = {
                             Text(if (subscription.descriptionHidden) "Show description" else "Hide description")
                         },
+                        leadingIcon = {
+                            Icon(
+                                painterResource(
+                                    if (subscription.descriptionHidden) {
+                                        R.drawable.visibility_24px
+                                    } else {
+                                        R.drawable.visibility_off_24px
+                                    },
+                                ),
+                                contentDescription = null,
+                            )
+                        },
                         onClick = {
                             showMenu = false
                             onDescriptionHiddenChange(!subscription.descriptionHidden)
@@ -1182,6 +1200,9 @@ private fun SubscriptionHeader(
                 if (canApplyRouting) {
                     DropdownMenuItem(
                         text = { Text("Apply routing") },
+                        leadingIcon = {
+                            Icon(painterResource(R.drawable.cloud_download_24px), contentDescription = null)
+                        },
                         onClick = {
                             showMenu = false
                             onApplyRouting()
@@ -1190,6 +1211,9 @@ private fun SubscriptionHeader(
                 }
                 DropdownMenuItem(
                     text = { Text("Remove") },
+                    leadingIcon = {
+                        Icon(painterResource(R.drawable.delete_forever_24px), contentDescription = null)
+                    },
                     onClick = {
                         showMenu = false
                         onDelete()

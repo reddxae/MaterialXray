@@ -30,6 +30,7 @@ import com.material.xray.data.db.entity.AppRouteMode
 import com.material.xray.data.db.entity.routeAssignment
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
@@ -66,6 +67,8 @@ class XrayService : VpnService() {
     @Inject lateinit var serverRepository: ServerRepository
 
     @Inject lateinit var settingsRepo: SettingsRepository
+
+    @Inject lateinit var subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository
 
     @Inject lateinit var connectionStateHolder: ConnectionStateHolder
 
@@ -108,6 +111,7 @@ class XrayService : VpnService() {
             configGenerator = ConfigGenerator(),
             geoDataManager = geoDataManager,
             appBypassDao = appBypassDao,
+            subscriptionAppRoutingRepository = subscriptionAppRoutingRepository,
             serverRepository = serverRepository,
             appInventory = appInventory,
             stateHolder = connectionStateHolder,
@@ -237,6 +241,43 @@ class XrayService : VpnService() {
         cleanStateFirst: Boolean = true,
         fastReconnect: Boolean = false,
     ) {
+        getSystemService(NotificationManager::class.java).cancel(FAILURE_NOTIFICATION_ID)
+        var attempt = 1
+        var lastError: String? = null
+
+        while (attempt <= CONNECTION_MAX_ATTEMPTS && currentCoroutineContext().isActive) {
+            if (attempt > 1) {
+                val retryMessage = "Retrying connection ($attempt/$CONNECTION_MAX_ATTEMPTS)..."
+                logBuffer.append(LogSource.APP, retryMessage)
+                connectionStateHolder.update(transitionState)
+                updateNotification(retryMessage)
+            }
+
+            val connected = connectOnceWithCurrentSettings(
+                config = config,
+                transitionState = transitionState,
+                cleanStateFirst = cleanStateFirst || attempt > 1,
+                fastReconnect = fastReconnect && attempt == 1,
+            )
+            if (connected) return
+
+            lastError = (connectionStateHolder.state.value as? ConnectionState.Error)?.message
+                ?: "Unknown connection error"
+            if (!lastError.shouldRetryConnection() || attempt == CONNECTION_MAX_ATTEMPTS) break
+
+            delay(CONNECTION_RETRY_DELAY_MS)
+            attempt++
+        }
+
+        showConnectionFailureNotification(lastError ?: "Unknown connection error")
+    }
+
+    private suspend fun connectOnceWithCurrentSettings(
+        config: ServerConfig,
+        transitionState: ConnectionState = ConnectionState.Connecting,
+        cleanStateFirst: Boolean = true,
+        fastReconnect: Boolean = false,
+    ): Boolean {
         val runtimeSettings = settingsRepo.runtimeSettingsSnapshot()
         val rootServiceAvailable = if (runtimeSettings.useRootService) {
             withContext(Dispatchers.IO) { rootShell.open() }
@@ -259,7 +300,7 @@ class XrayService : VpnService() {
             closeVpnInterface()
             null
         } else {
-            setupVpnInterface(effectiveRuntimeSettings) ?: return
+            setupVpnInterface(effectiveRuntimeSettings) ?: return false
         }
         connectionManager.connect(
             server = config,
@@ -274,6 +315,7 @@ class XrayService : VpnService() {
         } else if (!effectiveRuntimeSettings.useRootService) {
             activePhysicalNetwork = null
         }
+        return connectionStateHolder.state.value is ConnectionState.Connected
     }
 
     private suspend fun reloadActiveConnection() {
@@ -734,7 +776,7 @@ class XrayService : VpnService() {
 
     private suspend fun setupVpnInterface(runtimeSettings: XrayRuntimeSettings): ParcelFileDescriptor? {
         if (prepare(this) != null) {
-            connectionStateHolder.update(ConnectionState.Error("VPN permission is required"))
+            connectionStateHolder.update(ConnectionState.Error(VPN_PERMISSION_REQUIRED_ERROR))
             stopSelf()
             return null
         }
@@ -931,6 +973,30 @@ class XrayService : VpnService() {
             .notify(NOTIFICATION_ID, buildNotification(title, text, showDisconnectAction))
     }
 
+    private fun showConnectionFailureNotification(message: String) {
+        val openAppIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent()
+        val openIntent = PendingIntent.getActivity(
+            this,
+            2,
+            openAppIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val notification = NotificationCompat.Builder(this, FAILURE_CHANNEL_ID)
+            .setContentTitle("Connection failed")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setSmallIcon(R.drawable.ic_launcher_default_monochrome)
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(false)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        getSystemService(NotificationManager::class.java)
+            .notify(FAILURE_NOTIFICATION_ID, notification)
+    }
+
     private fun connectedNotificationText(state: ConnectionState.Connected): String {
         val baseText = if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) {
             "VPN service active"
@@ -1037,8 +1103,20 @@ class XrayService : VpnService() {
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(CHANNEL_ID, "Xray Service", NotificationManager.IMPORTANCE_LOW)
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        val failureChannel = NotificationChannel(
+            FAILURE_CHANNEL_ID,
+            "Connection failures",
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            enableVibration(true)
+        }
+        getSystemService(NotificationManager::class.java).apply {
+            createNotificationChannel(channel)
+            createNotificationChannel(failureChannel)
+        }
     }
+
+    private fun String.shouldRetryConnection(): Boolean = this != VPN_PERMISSION_REQUIRED_ERROR
 
     private data class PhysicalNetworkSnapshot(
         val handle: Long,
@@ -1082,7 +1160,9 @@ class XrayService : VpnService() {
 
     companion object {
         const val CHANNEL_ID = "xray_service"
+        const val FAILURE_CHANNEL_ID = "xray_connection_failures"
         const val NOTIFICATION_ID = 1
+        const val FAILURE_NOTIFICATION_ID = 2
         const val ACTION_CONNECT = "com.material.xray.CONNECT"
         const val ACTION_SWITCH_SERVER = "com.material.xray.SWITCH_SERVER"
         const val ACTION_DISCONNECT = "com.material.xray.DISCONNECT"
@@ -1093,9 +1173,12 @@ class XrayService : VpnService() {
         private const val NETWORK_RETARGET_DEBOUNCE_MS = 1_500L
         private const val NETWORK_RETARGET_RETRY_DELAY_MS = 2_000L
         private const val NETWORK_RETARGET_MAX_ATTEMPTS = 30
+        private const val CONNECTION_MAX_ATTEMPTS = 3
+        private const val CONNECTION_RETRY_DELAY_MS = 1_500L
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val MAX_XRAY_PROCESS_MEMORY_MB = 512L
+        private const val VPN_PERMISSION_REQUIRED_ERROR = "VPN permission is required"
         private const val VPN_MTU = 1500
         private const val VPN_ADDRESS = "10.10.14.1"
         private const val VPN_PREFIX_LENGTH = 30

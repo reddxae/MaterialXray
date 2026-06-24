@@ -111,7 +111,7 @@ class XrayTileService : TileService() {
 
     private fun updateTile(snapshot: TileSnapshot) {
         qsTile?.run {
-            label = getString(R.string.app_name)
+            label = snapshot.label()
             icon = Icon.createWithResource(
                 applicationContext,
                 R.drawable.ic_launcher_material_monochrome,
@@ -119,6 +119,15 @@ class XrayTileService : TileService() {
             state = snapshot.tileState()
             updateTile()
         }
+    }
+
+    private fun TileSnapshot.label(): String {
+        val connectedState = state as? ConnectionState.Connected
+        return connectedState
+            ?.serverName
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: getString(R.string.app_name)
     }
 
     private fun TileSnapshot.tileState(): Int = when {

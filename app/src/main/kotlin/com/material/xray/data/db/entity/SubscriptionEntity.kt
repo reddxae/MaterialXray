@@ -25,4 +25,6 @@ data class SubscriptionEntity(
     val userAgentMode: String? = null,
     val customUserAgent: String? = null,
     val customHeaders: String? = null,
+    val appRoutingPackages: String? = null,
+    val appRoutingMode: String? = null,
 )

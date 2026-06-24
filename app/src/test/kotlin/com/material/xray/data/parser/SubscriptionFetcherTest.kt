@@ -7,6 +7,7 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
+import com.material.xray.model.SubscriptionAppRoutingMode
 import com.material.xray.model.SubscriptionHeader
 import com.material.xray.model.SubscriptionRequestIdentity
 import com.material.xray.model.SubscriptionUserAgentMode
@@ -25,6 +26,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubscriptionFetcherTest {
+
+    @Test
+    fun `parse app routing headers normalizes package list`() {
+        val headers = Headers.headersOf(
+            "per-app-proxy-list",
+            "com.example.app, org.example.second; invalid-package",
+            "per-app-proxy-mode",
+            "proxy",
+        )
+
+        val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
+
+        assertEquals(SubscriptionAppRoutingMode.DefaultSelected, routing.mode)
+        assertEquals(listOf("com.example.app", "org.example.second"), routing.packageNames)
+    }
+
+    @Test
+    fun `parse app routing treats bypass mode as direct`() {
+        val headers = Headers.headersOf(
+            "per-app-proxy-list",
+            "com.example.app",
+            "per-app-proxy-mode",
+            "bypass",
+        )
+
+        val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
+
+        assertEquals(SubscriptionAppRoutingMode.Direct, routing.mode)
+        assertEquals(listOf("com.example.app"), routing.packageNames)
+    }
 
     @Test
     fun `fetch parses json subscription outbound`() = runTest {

@@ -11,15 +11,20 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.data.repository.SubscriptionRefreshCoordinator
 import com.material.xray.data.repository.SubscriptionRepository
+import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
 import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.service.XrayService
@@ -29,10 +34,12 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -57,6 +64,10 @@ data class ServerLatencyState(
     val method: PingMethod? = null,
 )
 
+sealed interface HomeUiEvent {
+    data class Toast(val message: String) : HomeUiEvent
+}
+
 const val LATENCY_TESTING = Int.MIN_VALUE
 
 @HiltViewModel
@@ -65,6 +76,7 @@ class HomeViewModel @Inject constructor(
     private val settingsRepo: SettingsRepository,
     private val serverRepo: ServerRepository,
     private val subscriptionRepo: SubscriptionRepository,
+    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val subscriptionRefreshCoordinator: SubscriptionRefreshCoordinator,
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
     private val connectionStateHolder: ConnectionStateHolder,
@@ -82,6 +94,8 @@ class HomeViewModel @Inject constructor(
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
     val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateHolder.events
+    private val _uiEvents = MutableSharedFlow<HomeUiEvent>()
+    val uiEvents: SharedFlow<HomeUiEvent> = _uiEvents.asSharedFlow()
 
     val subscriptions: StateFlow<List<SubscriptionEntity>> = subscriptionRepo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -108,6 +122,9 @@ class HomeViewModel @Inject constructor(
     val defaultPingMethod: StateFlow<PingMethod> = settingsRepo.defaultPingMethod
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PingMethod.default)
 
+    val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepo.routingPolicyControl
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
+
     val selectedServer: StateFlow<ServerConfig?> = combine(selectedServerId, allServers) { id, list ->
         list.find { it.id == id }?.let { runCatching { serverRepo.parseConfig(it) }.getOrNull() }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -118,6 +135,8 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     private val _runningConfig = MutableStateFlow<String?>(null)
     val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
+    private val _pendingSubscriptionRouting = MutableStateFlow<SubscriptionAppRouting?>(null)
+    val pendingSubscriptionRouting: StateFlow<SubscriptionAppRouting?> = _pendingSubscriptionRouting.asStateFlow()
 
     init {
         refreshTunnelInterfaceState()
@@ -214,10 +233,12 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             if (serverId == selectedServerId.value) return@launch
             settingsRepo.setLastServerId(serverId)
+            val serverEntity = allServers.value.find { it.id == serverId }
+            applyProviderRoutingForServer(serverEntity)
 
             val state = connectionState.value
             if (state is ConnectionState.Connected || state is ConnectionState.Error) {
-                val serverEntity = allServers.value.find { it.id == serverId } ?: return@launch
+                serverEntity ?: return@launch
                 val config = runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull() ?: return@launch
                 routingChangeManager.clearPendingChanges()
                 if (state is ConnectionState.Connected) {
@@ -238,7 +259,32 @@ class HomeViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             runCatching { subscriptionRepo.add(name, url, userAgentMode, customUserAgent, customHeaders) }
+                .onFailure { _uiEvents.emit(HomeUiEvent.Toast("Unable to fetch link")) }
         }
+    }
+
+    fun addLink(link: String) {
+        viewModelScope.launch {
+            runCatching { subscriptionRepo.addLink(link) }
+                .onFailure { _uiEvents.emit(HomeUiEvent.Toast("Unable to fetch link")) }
+        }
+    }
+
+    fun requestApplySubscriptionRouting(sub: SubscriptionEntity) {
+        val routing = sub.toSubscriptionAppRouting() ?: return
+        _pendingSubscriptionRouting.value = routing
+    }
+
+    fun applyPendingSubscriptionRouting() {
+        viewModelScope.launch {
+            val routing = _pendingSubscriptionRouting.value ?: return@launch
+            applySubscriptionRouting(routing)
+            _pendingSubscriptionRouting.value = null
+        }
+    }
+
+    fun dismissPendingSubscriptionRouting() {
+        _pendingSubscriptionRouting.value = null
     }
 
     fun deleteSubscription(sub: SubscriptionEntity) {
@@ -315,6 +361,21 @@ class HomeViewModel @Inject constructor(
     fun setSubscriptionDescriptionHidden(subId: Long, hidden: Boolean) {
         viewModelScope.launch {
             subscriptionRepo.setDescriptionHidden(subId, hidden)
+        }
+    }
+
+    private suspend fun applySubscriptionRouting(routing: SubscriptionAppRouting) {
+        if (subscriptionAppRoutingRepository.apply(routing)) {
+            routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
+        }
+    }
+
+    private suspend fun applyProviderRoutingForServer(server: ServerEntity?) {
+        if (server == null || routingPolicyControl.value != RoutingPolicyControl.SubscriptionProvider) return
+        if (subscriptionAppRoutingRepository.applyForSubscription(server.subscriptionId)) {
+            if (connectionState.value is ConnectionState.Connected) {
+                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
+            }
         }
     }
 

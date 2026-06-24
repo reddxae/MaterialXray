@@ -11,11 +11,11 @@ import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.AppRouteAssignment
 import com.material.xray.data.db.entity.AppRouteMode
 import com.material.xray.data.db.entity.ServerEntity
-import com.material.xray.data.db.entity.isManualRouteOverride
 import com.material.xray.data.db.entity.routeAssignment
 import com.material.xray.data.db.entity.toAppBypassEntity
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
@@ -43,7 +43,7 @@ data class AppItem(
     val workProfile: Boolean,
     val routeKey: String,
     val routeKind: AppRouteKind,
-    val manuallyRouted: Boolean,
+    val customRouted: Boolean,
     val routeTitle: String,
     val routeDescription: String,
 )
@@ -76,6 +76,7 @@ class AppsViewModel @Inject constructor(
     private val appBypassDao: AppBypassDao,
     private val serverRepository: ServerRepository,
     private val settingsRepository: SettingsRepository,
+    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val routingChangeManager: RoutingChangeManager,
     private val appInventory: AppInventory,
 ) : ViewModel() {
@@ -154,7 +155,7 @@ class AppsViewModel @Inject constructor(
                 app.copy(
                     routeKey = option.key,
                     routeKind = option.kind,
-                    manuallyRouted = assignment?.isManualRouteOverride() == true,
+                    customRouted = option.kind != AppRouteKind.DEFAULT,
                     routeTitle = option.title,
                     routeDescription = option.description,
                 )
@@ -168,7 +169,7 @@ class AppsViewModel @Inject constructor(
                     it.profileLabel.contains(filters.searchQuery, ignoreCase = true)
             }
             .sortedWith(
-                compareBy<AppItem> { !it.manuallyRouted }
+                compareBy<AppItem> { !it.customRouted }
                     .thenBy { it.name.lowercase() }
                     .thenBy { it.profileId }
                     .thenBy { it.packageName },
@@ -186,6 +187,12 @@ class AppsViewModel @Inject constructor(
     private fun loadApps() {
         viewModelScope.launch {
             _isLoadingApps.value = true
+            val subscriptionRoutingChanged = withContext(Dispatchers.IO) {
+                subscriptionAppRoutingRepository.syncInstalledApps()
+            }
+            if (subscriptionRoutingChanged) {
+                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
+            }
             val snapshot = runCatching {
                 withContext(Dispatchers.IO) {
                     appInventory.loadSnapshot()
@@ -208,7 +215,7 @@ class AppsViewModel @Inject constructor(
                         workProfile = app.workProfile,
                         routeKey = DEFAULT_ROUTE_OPTION.key,
                         routeKind = DEFAULT_ROUTE_OPTION.kind,
-                        manuallyRouted = false,
+                        customRouted = false,
                         routeTitle = DEFAULT_ROUTE_OPTION.title,
                         routeDescription = DEFAULT_ROUTE_OPTION.description,
                     )

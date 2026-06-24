@@ -13,6 +13,7 @@ import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
 import com.material.xray.model.PingMethod
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
 import com.material.xray.model.XrayLogLevel
@@ -58,6 +59,7 @@ class SettingsRepository @Inject constructor(
         val LAUNCHER_ICON = stringPreferencesKey("launcher_icon")
         val SHOW_ADVANCED_OPTIONS = booleanPreferencesKey("show_advanced_options")
         val APP_SPECIFIC_SERVER_NOTE_SHOWN = booleanPreferencesKey("app_specific_server_note_shown")
+        val ROUTING_POLICY_CONTROL = stringPreferencesKey("routing_policy_control")
         val ROUTING_RULES = stringPreferencesKey("routing_rules")
         val ROUTING_RULES_VERSION = intPreferencesKey("routing_rules_version")
         val ROUTING_RULE_STATES = stringPreferencesKey("routing_rule_states")
@@ -114,6 +116,9 @@ class SettingsRepository @Inject constructor(
     }
     val appSpecificServerNoteShown: Flow<Boolean> = store.data.map { prefs ->
         prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] ?: false
+    }
+    val routingPolicyControl: Flow<RoutingPolicyControl> = store.data.map { prefs ->
+        RoutingPolicyControl.fromValue(prefs[ROUTING_POLICY_CONTROL])
     }
     val useRootService: Flow<Boolean> = store.data.map { prefs ->
         prefs[USE_ROOT_SERVICE] ?: false
@@ -207,6 +212,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setAppSpecificServerNoteShown(shown: Boolean) = store.edit { prefs ->
         prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] = shown
+    }
+    suspend fun setRoutingPolicyControl(policy: RoutingPolicyControl) = store.edit { prefs ->
+        prefs[ROUTING_POLICY_CONTROL] = policy.value
     }
     suspend fun setUseRootService(enabled: Boolean) = store.edit { prefs ->
         prefs[USE_ROOT_SERVICE] = enabled
@@ -303,6 +311,7 @@ class SettingsRepository @Inject constructor(
             prefs[SHOW_ADVANCED_OPTIONS] = showAdvancedOptions
             prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] =
                 map["app_specific_server_note_shown"]?.toBooleanStrictOrNull() ?: false
+            prefs[ROUTING_POLICY_CONTROL] = RoutingPolicyControl.fromValue(map["routing_policy_control"]).value
             prefs[USE_ROOT_SERVICE] = map["use_root_service"]?.toBooleanStrictOrNull() ?: false
             prefs[NOTIFICATION_ENABLED] = map["notification_enabled"]?.toBooleanStrictOrNull() ?: true
             prefs[NOTIFICATION_UPDATE_INTERVAL_MS] = map["notification_update_interval_ms"]

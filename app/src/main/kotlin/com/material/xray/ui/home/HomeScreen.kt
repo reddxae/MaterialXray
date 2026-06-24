@@ -1,8 +1,12 @@
 package com.material.xray.ui.home
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.VpnService
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -36,15 +40,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -54,6 +52,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,6 +85,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -97,20 +99,28 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.material.xray.R
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
+import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -119,7 +129,10 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val connectionUiState = buildConnectionUiState(uiState.connectionState, uiState.selectedServer)
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
+    var keepQrScannerDialog by remember { mutableStateOf(false) }
     var editingSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
+    var removeSubscriptionRequest by remember { mutableStateOf<Pair<SubscriptionEntity, Int>?>(null) }
     var showRootFallbackDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -131,12 +144,36 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             viewModel.connect()
         }
     }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            showQrScanner = true
+        } else {
+            Toast.makeText(context, "Unable to fetch link", Toast.LENGTH_SHORT).show()
+        }
+    }
     val startRootlessConnection = {
         val vpnPermissionIntent = VpnService.prepare(context)
         if (vpnPermissionIntent != null) {
             vpnPermissionLauncher.launch(vpnPermissionIntent)
         } else {
             viewModel.connect()
+        }
+    }
+    val pasteFromClipboard = {
+        val link = context.clipboardText()
+        if (link == null) {
+            Toast.makeText(context, "Unable to fetch link", Toast.LENGTH_SHORT).show()
+        } else {
+            viewModel.addLink(link)
+        }
+    }
+    val openQrScanner = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            showQrScanner = true
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -149,6 +186,23 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             when (event) {
                 ConnectionEvent.RootUnavailableFallback -> showRootFallbackDialog = true
             }
+        }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.uiEvents.collect { event ->
+            when (event) {
+                is HomeUiEvent.Toast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    LaunchedEffect(showQrScanner) {
+        if (showQrScanner) {
+            keepQrScannerDialog = true
+        } else {
+            delay(QR_SCANNER_TRANSITION_MS.toLong())
+            keepQrScannerDialog = false
         }
     }
 
@@ -178,7 +232,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, top = 6.dp, end = 16.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -219,7 +273,11 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
             if (uiState.subscriptions.isEmpty()) {
                 item {
-                    EmptySubscriptionsCard(onAddSubscription = { showAddDialog = true })
+                    EmptySubscriptionsCard(
+                        onPasteFromClipboard = pasteFromClipboard,
+                        onScanQrCode = openQrScanner,
+                        onAddManually = { showAddDialog = true },
+                    )
                 }
             } else {
                 items(
@@ -227,16 +285,26 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     key = { it.id },
                     contentType = { "subscription" },
                 ) { subscription ->
+                    val servers = uiState.serversBySubscription[subscription.id].orEmpty()
                     SubscriptionCard(
                         subscription = subscription,
-                        servers = uiState.serversBySubscription[subscription.id].orEmpty(),
+                        servers = servers,
                         selectedServerId = uiState.selectedServerId,
                         defaultPingMethod = uiState.defaultPingMethod,
-                        onDelete = { viewModel.deleteSubscription(subscription) },
+                        canApplyRouting = uiState.routingPolicyControl == RoutingPolicyControl.User &&
+                            subscription.toSubscriptionAppRouting() != null,
+                        onDelete = {
+                            if (servers.isEmpty()) {
+                                viewModel.deleteSubscription(subscription)
+                            } else {
+                                removeSubscriptionRequest = subscription to servers.size
+                            }
+                        },
                         onEdit = { editingSubscription = subscription },
                         onRefresh = { viewModel.refreshSubscription(subscription) },
                         onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
                         onDefaultPingMethodSelected = { viewModel.setDefaultPingMethod(it) },
+                        onApplyRouting = { viewModel.requestApplySubscriptionRouting(subscription) },
                         onDescriptionHiddenChange = { hidden ->
                             viewModel.setSubscriptionDescriptionHidden(subscription.id, hidden)
                         },
@@ -245,78 +313,214 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     )
                 }
                 item(contentType = "addSubscription") {
-                    OutlinedButton(
-                        onClick = { showAddDialog = true },
+                    AddSubscriptionActionButton(
                         modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Add new subscription")
-                    }
+                        onPasteFromClipboard = pasteFromClipboard,
+                        onScanQrCode = openQrScanner,
+                        onAddManually = { showAddDialog = true },
+                    )
                 }
             }
         }
     }
 
-    if (showAddDialog) {
-        AddSubscriptionDialog(
-            onDismiss = { showAddDialog = false },
-            onConfirm = { name, url, userAgentMode, customUserAgent, customHeaders ->
-                viewModel.addSubscription(name, url, userAgentMode, customUserAgent, customHeaders)
-                showAddDialog = false
-            },
-        )
-    }
+    AddSubscriptionDialogHost(
+        visible = showAddDialog,
+        onDismiss = { showAddDialog = false },
+        onConfirm = { name, url, userAgentMode, customUserAgent, customHeaders ->
+            viewModel.addSubscription(name, url, userAgentMode, customUserAgent, customHeaders)
+            showAddDialog = false
+        },
+    )
+    QrScannerDialogHost(
+        keepDialog = keepQrScannerDialog,
+        visible = showQrScanner,
+        onVisibleChange = { showQrScanner = it },
+        onLinkScanned = { link ->
+            val trimmed = link.trim()
+            if (trimmed.isEmpty()) {
+                Toast.makeText(context, "Unable to fetch link", Toast.LENGTH_SHORT).show()
+            } else {
+                viewModel.addLink(trimmed)
+            }
+        },
+    )
+    ApplySubscriptionRoutingDialogHost(
+        visible = uiState.pendingSubscriptionRouting != null,
+        onDismiss = viewModel::dismissPendingSubscriptionRouting,
+        onConfirm = viewModel::applyPendingSubscriptionRouting,
+    )
+    RootFallbackDialogHost(
+        visible = showRootFallbackDialog,
+        onDismiss = { showRootFallbackDialog = false },
+        onConfirm = {
+            showRootFallbackDialog = false
+            startRootlessConnection()
+        },
+    )
+    RemoveSubscriptionDialogHost(
+        request = removeSubscriptionRequest,
+        onDismiss = { removeSubscriptionRequest = null },
+        onConfirm = { subscription ->
+            viewModel.deleteSubscription(subscription)
+            removeSubscriptionRequest = null
+        },
+    )
+    EditSubscriptionDialogHost(
+        subscription = editingSubscription,
+        onDismiss = { editingSubscription = null },
+        onConfirm = { subscription, name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
+            viewModel.updateSubscription(
+                subscription,
+                name,
+                url,
+                autoUpdateIntervalHours,
+                userAgentMode,
+                customUserAgent,
+                customHeaders,
+            )
+            editingSubscription = null
+        },
+    )
+    RawConfigDialogHost(
+        config = uiState.runningConfig,
+        onDismiss = viewModel::dismissRunningConfig,
+        onCopy = {
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
+            clipboard?.setPrimaryClip(ClipData.newPlainText("Xray config", uiState.runningConfig.orEmpty()))
+        },
+    )
+}
 
-    if (showRootFallbackDialog) {
-        AlertDialog(
-            onDismissRequest = { showRootFallbackDialog = false },
-            text = { Text("Unable to access root on device, falling back to rootless mode") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showRootFallbackDialog = false
-                        startRootlessConnection()
-                    },
-                ) {
-                    Text("Continue")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRootFallbackDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
+@Composable
+private fun AddSubscriptionDialogHost(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String, SubscriptionUserAgentMode, String, String) -> Unit,
+) {
+    if (!visible) return
 
-    editingSubscription?.let { subscription ->
-        EditSubscriptionDialog(
-            subscription = subscription,
-            onDismiss = { editingSubscription = null },
-            onConfirm = { name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
-                viewModel.updateSubscription(
-                    subscription,
-                    name,
-                    url,
-                    autoUpdateIntervalHours,
-                    userAgentMode,
-                    customUserAgent,
-                    customHeaders,
-                )
-                editingSubscription = null
-            },
-        )
-    }
+    AddSubscriptionDialog(
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
+}
 
-    if (uiState.runningConfig != null) {
-        RawConfigDialog(
-            config = uiState.runningConfig.orEmpty(),
-            onDismiss = viewModel::dismissRunningConfig,
-            onCopy = {
-                val clipboard = context.getSystemService(ClipboardManager::class.java)
-                clipboard?.setPrimaryClip(ClipData.newPlainText("Xray config", uiState.runningConfig.orEmpty()))
-            },
-        )
+@Composable
+private fun QrScannerDialogHost(
+    keepDialog: Boolean,
+    visible: Boolean,
+    onVisibleChange: (Boolean) -> Unit,
+    onLinkScanned: (String) -> Unit,
+) {
+    if (!keepDialog) return
+
+    Dialog(
+        onDismissRequest = { onVisibleChange(false) },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(animationSpec = tween(durationMillis = QR_SCANNER_TRANSITION_MS)),
+            exit = fadeOut(animationSpec = tween(durationMillis = QR_SCANNER_TRANSITION_MS)),
+        ) {
+            QrScannerOverlay(
+                onQrCodeScanned = { link ->
+                    onVisibleChange(false)
+                    onLinkScanned(link)
+                },
+                onClose = { onVisibleChange(false) },
+            )
+        }
     }
+}
+
+@Composable
+private fun ApplySubscriptionRoutingDialogHost(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!visible) return
+
+    ApplySubscriptionRoutingDialog(
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
+}
+
+@Composable
+private fun RootFallbackDialogHost(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!visible) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { Text("Unable to access root on device, falling back to rootless mode") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Continue")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun RemoveSubscriptionDialogHost(
+    request: Pair<SubscriptionEntity, Int>?,
+    onDismiss: () -> Unit,
+    onConfirm: (SubscriptionEntity) -> Unit,
+) {
+    val (subscription, serverCount) = request ?: return
+
+    RemoveSubscriptionDialog(
+        serverCount = serverCount,
+        onDismiss = onDismiss,
+        onConfirm = { onConfirm(subscription) },
+    )
+}
+
+@Composable
+private fun EditSubscriptionDialogHost(
+    subscription: SubscriptionEntity?,
+    onDismiss: () -> Unit,
+    onConfirm: (SubscriptionEntity, String, String, Int, SubscriptionUserAgentMode, String, String) -> Unit,
+) {
+    subscription ?: return
+
+    EditSubscriptionDialog(
+        subscription = subscription,
+        onDismiss = onDismiss,
+        onConfirm = { name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
+            onConfirm(subscription, name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
+        },
+    )
+}
+
+@Composable
+private fun RawConfigDialogHost(
+    config: String?,
+    onDismiss: () -> Unit,
+    onCopy: () -> Unit,
+) {
+    if (config == null) return
+
+    RawConfigDialog(
+        config = config,
+        onDismiss = onDismiss,
+        onCopy = onCopy,
+    )
 }
 
 @Composable
@@ -330,6 +534,8 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val runningConfig by viewModel.runningConfig.collectAsStateWithLifecycle()
     val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
+    val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
+    val pendingSubscriptionRouting by viewModel.pendingSubscriptionRouting.collectAsStateWithLifecycle()
 
     return HomeUiState(
         connectionState = connectionState,
@@ -341,6 +547,8 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         isRefreshing = isRefreshing,
         runningConfig = runningConfig,
         defaultPingMethod = defaultPingMethod,
+        routingPolicyControl = routingPolicyControl,
+        pendingSubscriptionRouting = pendingSubscriptionRouting,
     )
 }
 
@@ -383,6 +591,8 @@ private data class HomeUiState(
     val isRefreshing: Boolean,
     val runningConfig: String?,
     val defaultPingMethod: PingMethod,
+    val routingPolicyControl: RoutingPolicyControl,
+    val pendingSubscriptionRouting: SubscriptionAppRouting?,
 )
 
 private data class ConnectionUiState(
@@ -470,7 +680,7 @@ private fun ConnectionPanel(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Surface(
             color = containerColor,
@@ -510,6 +720,8 @@ private fun ConnectionPanel(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
     }
 }
 
@@ -570,7 +782,11 @@ private fun ErrorCard(message: String) {
 }
 
 @Composable
-private fun EmptySubscriptionsCard(onAddSubscription: () -> Unit) {
+private fun EmptySubscriptionsCard(
+    onPasteFromClipboard: () -> Unit,
+    onScanQrCode: () -> Unit,
+    onAddManually: () -> Unit,
+) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -582,9 +798,74 @@ private fun EmptySubscriptionsCard(onAddSubscription: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            OutlinedButton(onClick = onAddSubscription) {
-                Text("Add subscription")
-            }
+            AddSubscriptionActionButton(
+                onPasteFromClipboard = onPasteFromClipboard,
+                onScanQrCode = onScanQrCode,
+                onAddManually = onAddManually,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AddSubscriptionActionButton(
+    modifier: Modifier = Modifier,
+    onPasteFromClipboard: () -> Unit,
+    onScanQrCode: () -> Unit,
+    onAddManually: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Add new server or subscription")
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("Paste from clipboard") },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_content_paste_24),
+                        contentDescription = null,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onPasteFromClipboard()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Scan QR code") },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_qr_code_scanner_24),
+                        contentDescription = null,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onScanQrCode()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Add manually") },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_add_24),
+                        contentDescription = null,
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onAddManually()
+                },
+            )
         }
     }
 }
@@ -595,11 +876,13 @@ private fun SubscriptionCard(
     servers: List<ServerListItem>,
     selectedServerId: Long,
     defaultPingMethod: PingMethod,
+    canApplyRouting: Boolean,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
     onDefaultPingMethodSelected: (PingMethod) -> Unit,
+    onApplyRouting: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
     onServerSelected: (Long) -> Unit,
     onTestLatency: (ServerEntity) -> Unit,
@@ -628,8 +911,13 @@ private fun SubscriptionCard(
                 onDefaultPingMethodSelected = onDefaultPingMethodSelected,
                 onDelete = onDelete,
                 onEdit = onEdit,
+                canApplyRouting = canApplyRouting,
+                onApplyRouting = onApplyRouting,
                 onDescriptionHiddenChange = onDescriptionHiddenChange,
             )
+            if (metadata.hasVisibleSubscriptionSection()) {
+                Spacer(modifier = Modifier.height(SubscriptionBlockGap))
+            }
             SubscriptionMetadataSection(
                 subscription = subscription,
                 metadata = metadata,
@@ -656,6 +944,7 @@ private fun SubscriptionCard(
                             isSelected = server.entity.id == selectedServerId,
                             onClick = { onServerSelected(server.entity.id) },
                             onTestLatency = { onTestLatency(server.entity) },
+                            contentPadding = ServerRowDefaults.contentPadding,
                         )
                     }
                 }
@@ -680,15 +969,18 @@ private fun SubscriptionMetadataSection(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(animationSpec = tween(durationMillis = 180))
-            .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 0.dp),
+        verticalArrangement = Arrangement.spacedBy(SubscriptionBlockGap),
     ) {
         AnimatedVisibility(
             visible = metadata.announcement.isNotEmpty() && !subscription.descriptionHidden,
             enter = fadeIn(animationSpec = tween(durationMillis = 120)),
             exit = fadeOut(animationSpec = tween(durationMillis = 90)),
         ) {
-            SubscriptionDescriptionText(description = metadata.announcement)
+            Column {
+                SubscriptionDescriptionText(description = metadata.announcement)
+                Spacer(modifier = Modifier.height(4.dp))
+            }
         }
 
         if (limitedTraffic != null || metadata.expiry != null) {
@@ -725,6 +1017,13 @@ private fun SubscriptionMetadataSection(
             }
         }
     }
+}
+
+private fun SubscriptionMetadataUiState.hasVisibleSubscriptionSection(): Boolean {
+    val limitedTraffic = traffic?.takeUnless { it.quotaText == null }
+    return announcement.isNotEmpty() ||
+        limitedTraffic != null ||
+        expiry != null
 }
 
 @Composable
@@ -779,12 +1078,13 @@ private fun SubscriptionHeader(
     onDefaultPingMethodSelected: (PingMethod) -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
+    canApplyRouting: Boolean,
+    onApplyRouting: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showPingMethodDialog by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
-    val webPageUrl = subscription.profileWebPageUrl?.trim().orEmpty()
     val supportUrl = subscription.supportUrl?.trim().orEmpty()
     val hasDescription = subscription.announce?.trim()?.isNotEmpty() == true
     val consumedTrafficText = metadata.traffic
@@ -794,11 +1094,23 @@ private fun SubscriptionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 6.dp),
+            .padding(start = 16.dp, top = 12.dp, end = 8.dp, bottom = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = {
+                        if (hasDescription) {
+                            onDescriptionHiddenChange(!subscription.descriptionHidden)
+                        }
+                    },
+                    onLongClick = onEdit,
+                ),
+        ) {
             Text(
                 text = subscription.name,
                 style = MaterialTheme.typography.titleMedium,
@@ -808,7 +1120,7 @@ private fun SubscriptionHeader(
             )
             if (!consumedTrafficText.isNullOrBlank()) {
                 Text(
-                    text = consumedTrafficText,
+                    text = remember(consumedTrafficText) { consumedTrafficText.withMetadataEmphasis() },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -842,32 +1154,14 @@ private fun SubscriptionHeader(
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                 DropdownMenuItem(
                     text = { Text("Edit") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                    },
                     onClick = {
                         showMenu = false
                         onEdit()
                     },
                 )
-                if (webPageUrl.isNotEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text("Web Page") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Public, contentDescription = null)
-                        },
-                        onClick = {
-                            showMenu = false
-                            uriHandler.openUri(webPageUrl)
-                        },
-                    )
-                }
                 if (supportUrl.isNotEmpty()) {
                     DropdownMenuItem(
                         text = { Text("Support") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Person, contentDescription = null)
-                        },
                         onClick = {
                             showMenu = false
                             uriHandler.openUri(supportUrl)
@@ -879,27 +1173,23 @@ private fun SubscriptionHeader(
                         text = {
                             Text(if (subscription.descriptionHidden) "Show description" else "Hide description")
                         },
-                        leadingIcon = {
-                            Icon(
-                                if (subscription.descriptionHidden) {
-                                    Icons.Default.Visibility
-                                } else {
-                                    Icons.Default.VisibilityOff
-                                },
-                                contentDescription = null,
-                            )
-                        },
                         onClick = {
                             showMenu = false
                             onDescriptionHiddenChange(!subscription.descriptionHidden)
                         },
                     )
                 }
+                if (canApplyRouting) {
+                    DropdownMenuItem(
+                        text = { Text("Apply routing") },
+                        onClick = {
+                            showMenu = false
+                            onApplyRouting()
+                        },
+                    )
+                }
                 DropdownMenuItem(
-                    text = { Text("Delete") },
-                    leadingIcon = {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                    },
+                    text = { Text("Remove") },
                     onClick = {
                         showMenu = false
                         onDelete()
@@ -1044,6 +1334,7 @@ private fun ServerRow(
     isSelected: Boolean,
     onClick: () -> Unit,
     onTestLatency: () -> Unit,
+    contentPadding: PaddingValues = ServerRowDefaults.contentPadding,
 ) {
     val latency = server.latency
     val latencyMs = latency?.latencyMs
@@ -1076,7 +1367,7 @@ private fun ServerRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(contentPadding),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -1112,6 +1403,10 @@ private fun ServerRow(
             }
         }
     }
+}
+
+private object ServerRowDefaults {
+    val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
 }
 
 @Composable
@@ -1214,6 +1509,19 @@ private val subscriptionUrlRegex = Regex(
     pattern = """(?i)(?<![@\w])(?:https?://[^\s<>"']+|(?:www\.|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,})(?:/[^\s<>"']*)?)""",
 )
 private val trailingUrlPunctuation = setOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
+private val SubscriptionBlockGap = 6.dp
+private const val QR_SCANNER_TRANSITION_MS = 180
+
+private fun Context.clipboardText(): String? {
+    val clipboard = getSystemService(ClipboardManager::class.java) ?: return null
+    val clip = clipboard.primaryClip ?: return null
+    if (clip.itemCount <= 0) return null
+    return clip.getItemAt(0)
+        ?.coerceToText(this)
+        ?.toString()
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+}
 
 private data class AutoUpdateIntervalOption(
     val label: String,
@@ -1228,34 +1536,6 @@ private val autoUpdateIntervalOptions = listOf(
     AutoUpdateIntervalOption("3 days", 72),
     AutoUpdateIntervalOption("Manual only", 0),
 )
-
-@Composable
-private fun AutoUpdateIntervalRow(
-    option: AutoUpdateIntervalOption,
-    selected: Boolean,
-    onSelected: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .selectable(
-                selected = selected,
-                onClick = onSelected,
-                role = Role.RadioButton,
-            )
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AutoUpdateIntervalIndicator(selected = selected)
-        Text(
-            text = option.label,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
 
 @Composable
 private fun AutoUpdateIntervalIndicator(selected: Boolean) {
@@ -1278,6 +1558,7 @@ private fun AutoUpdateIntervalIndicator(selected: Boolean) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditSubscriptionDialog(
     subscription: SubscriptionEntity,
@@ -1289,6 +1570,7 @@ private fun EditSubscriptionDialog(
     var autoUpdateIntervalHours by remember(subscription.id) {
         mutableStateOf(subscription.autoUpdateIntervalHours)
     }
+    var autoUpdateExpanded by remember(subscription.id) { mutableStateOf(false) }
     var userAgentMode by remember(subscription.id) {
         mutableStateOf(SubscriptionUserAgentMode.fromValue(subscription.userAgentMode))
     }
@@ -1304,10 +1586,13 @@ private fun EditSubscriptionDialog(
         userAgentMode != SubscriptionUserAgentMode.fromValue(subscription.userAgentMode) ||
         customUserAgent.trim().ifBlank { null } != subscription.customUserAgent ||
         customHeaders.trim().ifBlank { null } != subscription.customHeaders
+    val selectedAutoUpdateOption = autoUpdateIntervalOptions.firstOrNull {
+        it.intervalHours == autoUpdateIntervalHours
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Subscription") },
+        title = { Text("Edit subscription") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1329,17 +1614,34 @@ private fun EditSubscriptionDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Auto update",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                autoUpdateIntervalOptions.forEach { option ->
-                    AutoUpdateIntervalRow(
-                        option = option,
-                        selected = option.intervalHours == autoUpdateIntervalHours,
-                        onSelected = { autoUpdateIntervalHours = option.intervalHours },
+                ExposedDropdownMenuBox(
+                    expanded = autoUpdateExpanded,
+                    onExpandedChange = { autoUpdateExpanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = selectedAutoUpdateOption?.label ?: formatAutoUpdateInterval(autoUpdateIntervalHours),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Auto update") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = autoUpdateExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
                     )
+                    ExposedDropdownMenu(
+                        expanded = autoUpdateExpanded,
+                        onDismissRequest = { autoUpdateExpanded = false },
+                    ) {
+                        autoUpdateIntervalOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option.label) },
+                                onClick = {
+                                    autoUpdateIntervalHours = option.intervalHours
+                                    autoUpdateExpanded = false
+                                },
+                            )
+                        }
+                    }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 SubscriptionUserAgentSection(
@@ -1367,6 +1669,73 @@ private fun EditSubscriptionDialog(
 }
 
 @Composable
+private fun ApplySubscriptionRoutingDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Apply subscription routing?") },
+        text = { Text("This action will override existing routing setup.") },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Yes, apply")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("No, thanks")
+            }
+        },
+    )
+}
+
+@Composable
+private fun RemoveSubscriptionDialog(
+    serverCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove subscription?") },
+        text = {
+            if (serverCount > 1) {
+                Text(
+                    buildAnnotatedString {
+                        append("All servers from this subscription ")
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append("will be removed")
+                        }
+                        append(".")
+                    },
+                )
+            } else {
+                Text(
+                    buildAnnotatedString {
+                        append("Server from this subscription ")
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append("will be removed")
+                        }
+                        append(".")
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Remove")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
 private fun AddSubscriptionDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, SubscriptionUserAgentMode, String, String) -> Unit,
@@ -1379,7 +1748,7 @@ private fun AddSubscriptionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add Subscription") },
+        title = { Text("Add manually") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1423,6 +1792,7 @@ private fun AddSubscriptionDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SubscriptionUserAgentSection(
     selectedMode: SubscriptionUserAgentMode,
@@ -1432,31 +1802,42 @@ private fun SubscriptionUserAgentSection(
     onCustomUserAgentChange: (String) -> Unit,
     onCustomHeadersChange: (String) -> Unit,
 ) {
-    Text(
-        text = "User-Agent",
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-    )
-    SubscriptionUserAgentMode.entries.forEach { mode ->
-        Row(
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = selectedMode.label,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("User-Agent") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
-                .fillMaxWidth()
-                .selectable(
-                    selected = mode == selectedMode,
-                    role = Role.RadioButton,
-                    onClick = { onModeChange(mode) },
-                )
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
         ) {
-            RadioButton(selected = mode == selectedMode, onClick = { onModeChange(mode) })
-            Column(modifier = Modifier.weight(1f)) {
-                Text(mode.label, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    mode.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            SubscriptionUserAgentMode.entries.forEach { mode ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(mode.label)
+                            Text(
+                                mode.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    onClick = {
+                        onModeChange(mode)
+                        expanded = false
+                    },
                 )
             }
         }

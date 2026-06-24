@@ -191,6 +191,7 @@ dependencies {
     compileOnly(libs.tomcat.annotations.api)
     implementation(libs.serialization.json)
     implementation(libs.coroutines.android)
+    implementation(libs.zxing.core)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)

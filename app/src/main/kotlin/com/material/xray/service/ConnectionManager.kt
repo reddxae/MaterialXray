@@ -18,6 +18,7 @@ import com.material.xray.core.xray.XrayState
 import com.material.xray.core.xray.XrayStatsClient
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.repository.ServerRepository
+import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
@@ -33,6 +34,7 @@ class ConnectionManager(
     private val configGenerator: ConfigGenerator,
     private val geoDataManager: GeoDataManager,
     private val appBypassDao: AppBypassDao,
+    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val serverRepository: ServerRepository,
     private val appInventory: AppInventory,
     private val stateHolder: ConnectionStateHolder,
@@ -62,6 +64,7 @@ class ConnectionManager(
         appInventory = appInventory,
         serverAddressResolver = serverAddressResolver,
         log = log,
+        providerRoutingSync = { subscriptionAppRoutingRepository.syncInstalledApps() },
     )
     private val activeRoutingUpdater = ActiveRoutingUpdater(
         appUidProvider = { context.applicationInfo.uid },

@@ -16,6 +16,7 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionMetadata
 import com.material.xray.model.SubscriptionRequestIdentity
 import com.material.xray.model.SubscriptionUserAgentMode
@@ -41,6 +42,7 @@ data class FetchedSubscription(
     val metadata: SubscriptionMetadata = SubscriptionMetadata(),
     val resolvedUrl: String,
     val permanentRedirectUrl: String? = null,
+    val appRouting: SubscriptionAppRouting? = null,
 )
 
 class SubscriptionFetcher @Inject constructor(
@@ -95,6 +97,7 @@ class SubscriptionFetcher @Inject constructor(
                 metadata = metadata,
                 resolvedUrl = resolvedUrl,
                 permanentRedirectUrl = response.permanentRedirectTarget(originalUrl = normalizedUrl),
+                appRouting = parseAppRouting(response),
             )
         }
     }
@@ -349,6 +352,8 @@ class SubscriptionFetcher @Inject constructor(
     private fun firstInt(primary: JsonObject?, fallback: JsonObject, key: String): Int = primary?.findInt(key) ?: fallback.findFirstIntRecursive(key) ?: 0
 
     private fun parseMetadata(response: Response): SubscriptionMetadata = SubscriptionStandardHeaders.parseMetadata(response.headers)
+
+    private fun parseAppRouting(response: Response): SubscriptionAppRouting? = SubscriptionStandardHeaders.parseAppRouting(response.headers)
 
     private fun isJsonContentType(contentType: String?): Boolean = SubscriptionStandardHeaders.isJsonContentType(contentType)
 

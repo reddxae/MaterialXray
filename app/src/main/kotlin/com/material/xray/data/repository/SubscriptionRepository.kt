@@ -5,7 +5,10 @@ import com.material.xray.data.db.dao.SubscriptionDao
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.FetchedSubscription
+import com.material.xray.data.parser.ShareLinkParser
 import com.material.xray.data.parser.SubscriptionFetcher
+import com.material.xray.model.ServerConfig
+import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionRequestIdentity
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.parseSubscriptionHeaders
@@ -24,12 +27,15 @@ class SubscriptionRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val shareLinkParser = ShareLinkParser()
 
     fun observeAll(): Flow<List<SubscriptionEntity>> = subscriptionDao.observeAll()
 
     data class RefreshResult(
+        val subscriptionId: Long,
         val serverIdByConfigJson: Map<String, Long>,
         val serverIdReplacements: Map<Long, Long>,
+        val appRouting: SubscriptionAppRouting? = null,
     )
 
     suspend fun add(
@@ -41,6 +47,14 @@ class SubscriptionRepository @Inject constructor(
     ): Long {
         val trimmedName = name.trim()
         val trimmedUrl = url.trim()
+        shareLinkParser.parse(trimmedUrl)?.let { config ->
+            return addServerConfig(
+                name = trimmedName,
+                sourceLink = trimmedUrl,
+                config = config,
+            )
+        }
+
         val id = subscriptionDao.insert(
             SubscriptionEntity(
                 name = trimmedName.ifEmpty { nextFallbackName() },
@@ -51,6 +65,40 @@ class SubscriptionRepository @Inject constructor(
             ),
         )
         refresh(id, trimmedUrl)
+        return id
+    }
+
+    suspend fun addLink(link: String): Long = add(name = "", url = link)
+
+    private suspend fun addServerConfig(
+        name: String,
+        sourceLink: String,
+        config: ServerConfig,
+    ): Long {
+        val subscriptionName = name.trim()
+            .ifEmpty { config.name.trim() }
+            .ifEmpty { nextFallbackName() }
+        val id = subscriptionDao.insert(
+            SubscriptionEntity(
+                name = subscriptionName,
+                url = sourceLink,
+                lastUpdated = System.currentTimeMillis(),
+                autoUpdateIntervalHours = 0,
+            ),
+        )
+        serverDao.insertAll(
+            listOf(
+                ServerEntity(
+                    subscriptionId = id,
+                    name = config.name,
+                    protocol = config.protocol.name,
+                    address = config.address,
+                    port = config.port,
+                    configJson = json.encodeToString(config),
+                    sortOrder = 0,
+                ),
+            ),
+        )
         return id
     }
 
@@ -77,9 +125,11 @@ class SubscriptionRepository @Inject constructor(
         subscriptionDao.update(existing.applyFetchedData(fetched))
         val insertedServers = servers.zip(insertedIds).map { (server, id) -> server.copy(id = id) }
         return RefreshResult(
+            subscriptionId = subId,
             serverIdByConfigJson = insertedServers
                 .associate { server -> server.configJson to server.id },
             serverIdReplacements = buildServerIdReplacements(existingServers, insertedServers),
+            appRouting = fetched.appRouting,
         )
     }
 
@@ -131,7 +181,7 @@ class SubscriptionRepository @Inject constructor(
                 ?: url,
             resolvedName = resolveDisplayName(providerName),
             lastUpdated = System.currentTimeMillis(),
-        )
+        ).withSubscriptionAppRouting(fetched.appRouting)
     }
 
     private suspend fun SubscriptionEntity.resolveDisplayName(providerName: String?): String {

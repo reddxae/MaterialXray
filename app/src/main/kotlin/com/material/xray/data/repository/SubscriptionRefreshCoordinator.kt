@@ -3,6 +3,11 @@ package com.material.xray.data.repository
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
+import com.material.xray.model.ConnectionState
+import com.material.xray.model.RoutingPolicyControl
+import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.PendingRoutingChange
+import com.material.xray.service.RoutingChangeManager
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
@@ -13,6 +18,9 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     private val serverRepository: ServerRepository,
     private val settingsRepository: SettingsRepository,
     private val appBypassDao: AppBypassDao,
+    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
+    private val routingChangeManager: RoutingChangeManager,
+    private val connectionStateHolder: ConnectionStateHolder,
 ) {
     suspend fun refreshAll(): Map<Long, SubscriptionRepository.RefreshResult> {
         val selectedBeforeRefresh = selectedServerEntity()
@@ -90,6 +98,18 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         refreshResult?.serverIdReplacements.orEmpty().forEach { (oldServerId, newServerId) ->
             if (oldServerId != newServerId) {
                 appBypassDao.updateServerId(oldServerId, newServerId)
+            }
+        }
+
+        val result = refreshResult ?: return
+        if (settingsRepository.routingPolicyControl.first() != RoutingPolicyControl.SubscriptionProvider) return
+
+        val selectedServer = selectedServerEntity() ?: return
+        if (selectedServer.subscriptionId != result.subscriptionId) return
+
+        if (subscriptionAppRoutingRepository.applyForSubscription(result.subscriptionId)) {
+            if (connectionStateHolder.state.value is ConnectionState.Connected) {
+                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
             }
         }
     }

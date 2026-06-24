@@ -1,5 +1,7 @@
 package com.material.xray.data.parser
 
+import com.material.xray.model.SubscriptionAppRouting
+import com.material.xray.model.SubscriptionAppRoutingMode
 import com.material.xray.model.SubscriptionMetadata
 import com.material.xray.model.SubscriptionUserInfo
 import java.util.Base64
@@ -30,6 +32,8 @@ object SubscriptionStandardHeaders {
     const val PROFILE_WEB_PAGE_URL = "profile-web-page-url"
     const val ANNOUNCE = "announce"
     const val SUPPORT_URL = "support-url"
+    const val PER_APP_PROXY_LIST = "per-app-proxy-list"
+    const val PER_APP_PROXY_MODE = "per-app-proxy-mode"
 
     val requestHeaderNames: List<String> = listOf(
         USER_AGENT,
@@ -48,6 +52,8 @@ object SubscriptionStandardHeaders {
         PROFILE_WEB_PAGE_URL,
         ANNOUNCE,
         SUPPORT_URL,
+        PER_APP_PROXY_LIST,
+        PER_APP_PROXY_MODE,
     )
 
     fun applyRequestHeaders(
@@ -79,6 +85,19 @@ object SubscriptionStandardHeaders {
     )
 
     fun hasKnownResponseHeader(headers: Headers): Boolean = responseHeaderNames.any { headers[it] != null }
+
+    fun parseAppRouting(headers: Headers): SubscriptionAppRouting? {
+        val packageNames = headers.values(PER_APP_PROXY_LIST)
+            .flatMap { value ->
+                normalizeNullableHeader(value)
+                    ?.split(PACKAGE_LIST_SEPARATOR_REGEX)
+                    .orEmpty()
+            }
+            .map { it.trim().trim('"', '\'') }
+            .filter { it.isNotEmpty() }
+        val mode = SubscriptionAppRoutingMode.fromHeader(headers[PER_APP_PROXY_MODE]) ?: return null
+        return SubscriptionAppRouting(packageNames, mode).normalized()
+    }
 
     fun normalizeContentType(value: String?): String? {
         val raw = normalizeNullableHeader(value) ?: return null
@@ -166,4 +185,5 @@ object SubscriptionStandardHeaders {
 
     private const val BASE64_PREFIX = "base64:"
     private val WHITESPACE_REGEX = "\\s+".toRegex()
+    private val PACKAGE_LIST_SEPARATOR_REGEX = "[,;\\s]+".toRegex()
 }

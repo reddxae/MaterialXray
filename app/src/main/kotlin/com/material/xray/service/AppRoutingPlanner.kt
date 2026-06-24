@@ -38,6 +38,7 @@ internal class AppRoutingPlanner(
     private val appInventory: AppInventorySource,
     private val serverAddressResolver: ServerAddressResolver,
     private val log: LogBuffer,
+    private val providerRoutingSync: suspend () -> Unit = {},
 ) : RoutingPlanBuilder {
     override suspend fun build(
         baseTunName: String,
@@ -47,8 +48,9 @@ internal class AppRoutingPlanner(
         defaultProxyServer: ServerConfig?,
         allowIpv6: Boolean,
     ): AppRoutingPlan {
-        val assignments = appBypassDao.getAll()
         val appSnapshot = appInventory.loadRoutingSnapshot()
+        providerRoutingSync()
+        val assignments = appBypassDao.getAll()
         val installedAppsByKey = appSnapshot.apps.associateBy { it.appKey }
         val assignmentsWithUid = assignments.mapNotNull { assignment ->
             val currentUid = installedAppsByKey[appKey(assignment.profileId, assignment.packageName)]?.uid

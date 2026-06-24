@@ -36,13 +36,80 @@ data class ServerConfig(
 }
 
 fun ServerConfig.endpointSummary(): String = buildList {
-    add(protocol.displayName.lowercase())
-    add(transport.type.lowercase())
-    add(security.type.lowercase())
+    add(
+        formatProxyConfigSummary(
+            ProxyConfigDisplay(
+                protocol = displayProtocolName(),
+                innerEncryption = displayVlessEncryptionMethod(),
+                security = security.type,
+                pqAlgorithm = displayPqAlgorithm(),
+                transport = transport.type.normalizedXrayTransportType(),
+            ),
+        ),
+    )
     if (rawConfigJson.isNotBlank()) add("raw")
-}.joinToString(" • ")
+}.joinToString(PROXY_CONFIG_SEPARATOR)
+
+internal data class ProxyConfigDisplay(
+    val protocol: String,
+    val innerEncryption: String? = null,
+    val security: String? = null,
+    val pqAlgorithm: String? = null,
+    val transport: String? = null,
+)
+
+internal fun formatProxyConfigSummary(config: ProxyConfigDisplay): String = buildList {
+    config.protocol.normalizedDisplayPart()?.let(::add)
+    formatSecurityBlock(config)?.let(::add)
+    config.transport.normalizedDisplayPart()?.let(::add)
+}.joinToString(PROXY_CONFIG_SEPARATOR)
+
+internal fun String.normalizedXrayTransportType(): String {
+    val transport = trim()
+    return if (transport.equals("tcp", ignoreCase = true)) "raw" else transport.lowercase()
+}
+
+private fun ServerConfig.displayProtocolName(): String {
+    val encryption = extra["encryption"]?.trim().orEmpty()
+    return if (protocol == Protocol.VLESS && encryption.isNotEmpty() && !encryption.equals("none", ignoreCase = true)) {
+        "vlessenc"
+    } else {
+        protocol.displayName.lowercase()
+    }
+}
+
+private fun formatSecurityBlock(config: ProxyConfigDisplay): String? {
+    val security = config.security.normalizedDisplayPart()?.takeUnlessNone()
+    if (security != null) {
+        return listOfNotNull(config.pqAlgorithm.normalizedDisplayPart(), security).joinToString("+")
+    }
+    return config.innerEncryption.normalizedDisplayPart()?.takeUnlessNone()
+}
+
+private fun ServerConfig.displayVlessEncryptionMethod(): String? {
+    if (!isEncryptedVless()) return null
+    val method = encryptionValue().split('.').getOrNull(1)?.trim()?.lowercase()
+    return method?.takeIf { it in VLESS_ENCRYPTION_METHODS } ?: "native"
+}
+
+private fun ServerConfig.displayPqAlgorithm(): String? = extra[SERVER_EXTRA_PQ_ALGORITHM]?.takeIf { it.isNotBlank() }
+    ?: extra[SERVER_EXTRA_MLDSA65_VERIFY]?.takeIf { it.isNotBlank() }?.let { "ml-dsa" }
+
+private fun ServerConfig.isEncryptedVless(): Boolean = protocol == Protocol.VLESS && encryptionValue().let { it.isNotEmpty() && !it.equals("none", ignoreCase = true) }
+
+private fun ServerConfig.encryptionValue(): String = extra["encryption"]?.trim().orEmpty()
+
+private fun String?.normalizedDisplayPart(): String? = this
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+
+private fun String.takeUnlessNone(): String? = takeUnless { equals("none", ignoreCase = true) }
+
+private val VLESS_ENCRYPTION_METHODS = setOf("native", "xorpub", "random")
+private const val PROXY_CONFIG_SEPARATOR = " • "
 
 internal const val SERVER_EXTRA_XHTTP_EXTRA = "xhttpExtra"
+internal const val SERVER_EXTRA_PQ_ALGORITHM = "pqAlgorithm"
 internal const val SERVER_EXTRA_MLDSA65_VERIFY = "mldsa65Verify"
 internal const val SERVER_EXTRA_SPIDER_X = "spiderX"
 internal const val SERVER_EXTRA_HYSTERIA_INSECURE = "hysteriaInsecure"

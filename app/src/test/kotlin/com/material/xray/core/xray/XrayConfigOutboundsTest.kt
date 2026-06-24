@@ -71,7 +71,7 @@ class XrayConfigOutboundsTest {
         assertEquals("proxy", outbound.getValue("tag").jsonPrimitive.content)
         assertEquals("vless", outbound.getValue("protocol").jsonPrimitive.content)
         val stream = outbound.getValue("streamSettings").jsonObject
-        assertEquals("tcp", stream.getValue("network").jsonPrimitive.content)
+        assertEquals("raw", stream.getValue("network").jsonPrimitive.content)
         assertEquals("rmnet0", stream.getValue("sockopt").jsonObject.getValue("interface").jsonPrimitive.content)
     }
 

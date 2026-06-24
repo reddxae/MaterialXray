@@ -16,6 +16,7 @@ import com.material.xray.model.SERVER_EXTRA_SPIDER_X
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayOutbound
+import com.material.xray.model.normalizedXrayTransportType
 import java.net.URI
 import java.net.URLDecoder
 import kotlinx.serialization.json.Json
@@ -270,7 +271,7 @@ private fun buildStreamSettings(
     allowIpv6: Boolean,
     domainStrategyOverride: String? = null,
 ) = buildJsonObject {
-    put("network", server.transport.type)
+    put("network", server.transport.type.normalizedXrayTransportType())
     put("security", server.security.type)
     put("sockopt", buildSockopt(fwmark, physicalInterface, allowIpv6, domainStrategyOverride))
     putSecuritySettings(server)

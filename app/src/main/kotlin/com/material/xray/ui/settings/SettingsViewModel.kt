@@ -17,16 +17,22 @@ import com.material.xray.data.db.dao.SubscriptionDao
 import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.data.repository.SubscriptionAppRoutingRepository
+import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.data.repository.toSubscriptionMetadata
+import com.material.xray.data.repository.withSubscriptionAppRouting
 import com.material.xray.data.repository.withSubscriptionMetadata
 import com.material.xray.model.BackupData
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationStyle
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.PendingRoutingChange
+import com.material.xray.service.RoutingChangeManager
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -54,6 +60,8 @@ class SettingsViewModel @Inject constructor(
     private val serverDao: ServerDao,
     private val appBypassDao: AppBypassDao,
     private val connectionStateHolder: ConnectionStateHolder,
+    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
+    private val routingChangeManager: RoutingChangeManager,
     private val geoDataManager: GeoDataManager,
     private val launcherIconManager: LauncherIconManager,
     private val rootShell: RootShell,
@@ -122,6 +130,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         true,
+    )
+    val routingPolicyControl = settingsRepo.routingPolicyControl.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        RoutingPolicyControl.default,
     )
     val geoipUrl = settingsRepo.geoipUrl.stateIn(
         viewModelScope,
@@ -241,6 +254,19 @@ class SettingsViewModel @Inject constructor(
         settingsRepo.setSubscriptionSendHardwareId(enabled)
     }
 
+    fun setRoutingPolicyControl(policy: RoutingPolicyControl) = viewModelScope.launch {
+        if (policy == routingPolicyControl.value) return@launch
+        settingsRepo.setRoutingPolicyControl(policy)
+        if (policy == RoutingPolicyControl.SubscriptionProvider &&
+            subscriptionAppRoutingRepository.applyForSelectedServerIfProviderControlled()
+        ) {
+            if (connectionStateHolder.state.value is ConnectionState.Connected) {
+                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
+            }
+            reloadActiveConnectionIfConnected()
+        }
+    }
+
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }
     fun setGeositeUrl(url: String) = viewModelScope.launch { settingsRepo.setGeositeUrl(url) }
     fun setLatencyCheckUrl(url: String) = viewModelScope.launch { settingsRepo.setLatencyCheckUrl(url) }
@@ -285,6 +311,7 @@ class SettingsViewModel @Inject constructor(
                             customUserAgent = sub.customUserAgent,
                             customHeaders = sub.customHeaders,
                             metadata = sub.toSubscriptionMetadata(),
+                            appRouting = sub.toSubscriptionAppRouting(),
                         )
                     },
                     bypassedApps = bypassed,
@@ -320,7 +347,8 @@ class SettingsViewModel @Inject constructor(
                             userAgentMode = sub.userAgentMode,
                             customUserAgent = sub.customUserAgent,
                             customHeaders = sub.customHeaders,
-                        ).withSubscriptionMetadata(sub.metadata),
+                        ).withSubscriptionMetadata(sub.metadata)
+                            .withSubscriptionAppRouting(sub.appRouting),
                     )
                 }
                 backup.bypassedApps.forEach { value ->

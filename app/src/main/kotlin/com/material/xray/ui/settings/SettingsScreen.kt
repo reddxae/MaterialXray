@@ -3,6 +3,7 @@ package com.material.xray.ui.settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -52,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,7 +64,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -70,9 +76,11 @@ import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.components.ScrolledTopAppBar
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collect
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,6 +101,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val notificationSettings by viewModel.notificationSettings.collectAsStateWithLifecycle()
     val subscriptionSendHardwareId by viewModel.subscriptionSendHardwareId.collectAsStateWithLifecycle()
+    val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
     val latencyCheckUrl by viewModel.latencyCheckUrl.collectAsStateWithLifecycle()
@@ -107,6 +116,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var showNotificationFieldsDialog by remember { mutableStateOf(false) }
     var showFieldStyleDialog by remember { mutableStateOf(false) }
     var showUpdateFrequencyDialog by remember { mutableStateOf(false) }
+    var showAdvancedOptionsRowTop by remember { mutableStateOf<Int?>(null) }
+    var pendingAdvancedOptionsScrollAnchor by remember { mutableStateOf<AdvancedOptionsScrollAnchor?>(null) }
     val rootServiceAvailable = rootAvailable == true
     val rootServiceActive = useRootService && rootServiceAvailable
     val appVersion = remember(context) {
@@ -163,6 +174,14 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         }
     }
 
+    AdvancedOptionsScrollAnchorEffect(
+        showAdvancedOptions = showAdvancedOptions,
+        anchor = pendingAdvancedOptionsScrollAnchor,
+        rowTop = showAdvancedOptionsRowTop,
+        scrollState = scrollState,
+        onConsumed = { pendingAdvancedOptionsScrollAnchor = null },
+    )
+
     Scaffold(
         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0.dp),
@@ -181,183 +200,100 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Service", style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Use root service",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (rootAvailable == false) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                    )
-                    Text(
-                        text = when (rootAvailable) {
-                            null -> "Checking root access..."
-                            true -> "Root access available"
-                            false -> "Root unavailable on this device"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = useRootService && rootAvailable != false,
-                    onCheckedChange = { viewModel.setUseRootService(it) },
-                    enabled = rootServiceAvailable,
-                )
-            }
-
-            HorizontalDivider()
-            Text("Settings", style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Show advanced options", style = MaterialTheme.typography.bodyLarge)
-                }
-                Switch(
-                    checked = showAdvancedOptions,
-                    onCheckedChange = { viewModel.setShowAdvancedOptions(it) },
-                )
-            }
-
-            HorizontalDivider()
-            Text("Notification", style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Customize persistent notification", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        if (notificationSettings.enabled) "Custom fields enabled" else "Use the default service status text",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = notificationSettings.enabled,
-                    onCheckedChange = viewModel::setNotificationEnabled,
-                )
-            }
-
-            SettingsActionRow(
-                title = "Configure fields",
-                subtitle = notificationFieldSummary(notificationSettings),
-                enabled = notificationSettings.enabled,
-                onClick = { showNotificationFieldsDialog = true },
+            SettingsServiceSection(
+                rootAvailable = rootAvailable,
+                rootServiceAvailable = rootServiceAvailable,
+                rootServiceActive = rootServiceActive,
+                useRootService = useRootService,
+                autoConnect = autoConnect,
+                onUseRootServiceChange = viewModel::setUseRootService,
+                onAutoConnectChange = viewModel::setAutoConnect,
             )
-            SettingsActionRow(
-                title = "Field style",
-                subtitle = notificationSettings.style.label,
-                enabled = notificationSettings.enabled,
-                onClick = { showFieldStyleDialog = true },
-            )
-            SettingsActionRow(
-                title = "Update frequency",
-                subtitle = "Every ${notificationSettings.updateIntervalMs} ms",
-                enabled = notificationSettings.enabled,
-                onClick = { showUpdateFrequencyDialog = true },
-            )
-
-            HorizontalDivider()
-            Text("Appearance", style = MaterialTheme.typography.titleMedium)
-
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                LauncherIcon.entries.forEach { icon ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(icon.label, style = MaterialTheme.typography.bodyLarge)
-                        }
-                        RadioButton(
-                            selected = icon == launcherIcon,
-                            onClick = { viewModel.setLauncherIcon(icon) },
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider()
-            Text("Startup", style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Auto-connect on boot",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                Switch(
-                    checked = autoConnect,
-                    onCheckedChange = { viewModel.setAutoConnect(it) },
-                    enabled = !useRootService || rootServiceActive,
-                )
-            }
 
             HorizontalDivider()
             Text("Routing", style = MaterialTheme.typography.titleMedium)
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Bypass LAN", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Route private IPs and LAN domains directly",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = bypassLan, onCheckedChange = { viewModel.setBypassLan(it) })
-            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsNestedSection(title = "Connectivity") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .toggleable(
+                                value = bypassLan,
+                                role = Role.Switch,
+                                onValueChange = { viewModel.setBypassLan(it) },
+                            )
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Bypass LAN", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "Route private IPs and LAN domains directly",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(checked = bypassLan, onCheckedChange = null)
+                    }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Allow IPv6 connections", style = MaterialTheme.typography.bodyLarge)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .toggleable(
+                                value = allowIpv6,
+                                role = Role.Switch,
+                                onValueChange = { viewModel.setAllowIpv6(it) },
+                            )
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Allow IPv6 connections", style = MaterialTheme.typography.bodyLarge)
+                        }
+                        Switch(checked = allowIpv6, onCheckedChange = null)
+                    }
                 }
-                Switch(checked = allowIpv6, onCheckedChange = { viewModel.setAllowIpv6(it) })
+
+                SettingsNestedSection(title = "Routing policy") {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        RoutingPolicyControl.entries.forEach { policy ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .selectable(
+                                        selected = policy == routingPolicyControl,
+                                        role = Role.RadioButton,
+                                        onClick = { viewModel.setRoutingPolicyControl(policy) },
+                                    )
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(policy.label, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        policy.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                RadioButton(
+                                    selected = policy == routingPolicyControl,
+                                    onClick = null,
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             HorizontalDivider()
@@ -542,27 +478,148 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             HorizontalDivider()
-            Text("Subscriptions", style = MaterialTheme.typography.titleMedium)
+            Text("Appearance", style = MaterialTheme.typography.titleMedium)
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Send hardware ID (HWID)", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Include a stable x-hwid header so providers can recognise this device",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsNestedSection(title = "Notification") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .toggleable(
+                                value = notificationSettings.enabled,
+                                role = Role.Switch,
+                                onValueChange = viewModel::setNotificationEnabled,
+                            )
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Customize service notification", style = MaterialTheme.typography.bodyLarge)
+                        }
+                        Switch(
+                            checked = notificationSettings.enabled,
+                            onCheckedChange = null,
+                        )
+                    }
+
+                    if (notificationSettings.enabled) {
+                        SettingsActionRow(
+                            title = "Configure fields",
+                            subtitle = notificationFieldSummary(notificationSettings),
+                            onClick = { showNotificationFieldsDialog = true },
+                        )
+                        SettingsActionRow(
+                            title = "Field style",
+                            subtitle = notificationSettings.style.label,
+                            onClick = { showFieldStyleDialog = true },
+                        )
+                        SettingsActionRow(
+                            title = "Update frequency",
+                            subtitle = "Every ${notificationSettings.updateIntervalMs} ms",
+                            onClick = { showUpdateFrequencyDialog = true },
+                        )
+                    }
+                }
+
+                SettingsNestedSection(title = "App icon") {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LauncherIcon.entries.forEach { icon ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .selectable(
+                                        selected = icon == launcherIcon,
+                                        role = Role.RadioButton,
+                                        onClick = { viewModel.setLauncherIcon(icon) },
+                                    )
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(icon.label, style = MaterialTheme.typography.bodyLarge)
+                                }
+                                RadioButton(
+                                    selected = icon == launcherIcon,
+                                    onClick = null,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider()
+            Text("Settings", style = MaterialTheme.typography.titleMedium)
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .toggleable(
+                            value = subscriptionSendHardwareId,
+                            role = Role.Switch,
+                            onValueChange = viewModel::setSubscriptionSendHardwareId,
+                        )
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Send hardware ID (HWID)", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Include a stable x-hwid header so providers can recognise this device",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = subscriptionSendHardwareId,
+                        onCheckedChange = null,
                     )
                 }
-                Switch(
-                    checked = subscriptionSendHardwareId,
-                    onCheckedChange = viewModel::setSubscriptionSendHardwareId,
-                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { coordinates ->
+                            showAdvancedOptionsRowTop = coordinates.positionInRoot().y.roundToInt()
+                        }
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .toggleable(
+                            value = showAdvancedOptions,
+                            role = Role.Switch,
+                            onValueChange = { enabled ->
+                                showAdvancedOptionsRowTop?.let { rowTop ->
+                                    pendingAdvancedOptionsScrollAnchor = AdvancedOptionsScrollAnchor(
+                                        targetEnabled = enabled,
+                                        rowTop = rowTop,
+                                        scrollValue = scrollState.value,
+                                    )
+                                }
+                                viewModel.setShowAdvancedOptions(enabled)
+                            },
+                        )
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Show advanced options", style = MaterialTheme.typography.bodyLarge)
+                    }
+                    Switch(
+                        checked = showAdvancedOptions,
+                        onCheckedChange = null,
+                    )
+                }
             }
 
             HorizontalDivider()
@@ -595,6 +652,142 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         onUpdateFrequency = viewModel::setNotificationUpdateIntervalMs,
         onSelectFieldStyle = viewModel::setNotificationStyle,
     )
+}
+
+private data class AdvancedOptionsScrollAnchor(
+    val targetEnabled: Boolean,
+    val rowTop: Int,
+    val scrollValue: Int,
+)
+
+@Composable
+private fun AdvancedOptionsScrollAnchorEffect(
+    showAdvancedOptions: Boolean,
+    anchor: AdvancedOptionsScrollAnchor?,
+    rowTop: Int?,
+    scrollState: ScrollState,
+    onConsumed: () -> Unit,
+) {
+    LaunchedEffect(showAdvancedOptions) {
+        anchor ?: return@LaunchedEffect
+        if (anchor.targetEnabled != showAdvancedOptions) return@LaunchedEffect
+
+        withFrameNanos { }
+        rowTop ?: return@LaunchedEffect
+        val scrollDelta = rowTop - anchor.rowTop
+        if (scrollDelta != 0) {
+            scrollState.scrollTo((anchor.scrollValue + scrollDelta).coerceIn(0, scrollState.maxValue))
+        }
+        onConsumed()
+    }
+}
+
+@Composable
+private fun SettingsServiceSection(
+    rootAvailable: Boolean?,
+    rootServiceAvailable: Boolean,
+    rootServiceActive: Boolean,
+    useRootService: Boolean,
+    autoConnect: Boolean,
+    onUseRootServiceChange: (Boolean) -> Unit,
+    onAutoConnectChange: (Boolean) -> Unit,
+) {
+    Text("Service", style = MaterialTheme.typography.titleMedium)
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .toggleable(
+                    value = useRootService && rootAvailable != false,
+                    enabled = rootServiceAvailable,
+                    role = Role.Switch,
+                    onValueChange = onUseRootServiceChange,
+                )
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Use root service",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (rootAvailable == false) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                if (rootAvailable == false) {
+                    Text(
+                        "Unavailable",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Switch(
+                checked = useRootService && rootAvailable != false,
+                onCheckedChange = null,
+                enabled = rootServiceAvailable,
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .toggleable(
+                    value = autoConnect,
+                    enabled = !useRootService || rootServiceActive,
+                    role = Role.Switch,
+                    onValueChange = onAutoConnectChange,
+                )
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Auto-connect on boot",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Switch(
+                checked = autoConnect,
+                onCheckedChange = null,
+                enabled = !useRootService || rootServiceActive,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsNestedSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.padding(top = 4.dp),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            content()
+        }
+    }
 }
 
 @Composable
@@ -873,6 +1066,7 @@ private fun ReorderableFieldList(
                         .onGloballyPositioned { heights[field] = it.size.height }
                         .zIndex(if (dragging) 1f else 0f)
                         .graphicsLayer { translationY = if (dragging) dragOffsetY else 0f }
+                        .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
                             if (dragging) {
@@ -882,7 +1076,12 @@ private fun ReorderableFieldList(
                             },
                         )
                         .heightIn(min = 52.dp)
-                        .padding(vertical = 4.dp),
+                        .toggleable(
+                            value = isEnabled(field),
+                            role = Role.Switch,
+                            onValueChange = { onToggle(field, it) },
+                        )
+                        .padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -940,7 +1139,7 @@ private fun ReorderableFieldList(
                     }
                     Switch(
                         checked = isEnabled(field),
-                        onCheckedChange = { onToggle(field, it) },
+                        onCheckedChange = null,
                     )
                 }
             }

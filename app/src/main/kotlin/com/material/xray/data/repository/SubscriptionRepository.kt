@@ -106,7 +106,11 @@ class SubscriptionRepository @Inject constructor(
         val existing = subscriptionDao.getById(subId) ?: return null
         val existingServers = serverDao.getBySubscription(subId)
         val identity = existing.requestIdentity(settingsRepository.subscriptionSendHardwareId.first())
-        val fetched = fetcher.fetchWithMetadata(url, identity)
+        val fetched = fetcher.fetchWithMetadata(
+            url = url,
+            identity = identity,
+            preferJson = settingsRepository.subscriptionPreferJson.first(),
+        )
         val servers = fetched.configs.mapIndexed { index, config ->
             ServerEntity(
                 subscriptionId = subId,

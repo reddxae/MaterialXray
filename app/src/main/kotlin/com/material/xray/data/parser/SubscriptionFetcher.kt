@@ -23,6 +23,7 @@ import com.material.xray.model.SubscriptionUserAgentMode
 import java.io.IOException
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -32,6 +33,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -54,23 +56,47 @@ class SubscriptionFetcher @Inject constructor(
         prettyPrint = false
     }
 
-    suspend fun fetch(url: String): List<ServerConfig> = fetchWithMetadata(url).configs
+    suspend fun fetch(url: String, preferJson: Boolean = false): List<ServerConfig> = fetchWithMetadata(url, preferJson = preferJson).configs
 
     suspend fun fetchWithMetadata(
         url: String,
         identity: SubscriptionRequestIdentity = SubscriptionRequestIdentity(),
+        preferJson: Boolean = false,
     ): FetchedSubscription = withContext(Dispatchers.IO) {
         val normalizedUrl = url.trim()
         val httpUrl = normalizedUrl.toHttpUrlOrNull()
             ?: throw IOException("Invalid subscription URL: $normalizedUrl")
 
+        if (preferJson) {
+            httpUrl.jsonEndpointOrNull()?.let { jsonUrl ->
+                val jsonSubscription = try {
+                    fetchUrl(jsonUrl, identity, originalUrl = jsonUrl.toString())
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+                if (jsonSubscription != null && jsonSubscription.configs.isNotEmpty()) {
+                    return@withContext jsonSubscription.copy(permanentRedirectUrl = null)
+                }
+            }
+        }
+
+        fetchUrl(httpUrl, identity, originalUrl = normalizedUrl)
+    }
+
+    private fun fetchUrl(
+        httpUrl: HttpUrl,
+        identity: SubscriptionRequestIdentity,
+        originalUrl: String,
+    ): FetchedSubscription {
         val request = SubscriptionStandardHeaders.applyRequestHeaders(
             builder = Request.Builder()
                 .url(httpUrl),
             values = buildHeaderValues(identity),
         ).build()
 
-        client.newCall(request).execute().use { response ->
+        return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw IOException("Subscription request failed with HTTP ${response.code}")
             }
@@ -96,10 +122,15 @@ class SubscriptionFetcher @Inject constructor(
                 configs = configs,
                 metadata = metadata,
                 resolvedUrl = resolvedUrl,
-                permanentRedirectUrl = response.permanentRedirectTarget(originalUrl = normalizedUrl),
+                permanentRedirectUrl = response.permanentRedirectTarget(originalUrl = originalUrl),
                 appRouting = parseAppRouting(response),
             )
         }
+    }
+
+    private fun HttpUrl.jsonEndpointOrNull(): HttpUrl? {
+        if (pathSegments.lastOrNull().equals("json", ignoreCase = true)) return null
+        return newBuilder().addPathSegment("json").build()
     }
 
     private fun parseSubscriptionBody(body: String, contentType: String?): List<ServerConfig> {

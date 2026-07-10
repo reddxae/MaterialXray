@@ -59,9 +59,25 @@ internal class RawConfigTunInjector(
         original["api"] = buildStatsApi(xrayApiSocketName)
         original["stats"] = buildStatsConfig()
         original["policy"] = buildStatsPolicy()
-        original["routing"] = buildRouting(routingRules, appProxyRoutes, bypassLan, domesticDnsServers)
+        original["routing"] = mergeRouting(
+            generated = buildRouting(routingRules, appProxyRoutes, bypassLan, domesticDnsServers),
+            raw = original["routing"] as? JsonObject,
+        )
 
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))
+    }
+
+    private fun mergeRouting(generated: JsonObject, raw: JsonObject?): JsonObject {
+        if (raw == null) return generated
+
+        val generatedRules = (generated["rules"] as? JsonArray).orEmpty()
+        val rawRules = (raw["rules"] as? JsonArray).orEmpty()
+        return JsonObject(
+            generated.toMutableMap().apply {
+                putAll(raw)
+                put("rules", JsonArray(generatedRules + rawRules))
+            },
+        )
     }
 
     private fun injectTunInbounds(

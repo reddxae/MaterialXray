@@ -95,6 +95,55 @@ class RawConfigTunInjectorTest {
     }
 
     @Test
+    fun `inject preserves raw routing for multi-outbound profiles`() {
+        val result = injector.inject(
+            rawJson = """
+                {
+                  "outbounds": [
+                    {"tag":"proxy","protocol":"vless","settings":{}},
+                    {"tag":"proxy-2","protocol":"vless","settings":{}},
+                    {"tag":"direct","protocol":"freedom"},
+                    {"tag":"block","protocol":"blackhole"}
+                  ],
+                  "routing": {
+                    "domainStrategy": "IPIfNonMatch",
+                    "rules": [{"network":"tcp,udp","balancerTag":"balance"}],
+                    "balancers": [{"tag":"balance","selector":["proxy"],"strategy":{"type":"leastLoad"}}]
+                  },
+                  "burstObservatory": {"subjectSelector":["proxy"]}
+                }
+            """.trimIndent(),
+            tunName = "xray0",
+            fwmark = 255,
+            dnsServers = "1.1.1.1",
+            domesticDnsServers = "",
+            logLevel = XrayLogLevel.Error,
+            defaultOutbound = XrayOutbound.Proxy,
+            bypassLan = false,
+            routingRules = emptyList(),
+            appProxyRoutes = emptyList(),
+            physicalInterface = null,
+        )
+
+        val root = json.parseToJsonElement(result).jsonObject
+        val routing = root.getValue("routing").jsonObject
+        val rules = routing.getValue("rules").jsonArray.map { it.jsonObject }
+        assertEquals("IPIfNonMatch", routing.getValue("domainStrategy").jsonPrimitive.content)
+        assertEquals("dns-out", rules.first().getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("balance", rules.last().getValue("balancerTag").jsonPrimitive.content)
+        assertEquals("balance", routing.getValue("balancers").jsonArray.single().jsonObject.getValue("tag").jsonPrimitive.content)
+        assertEquals(
+            listOf("proxy", "direct", "block", "dns-out", "proxy-2"),
+            root.getValue("outbounds").jsonArray.map { it.jsonObject.getValue("tag").jsonPrimitive.content },
+        )
+        assertEquals(
+            "proxy",
+            root.getValue("burstObservatory").jsonObject
+                .getValue("subjectSelector").jsonArray.single().jsonPrimitive.content,
+        )
+    }
+
+    @Test
     fun `inject fails when raw config has no proxy-capable outbound`() {
         val failure = runCatching {
             injector.inject(

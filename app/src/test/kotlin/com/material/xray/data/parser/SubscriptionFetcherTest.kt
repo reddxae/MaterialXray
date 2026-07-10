@@ -210,6 +210,84 @@ class SubscriptionFetcherTest {
     }
 
     @Test
+    fun `prefer json fetches json endpoint and preserves query parameters`() = runTest {
+        val requests = mutableListOf<Request>()
+        val jsonBody = """
+            {
+              "remarks": "JSON Server",
+              "outbounds": [{"protocol":"vless","settings":{"vnext":[{"address":"json.example","port":443,"users":[{"id":"uuid"}]}]}}]
+            }
+        """.trimIndent()
+        val fetcher = requestAwareFetcher(requests) { request ->
+            assertEquals("token=value", request.url.encodedQuery)
+            TestResponse(jsonBody, "application/json")
+        }
+
+        val subscription = fetcher.fetchWithMetadata(
+            url = "https://subscriptions.example/base?token=value",
+            preferJson = true,
+        )
+
+        assertEquals(listOf("/base/json"), requests.map { it.url.encodedPath })
+        assertEquals("json.example", subscription.configs.single().address)
+    }
+
+    @Test
+    fun `prefer json falls back to base url when json endpoint is empty`() = runTest {
+        val requests = mutableListOf<Request>()
+        val fetcher = requestAwareFetcher(requests) { request ->
+            if (request.url.encodedPath.endsWith("/json")) {
+                TestResponse("", "application/json")
+            } else {
+                TestResponse("vless://uuid@base.example:443?encryption=none&type=tcp#Base", "text/plain")
+            }
+        }
+
+        val subscription = fetcher.fetchWithMetadata(
+            url = "https://subscriptions.example/base",
+            preferJson = true,
+        )
+
+        assertEquals(listOf("/base/json", "/base"), requests.map { it.url.encodedPath })
+        assertEquals("base.example", subscription.configs.single().address)
+    }
+
+    @Test
+    fun `prefer json falls back to base url when json endpoint is broken`() = runTest {
+        val requests = mutableListOf<Request>()
+        val fetcher = requestAwareFetcher(requests) { request ->
+            if (request.url.encodedPath.endsWith("/json")) {
+                TestResponse("{broken", "application/json")
+            } else {
+                TestResponse("vless://uuid@base.example:443?encryption=none&type=tcp#Base", "text/plain")
+            }
+        }
+
+        val subscription = fetcher.fetchWithMetadata(
+            url = "https://subscriptions.example/base",
+            preferJson = true,
+        )
+
+        assertEquals(listOf("/base/json", "/base"), requests.map { it.url.encodedPath })
+        assertEquals("base.example", subscription.configs.single().address)
+    }
+
+    @Test
+    fun `disabled json preference fetches only saved url`() = runTest {
+        val requests = mutableListOf<Request>()
+        val fetcher = requestAwareFetcher(requests) {
+            TestResponse("vless://uuid@base.example:443?encryption=none&type=tcp#Base", "text/plain")
+        }
+
+        fetcher.fetchWithMetadata(
+            url = "https://subscriptions.example/base",
+            preferJson = false,
+        )
+
+        assertEquals(listOf("/base"), requests.map { it.url.encodedPath })
+    }
+
+    @Test
     fun `auto identity omits hwid when disabled`() = runTest {
         val capture = RequestCapture()
         val fetcher = capturingFetcher(capture)
@@ -280,6 +358,33 @@ class SubscriptionFetcherTest {
     private class RequestCapture {
         @Volatile
         var request: Request? = null
+    }
+
+    private data class TestResponse(
+        val body: String,
+        val contentType: String,
+    )
+
+    private fun requestAwareFetcher(
+        requests: MutableList<Request>,
+        responseFor: (Request) -> TestResponse,
+    ): SubscriptionFetcher {
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                requests += request
+                val response = responseFor(request)
+                Response.Builder()
+                    .request(request)
+                    .protocol(OkHttpProtocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .headers(Headers.headersOf("content-type", response.contentType))
+                    .body(response.body.toResponseBody(response.contentType.toMediaType()))
+                    .build()
+            }
+            .build()
+        return SubscriptionFetcher(client)
     }
 
     private fun capturingFetcher(

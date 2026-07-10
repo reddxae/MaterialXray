@@ -131,6 +131,11 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         true,
     )
+    val subscriptionPreferJson = settingsRepo.subscriptionPreferJson.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        true,
+    )
     val routingPolicyControl = settingsRepo.routingPolicyControl.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -252,6 +257,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setSubscriptionSendHardwareId(enabled: Boolean) = viewModelScope.launch {
         settingsRepo.setSubscriptionSendHardwareId(enabled)
+    }
+    fun setSubscriptionPreferJson(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setSubscriptionPreferJson(enabled)
     }
 
     fun setRoutingPolicyControl(policy: RoutingPolicyControl) = viewModelScope.launch {

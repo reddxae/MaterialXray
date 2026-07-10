@@ -73,6 +73,7 @@ class SettingsRepository @Inject constructor(
         val NOTIFICATION_SHOW_CONNECTION_COUNT = booleanPreferencesKey("notification_show_connection_count")
         val NOTIFICATION_FIELD_ORDER = stringPreferencesKey("notification_field_order")
         val SUBSCRIPTION_SEND_HWID = booleanPreferencesKey("subscription_send_hwid")
+        val SUBSCRIPTION_PREFER_JSON = booleanPreferencesKey("subscription_prefer_json")
         private val LEGACY_GEO_DATA_BASE_URL = stringPreferencesKey("geo_data_base_url")
         private const val CURRENT_ROUTING_RULES_VERSION = 2
 
@@ -163,6 +164,9 @@ class SettingsRepository @Inject constructor(
     val subscriptionSendHardwareId: Flow<Boolean> = store.data.map { prefs ->
         prefs[SUBSCRIPTION_SEND_HWID] ?: true
     }
+    val subscriptionPreferJson: Flow<Boolean> = store.data.map { prefs ->
+        prefs[SUBSCRIPTION_PREFER_JSON] ?: true
+    }
 
     suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings = XrayRuntimeSettings(
         tunName = tunName.first(),
@@ -245,6 +249,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setSubscriptionSendHardwareId(enabled: Boolean) = store.edit { prefs ->
         prefs[SUBSCRIPTION_SEND_HWID] = enabled
+    }
+    suspend fun setSubscriptionPreferJson(enabled: Boolean) = store.edit { prefs ->
+        prefs[SUBSCRIPTION_PREFER_JSON] = enabled
     }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
@@ -329,6 +336,7 @@ class SettingsRepository @Inject constructor(
                 decodeNotificationFieldOrder(map["notification_field_order"]),
             )
             prefs[SUBSCRIPTION_SEND_HWID] = map["subscription_send_hwid"]?.toBooleanStrictOrNull() ?: true
+            prefs[SUBSCRIPTION_PREFER_JSON] = map["subscription_prefer_json"]?.toBooleanStrictOrNull() ?: true
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }

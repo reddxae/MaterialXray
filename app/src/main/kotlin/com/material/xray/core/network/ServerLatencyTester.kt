@@ -40,6 +40,58 @@ data class LatencyProbeResult(
     val method: PingMethod,
 )
 
+internal suspend fun measureBestHttpLatency(
+    client: OkHttpClient,
+    request: Request,
+    nanoTime: () -> Long = { SystemClock.elapsedRealtimeNanos() },
+): Int {
+    var best = -1
+    repeat(HTTP_PROBE_ATTEMPTS) {
+        currentCoroutineContext().ensureActive()
+        val latency = executeTimedHttpProbe(client, request, nanoTime)
+        if (latency >= 0 && (best == -1 || latency < best)) {
+            best = latency
+        }
+    }
+    return best
+}
+
+private suspend fun executeTimedHttpProbe(
+    client: OkHttpClient,
+    request: Request,
+    nanoTime: () -> Long,
+): Int = suspendCancellableCoroutine { continuation ->
+    val call = client.newCall(request)
+    continuation.invokeOnCancellation {
+        call.cancel()
+    }
+
+    try {
+        val startedAt = nanoTime()
+        val latency = call.execute().use { response ->
+            if (response.code !in HTTP_SUCCESS_CODES) {
+                -1
+            } else {
+                response.body.byteStream().use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (input.read(buffer) != -1) {
+                        // Drain the body so the next attempt can reuse this connection.
+                    }
+                }
+                val elapsedMs = (nanoTime() - startedAt) / NANOS_PER_MILLISECOND
+                elapsedMs.toInt().coerceAtLeast(1)
+            }
+        }
+        if (continuation.isActive) {
+            continuation.resume(latency)
+        }
+    } catch (_: Exception) {
+        if (continuation.isActive) {
+            continuation.resume(-1)
+        }
+    }
+}
+
 @Singleton
 class ServerLatencyTester @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -253,31 +305,7 @@ class ServerLatencyTester @Inject constructor(
                 .build()
         }.getOrElse { return -1 }
 
-        return suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(request)
-            continuation.invokeOnCancellation {
-                call.cancel()
-            }
-
-            try {
-                val startedAt = SystemClock.elapsedRealtimeNanos()
-                val latency = call.execute().use { response ->
-                    if (response.code !in HTTP_SUCCESS_CODES) {
-                        -1
-                    } else {
-                        val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startedAt) / NANOS_PER_MILLISECOND
-                        elapsedMs.toInt().coerceAtLeast(1)
-                    }
-                }
-                if (continuation.isActive) {
-                    continuation.resume(latency)
-                }
-            } catch (_: Exception) {
-                if (continuation.isActive) {
-                    continuation.resume(-1)
-                }
-            }
-        }
+        return measureBestHttpLatency(client, request)
     }
 
     private suspend fun measureTcpConnect(address: String, port: Int): Int {
@@ -348,7 +376,6 @@ class ServerLatencyTester @Inject constructor(
     private companion object {
         const val DEFAULT_PROBE_URL = "https://gstatic.com/generate_204"
         const val DEFAULT_DNS_SERVERS = "77.88.8.8,77.88.8.1"
-        val HTTP_SUCCESS_CODES = 200..399
         const val TEST_TIMEOUT_MS = 12_000L
         const val HTTP_TIMEOUT_MS = 8_000L
         const val TCPING_ATTEMPTS = 2
@@ -361,6 +388,9 @@ class ServerLatencyTester @Inject constructor(
         const val PROCESS_STOP_TIMEOUT_MS = 500L
         const val PROCESS_WAIT_TIMEOUT_MS = 500L
         const val PROCESS_STOP_POLL_INTERVAL_MS = 50L
-        const val NANOS_PER_MILLISECOND = 1_000_000L
     }
 }
+
+private const val HTTP_PROBE_ATTEMPTS = 2
+private val HTTP_SUCCESS_CODES = 200..399
+private const val NANOS_PER_MILLISECOND = 1_000_000L

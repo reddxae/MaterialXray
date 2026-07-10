@@ -107,7 +107,7 @@ class SubscriptionFetcherTest {
         assertEquals("none", config.extra["encryption"])
         assertEquals("xtls-rprx-vision", config.extra["flow"])
         assertTrue(config.rawConfigJson.isNotBlank())
-        assertEquals("vless • tls • ws • raw", config.endpointSummary())
+        assertEquals("vless • tls • ws", config.endpointSummary())
     }
 
     @Test

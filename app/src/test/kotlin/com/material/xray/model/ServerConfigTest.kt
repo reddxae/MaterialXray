@@ -6,7 +6,7 @@ import org.junit.Test
 class ServerConfigTest {
 
     @Test
-    fun `endpointSummary appends raw for raw json configs`() {
+    fun `endpointSummary does not append raw for json configs`() {
         val config = ServerConfig(
             protocol = Protocol.VLESS,
             name = "Node",
@@ -18,7 +18,7 @@ class ServerConfigTest {
             rawConfigJson = "{\"outbounds\":[]}",
         )
 
-        assertEquals("vless • reality • raw • raw", config.endpointSummary())
+        assertEquals("vless • reality • raw", config.endpointSummary())
     }
 
     @Test

@@ -47,20 +47,15 @@ fun ServerConfig.endpointSummary(): String {
         return "multiconnect${PROXY_CONFIG_SEPARATOR}$proxyOutboundCount outbounds"
     }
 
-    return buildList {
-        add(
-            formatProxyConfigSummary(
-                ProxyConfigDisplay(
-                    protocol = displayProtocolName(),
-                    innerEncryption = displayVlessEncryptionMethod(),
-                    security = security.type,
-                    pqAlgorithm = displayPqAlgorithm(),
-                    transport = transport.type.normalizedXrayTransportType(),
-                ),
-            ),
-        )
-        if (rawConfigJson.isNotBlank()) add("raw")
-    }.joinToString(PROXY_CONFIG_SEPARATOR)
+    return formatProxyConfigSummary(
+        ProxyConfigDisplay(
+            protocol = displayProtocolName(),
+            innerEncryption = displayVlessEncryptionMethod(),
+            security = security.type,
+            pqAlgorithm = displayPqAlgorithm(),
+            transport = transport.type.normalizedXrayTransportType(),
+        ),
+    )
 }
 
 internal data class ProxyConfigDisplay(

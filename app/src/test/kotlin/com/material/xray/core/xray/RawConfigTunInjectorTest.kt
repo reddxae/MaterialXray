@@ -21,11 +21,14 @@ class RawConfigTunInjectorTest {
     private val injector = RawConfigTunInjector(json)
 
     @Test
-    fun `inject adds tun inbounds and managed outbounds around raw proxy candidate`() {
+    fun `inject replaces provider inbounds with managed tun inbounds`() {
         val result = injector.inject(
             rawJson = """
                 {
-                  "inbounds": [{"tag":"socks-in","protocol":"socks"}],
+                  "inbounds": [
+                    {"tag":"socks-in","listen":"127.0.0.1","port":10808,"protocol":"socks"},
+                    {"tag":"http-in","listen":"127.0.0.1","port":10809,"protocol":"http"}
+                  ],
                   "outbounds": [
                     {"protocol":"vless","settings":{}},
                     {"tag":"legacy-block","protocol":"blackhole"}
@@ -53,7 +56,10 @@ class RawConfigTunInjectorTest {
 
         val root = json.parseToJsonElement(result).jsonObject
         val inbounds = root.getValue("inbounds").jsonArray
-        assertEquals(listOf("tun-in", "socks-in", "app-in-7"), inbounds.map { it.jsonObject["tag"]!!.jsonPrimitive.content })
+        assertEquals(listOf("tun-in", "app-in-7"), inbounds.map { it.jsonObject["tag"]!!.jsonPrimitive.content })
+        assertTrue(inbounds.all { it.jsonObject["protocol"]!!.jsonPrimitive.content == "tun" })
+        assertTrue(inbounds.none { "listen" in it.jsonObject })
+        assertTrue(inbounds.all { it.jsonObject["port"]!!.jsonPrimitive.content == "0" })
         assertEquals("xray0", inbounds.first().jsonObject["settings"]!!.jsonObject["name"]!!.jsonPrimitive.content)
         assertEquals("xray0a1", inbounds.last().jsonObject["settings"]!!.jsonObject["name"]!!.jsonPrimitive.content)
 
@@ -69,7 +75,7 @@ class RawConfigTunInjectorTest {
     }
 
     @Test
-    fun `inject preserves existing tun inbound instead of duplicating it`() {
+    fun `inject replaces provider tun inbound with app managed tun`() {
         val result = injector.inject(
             rawJson = """
                 {
@@ -90,8 +96,9 @@ class RawConfigTunInjectorTest {
         )
 
         val inbounds = json.parseToJsonElement(result).jsonObject.getValue("inbounds").jsonArray
-        assertEquals(1, inbounds.count { it.jsonObject["protocol"]!!.jsonPrimitive.content == "tun" })
-        assertEquals("existing0", inbounds.first().jsonObject["settings"]!!.jsonObject["name"]!!.jsonPrimitive.content)
+        assertEquals(1, inbounds.size)
+        assertEquals("tun-in", inbounds.single().jsonObject["tag"]!!.jsonPrimitive.content)
+        assertEquals("xray0", inbounds.single().jsonObject["settings"]!!.jsonObject["name"]!!.jsonPrimitive.content)
     }
 
     @Test

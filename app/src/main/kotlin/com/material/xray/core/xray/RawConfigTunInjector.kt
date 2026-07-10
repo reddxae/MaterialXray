@@ -30,7 +30,7 @@ internal class RawConfigTunInjector(
         xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
     ): String {
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
-        original["inbounds"] = injectTunInbounds(original["inbounds"] as? JsonArray, tunName, appProxyRoutes)
+        original["inbounds"] = buildTunInbounds(tunName, appProxyRoutes)
 
         val normalizedOutbounds = normalizeOutbounds(original["outbounds"] as? JsonArray, fwmark, physicalInterface, allowIpv6)
         val proxyOutbound = normalizedOutbounds.firstOrNull { outbound ->
@@ -80,30 +80,17 @@ internal class RawConfigTunInjector(
         )
     }
 
-    private fun injectTunInbounds(
-        inbounds: JsonArray?,
+    private fun buildTunInbounds(
         tunName: String,
         appProxyRoutes: List<AppProxyRoute>,
-    ): JsonArray {
-        val existingInbounds = inbounds?.toMutableList() ?: mutableListOf()
-        val hasTunInbound = existingInbounds.any { inbound ->
-            val inboundObject = inbound as? JsonObject ?: return@any false
-            inboundObject["protocol"]?.jsonPrimitive?.contentOrNull?.equals("tun", ignoreCase = true) == true
-        }
-        if (!hasTunInbound) {
-            existingInbounds.add(0, buildTunInbound(tunName, "tun-in"))
-        }
-        appProxyRoutes.forEach { route ->
-            val hasAppInbound = existingInbounds.any { inbound ->
-                val inboundObject = inbound as? JsonObject ?: return@any false
-                inboundObject["tag"]?.jsonPrimitive?.contentOrNull.equals(route.inboundTag, ignoreCase = true)
+    ): JsonArray = JsonArray(
+        buildList {
+            add(buildTunInbound(tunName, "tun-in"))
+            appProxyRoutes.forEach { route ->
+                add(buildTunInbound(route.tunName, route.inboundTag))
             }
-            if (!hasAppInbound) {
-                existingInbounds.add(buildTunInbound(route.tunName, route.inboundTag))
-            }
-        }
-        return JsonArray(existingInbounds)
-    }
+        },
+    )
 
     private fun normalizeOutbounds(
         outbounds: JsonArray?,

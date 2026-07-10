@@ -101,7 +101,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val notificationSettings by viewModel.notificationSettings.collectAsStateWithLifecycle()
     val subscriptionSendHardwareId by viewModel.subscriptionSendHardwareId.collectAsStateWithLifecycle()
-    val subscriptionPreferJson by viewModel.subscriptionPreferJson.collectAsStateWithLifecycle()
     val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
@@ -559,34 +558,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Text("Settings", style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .toggleable(
-                            value = subscriptionPreferJson,
-                            role = Role.Switch,
-                            onValueChange = viewModel::setSubscriptionPreferJson,
-                        )
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Prefer JSON subscriptions", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "Try the /json endpoint first, then fall back to the saved URL",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = subscriptionPreferJson,
-                        onCheckedChange = null,
-                    )
-                }
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

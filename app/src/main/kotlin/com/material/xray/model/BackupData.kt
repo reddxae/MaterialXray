@@ -14,6 +14,7 @@ data class BackupData(
     data class BackupSubscription(
         val name: String,
         val url: String,
+        val preferJson: Boolean? = null,
         val autoUpdateIntervalHours: Int = 1,
         val descriptionHidden: Boolean = false,
         val userAgentMode: String? = null,

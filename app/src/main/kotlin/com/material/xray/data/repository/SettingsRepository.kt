@@ -164,7 +164,7 @@ class SettingsRepository @Inject constructor(
     val subscriptionSendHardwareId: Flow<Boolean> = store.data.map { prefs ->
         prefs[SUBSCRIPTION_SEND_HWID] ?: true
     }
-    val subscriptionPreferJson: Flow<Boolean> = store.data.map { prefs ->
+    val legacySubscriptionPreferJson: Flow<Boolean> = store.data.map { prefs ->
         prefs[SUBSCRIPTION_PREFER_JSON] ?: true
     }
 
@@ -249,9 +249,6 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setSubscriptionSendHardwareId(enabled: Boolean) = store.edit { prefs ->
         prefs[SUBSCRIPTION_SEND_HWID] = enabled
-    }
-    suspend fun setSubscriptionPreferJson(enabled: Boolean) = store.edit { prefs ->
-        prefs[SUBSCRIPTION_PREFER_JSON] = enabled
     }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)

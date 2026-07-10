@@ -131,11 +131,6 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         true,
     )
-    val subscriptionPreferJson = settingsRepo.subscriptionPreferJson.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        true,
-    )
     val routingPolicyControl = settingsRepo.routingPolicyControl.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -258,10 +253,6 @@ class SettingsViewModel @Inject constructor(
     fun setSubscriptionSendHardwareId(enabled: Boolean) = viewModelScope.launch {
         settingsRepo.setSubscriptionSendHardwareId(enabled)
     }
-    fun setSubscriptionPreferJson(enabled: Boolean) = viewModelScope.launch {
-        settingsRepo.setSubscriptionPreferJson(enabled)
-    }
-
     fun setRoutingPolicyControl(policy: RoutingPolicyControl) = viewModelScope.launch {
         if (policy == routingPolicyControl.value) return@launch
         settingsRepo.setRoutingPolicyControl(policy)
@@ -313,6 +304,7 @@ class SettingsViewModel @Inject constructor(
                         BackupData.BackupSubscription(
                             name = sub.name,
                             url = sub.url,
+                            preferJson = sub.preferJson,
                             autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
                             descriptionHidden = sub.descriptionHidden,
                             userAgentMode = sub.userAgentMode,
@@ -350,6 +342,7 @@ class SettingsViewModel @Inject constructor(
                         SubscriptionEntity(
                             name = sub.name,
                             url = sub.url,
+                            preferJson = sub.preferJson,
                             autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
                             descriptionHidden = sub.descriptionHidden,
                             userAgentMode = sub.userAgentMode,

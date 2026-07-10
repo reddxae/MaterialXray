@@ -327,8 +327,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     AddSubscriptionDialogHost(
         visible = showAddDialog,
         onDismiss = { showAddDialog = false },
-        onConfirm = { name, url, userAgentMode, customUserAgent, customHeaders ->
-            viewModel.addSubscription(name, url, userAgentMode, customUserAgent, customHeaders)
+        onConfirm = { name, url, preferJson, userAgentMode, customUserAgent, customHeaders ->
+            viewModel.addSubscription(name, url, preferJson, userAgentMode, customUserAgent, customHeaders)
             showAddDialog = false
         },
     )
@@ -369,11 +369,12 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     EditSubscriptionDialogHost(
         subscription = editingSubscription,
         onDismiss = { editingSubscription = null },
-        onConfirm = { subscription, name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
+        onConfirm = { subscription, name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
             viewModel.updateSubscription(
                 subscription,
                 name,
                 url,
+                preferJson,
                 autoUpdateIntervalHours,
                 userAgentMode,
                 customUserAgent,
@@ -396,7 +397,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 private fun AddSubscriptionDialogHost(
     visible: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, SubscriptionUserAgentMode, String, String) -> Unit,
+    onConfirm: (String, String, Boolean, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
     if (!visible) return
 
@@ -495,15 +496,15 @@ private fun RemoveSubscriptionDialogHost(
 private fun EditSubscriptionDialogHost(
     subscription: SubscriptionEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (SubscriptionEntity, String, String, Int, SubscriptionUserAgentMode, String, String) -> Unit,
+    onConfirm: (SubscriptionEntity, String, String, Boolean, Int, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
     subscription ?: return
 
     EditSubscriptionDialog(
         subscription = subscription,
         onDismiss = onDismiss,
-        onConfirm = { name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
-            onConfirm(subscription, name, url, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
+        onConfirm = { name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
+            onConfirm(subscription, name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
         },
     )
 }
@@ -1587,10 +1588,11 @@ private fun AutoUpdateIntervalIndicator(selected: Boolean) {
 private fun EditSubscriptionDialog(
     subscription: SubscriptionEntity,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Int, SubscriptionUserAgentMode, String, String) -> Unit,
+    onConfirm: (String, String, Boolean, Int, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
     var name by remember(subscription.id) { mutableStateOf(subscription.name) }
     var url by remember(subscription.id) { mutableStateOf(subscription.url) }
+    var preferJson by remember(subscription.id) { mutableStateOf(subscription.preferJson ?: true) }
     var autoUpdateIntervalHours by remember(subscription.id) {
         mutableStateOf(subscription.autoUpdateIntervalHours)
     }
@@ -1606,6 +1608,7 @@ private fun EditSubscriptionDialog(
     }
     val hasChanges = name.trim() != subscription.name ||
         url.trim() != subscription.url ||
+        preferJson != (subscription.preferJson ?: true) ||
         autoUpdateIntervalHours != subscription.autoUpdateIntervalHours ||
         userAgentMode != SubscriptionUserAgentMode.fromValue(subscription.userAgentMode) ||
         customUserAgent.trim().ifBlank { null } != subscription.customUserAgent ||
@@ -1636,6 +1639,11 @@ private fun EditSubscriptionDialog(
                     label = { Text("URL") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                SubscriptionFetchTypeDropdown(
+                    preferJson = preferJson,
+                    onPreferJsonChange = { preferJson = it },
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 ExposedDropdownMenuBox(
@@ -1681,7 +1689,7 @@ private fun EditSubscriptionDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onConfirm(name.trim(), url.trim(), autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
+                    onConfirm(name.trim(), url.trim(), preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
                 },
                 enabled = url.isNotBlank() && hasChanges,
             ) {
@@ -1762,10 +1770,11 @@ private fun RemoveSubscriptionDialog(
 @Composable
 private fun AddSubscriptionDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String, String, SubscriptionUserAgentMode, String, String) -> Unit,
+    onConfirm: (String, String, Boolean, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+    var preferJson by remember { mutableStateOf(true) }
     var userAgentMode by remember { mutableStateOf(SubscriptionUserAgentMode.default) }
     var customUserAgent by remember { mutableStateOf("") }
     var customHeaders by remember { mutableStateOf("") }
@@ -1794,6 +1803,11 @@ private fun AddSubscriptionDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+                SubscriptionFetchTypeDropdown(
+                    preferJson = preferJson,
+                    onPreferJsonChange = { preferJson = it },
+                )
+                Spacer(modifier = Modifier.height(16.dp))
                 SubscriptionUserAgentSection(
                     selectedMode = userAgentMode,
                     customUserAgent = customUserAgent,
@@ -1806,7 +1820,7 @@ private fun AddSubscriptionDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name.trim(), url.trim(), userAgentMode, customUserAgent, customHeaders) },
+                onClick = { onConfirm(name.trim(), url.trim(), preferJson, userAgentMode, customUserAgent, customHeaders) },
                 enabled = url.isNotBlank(),
             ) {
                 Text("Add")
@@ -1814,6 +1828,54 @@ private fun AddSubscriptionDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubscriptionFetchTypeDropdown(
+    preferJson: Boolean,
+    onPreferJsonChange: (Boolean) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = if (preferJson) "JSON first" else "Compatibility mode",
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Fetch type") },
+            supportingText = {
+                Text(
+                    if (preferJson) {
+                        "Try the /json endpoint first, then fall back to the saved URL"
+                    } else {
+                        "Fetch directly from the saved URL"
+                    },
+                )
+            },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            listOf(true to "JSON first", false to "Compatibility mode").forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        onPreferJsonChange(value)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

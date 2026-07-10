@@ -253,12 +253,13 @@ class HomeViewModel @Inject constructor(
     fun addSubscription(
         name: String,
         url: String,
+        preferJson: Boolean,
         userAgentMode: SubscriptionUserAgentMode,
         customUserAgent: String,
         customHeaders: String,
     ) {
         viewModelScope.launch {
-            runCatching { subscriptionRepo.add(name, url, userAgentMode, customUserAgent, customHeaders) }
+            runCatching { subscriptionRepo.add(name, url, preferJson, userAgentMode, customUserAgent, customHeaders) }
                 .onFailure { _uiEvents.emit(HomeUiEvent.Toast("Unable to fetch link")) }
         }
     }
@@ -295,6 +296,7 @@ class HomeViewModel @Inject constructor(
         sub: SubscriptionEntity,
         name: String,
         url: String,
+        preferJson: Boolean,
         autoUpdateIntervalHours: Int,
         userAgentMode: SubscriptionUserAgentMode,
         customUserAgent: String,
@@ -307,7 +309,10 @@ class HomeViewModel @Inject constructor(
             val identityChanged = userAgentMode != SubscriptionUserAgentMode.fromValue(sub.userAgentMode) ||
                 normalizedCustomUserAgent != sub.customUserAgent ||
                 normalizedCustomHeaders != sub.customHeaders
-            val hasSubscriptionChanges = name.trim() != sub.name || url.trim() != sub.url || identityChanged
+            val hasSubscriptionChanges = name.trim() != sub.name ||
+                url.trim() != sub.url ||
+                preferJson != (sub.preferJson ?: true) ||
+                identityChanged
             val hasIntervalChanges = normalizedIntervalHours != sub.autoUpdateIntervalHours
 
             if (hasSubscriptionChanges) {
@@ -315,6 +320,7 @@ class HomeViewModel @Inject constructor(
                     runCatching {
                         subscriptionRefreshCoordinator.updateSubscription(
                             sub.copy(
+                                preferJson = preferJson,
                                 autoUpdateIntervalHours = normalizedIntervalHours,
                                 userAgentMode = userAgentMode.value,
                                 customUserAgent = normalizedCustomUserAgent,

@@ -8,6 +8,7 @@ data class SubscriptionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val url: String,
+    val preferJson: Boolean? = true,
     val lastUpdated: Long = 0,
     val contentDisposition: String? = null,
     val contentType: String? = null,

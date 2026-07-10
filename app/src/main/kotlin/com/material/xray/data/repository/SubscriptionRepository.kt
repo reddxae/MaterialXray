@@ -15,6 +15,7 @@ import com.material.xray.model.parseSubscriptionHeaders
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -29,7 +30,18 @@ class SubscriptionRepository @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
     private val shareLinkParser = ShareLinkParser()
 
-    fun observeAll(): Flow<List<SubscriptionEntity>> = subscriptionDao.observeAll()
+    fun observeAll(): Flow<List<SubscriptionEntity>> = combine(
+        subscriptionDao.observeAll(),
+        settingsRepository.legacySubscriptionPreferJson,
+    ) { subscriptions, legacyPreferJson ->
+        subscriptions.map { subscription ->
+            if (subscription.preferJson == null) {
+                subscription.copy(preferJson = legacyPreferJson)
+            } else {
+                subscription
+            }
+        }
+    }
 
     data class RefreshResult(
         val subscriptionId: Long,
@@ -41,6 +53,7 @@ class SubscriptionRepository @Inject constructor(
     suspend fun add(
         name: String,
         url: String,
+        preferJson: Boolean = true,
         userAgentMode: SubscriptionUserAgentMode = SubscriptionUserAgentMode.default,
         customUserAgent: String = "",
         customHeaders: String = "",
@@ -51,6 +64,7 @@ class SubscriptionRepository @Inject constructor(
             return addServerConfig(
                 name = trimmedName,
                 sourceLink = trimmedUrl,
+                preferJson = preferJson,
                 config = config,
             )
         }
@@ -59,6 +73,7 @@ class SubscriptionRepository @Inject constructor(
             SubscriptionEntity(
                 name = trimmedName.ifEmpty { nextFallbackName() },
                 url = trimmedUrl,
+                preferJson = preferJson,
                 userAgentMode = userAgentMode.value,
                 customUserAgent = customUserAgent.trim().ifBlank { null },
                 customHeaders = customHeaders.trim().ifBlank { null },
@@ -73,6 +88,7 @@ class SubscriptionRepository @Inject constructor(
     private suspend fun addServerConfig(
         name: String,
         sourceLink: String,
+        preferJson: Boolean,
         config: ServerConfig,
     ): Long {
         val subscriptionName = name.trim()
@@ -82,6 +98,7 @@ class SubscriptionRepository @Inject constructor(
             SubscriptionEntity(
                 name = subscriptionName,
                 url = sourceLink,
+                preferJson = preferJson,
                 lastUpdated = System.currentTimeMillis(),
                 autoUpdateIntervalHours = 0,
             ),
@@ -109,7 +126,7 @@ class SubscriptionRepository @Inject constructor(
         val fetched = fetcher.fetchWithMetadata(
             url = url,
             identity = identity,
-            preferJson = settingsRepository.subscriptionPreferJson.first(),
+            preferJson = existing.preferJson ?: settingsRepository.legacySubscriptionPreferJson.first(),
         )
         val servers = fetched.configs.mapIndexed { index, config ->
             ServerEntity(

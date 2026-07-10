@@ -15,6 +15,7 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
+import com.material.xray.model.SERVER_EXTRA_PROXY_OUTBOUND_COUNT
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionMetadata
@@ -182,14 +183,18 @@ class SubscriptionFetcher @Inject constructor(
             ?: findString("remark")
             ?: findString("name")
 
-        val proxyOutbound = findArray("outbounds")
+        val proxyOutbounds = findArray("outbounds")
             ?.mapNotNull { it as? JsonObject }
-            ?.firstOrNull { outbound ->
+            ?.filter { outbound ->
                 outbound.findString("protocol")
                     ?.lowercase()
                     ?.let { it !in SPECIAL_OUTBOUND_PROTOCOLS }
                     ?: true
             }
+            .orEmpty()
+        val proxyOutbound = proxyOutbounds.firstOrNull { outbound ->
+            outbound.findString("tag").equals("proxy", ignoreCase = true)
+        } ?: proxyOutbounds.firstOrNull()
 
         val derived = proxyOutbound?.let(::deriveOutbound)
             ?: DerivedOutbound(
@@ -250,7 +255,7 @@ class SubscriptionFetcher @Inject constructor(
             password = derived.password,
             transport = transport,
             security = security,
-            extra = derived.extra,
+            extra = derived.extra + (SERVER_EXTRA_PROXY_OUTBOUND_COUNT to proxyOutbounds.size.toString()),
             rawConfigJson = canonicalJson,
         )
     }

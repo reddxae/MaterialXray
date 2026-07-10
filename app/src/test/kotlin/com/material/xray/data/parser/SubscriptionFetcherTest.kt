@@ -11,6 +11,7 @@ import com.material.xray.model.SubscriptionAppRoutingMode
 import com.material.xray.model.SubscriptionHeader
 import com.material.xray.model.SubscriptionRequestIdentity
 import com.material.xray.model.SubscriptionUserAgentMode
+import com.material.xray.model.endpointSummary
 import java.util.Base64
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
@@ -106,6 +107,34 @@ class SubscriptionFetcherTest {
         assertEquals("none", config.extra["encryption"])
         assertEquals("xtls-rprx-vision", config.extra["flow"])
         assertTrue(config.rawConfigJson.isNotBlank())
+        assertEquals("vless • tls • ws • raw", config.endpointSummary())
+    }
+
+    @Test
+    fun `fetch labels configs with multiple proxy outbounds as multiconnect`() = runTest {
+        val body = """
+            {
+              "remarks": "Auto",
+              "outbounds": [
+                { "protocol": "vless", "tag": "proxy-2" },
+                {
+                  "protocol": "trojan",
+                  "tag": "proxy",
+                  "settings": { "servers": [{ "address": "proxy.example", "port": 443, "password": "secret" }] }
+                },
+                { "protocol": "hysteria", "tag": "proxy-3" },
+                { "protocol": "freedom", "tag": "direct" },
+                { "protocol": "blackhole", "tag": "block" }
+              ]
+            }
+        """.trimIndent()
+        val fetcher = fetcherReturning(body, contentType = "application/json")
+
+        val config = fetcher.fetchWithMetadata("https://subscriptions.example/json-auto").configs.single()
+
+        assertEquals(Protocol.TROJAN, config.protocol)
+        assertEquals("proxy.example", config.address)
+        assertEquals("multiconnect • 3 outbounds", config.endpointSummary())
     }
 
     @Test

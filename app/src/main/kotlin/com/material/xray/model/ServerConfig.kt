@@ -1,6 +1,11 @@
 package com.material.xray.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @Serializable
 data class ServerConfig(
@@ -35,20 +40,28 @@ data class ServerConfig(
     )
 }
 
-fun ServerConfig.endpointSummary(): String = buildList {
-    add(
-        formatProxyConfigSummary(
-            ProxyConfigDisplay(
-                protocol = displayProtocolName(),
-                innerEncryption = displayVlessEncryptionMethod(),
-                security = security.type,
-                pqAlgorithm = displayPqAlgorithm(),
-                transport = transport.type.normalizedXrayTransportType(),
+fun ServerConfig.endpointSummary(): String {
+    val proxyOutboundCount = extra[SERVER_EXTRA_PROXY_OUTBOUND_COUNT]?.toIntOrNull()
+        ?: rawConfigJson.proxyOutboundCountOrNull()
+    if (proxyOutboundCount != null && proxyOutboundCount > 1) {
+        return "multiconnect${PROXY_CONFIG_SEPARATOR}$proxyOutboundCount outbounds"
+    }
+
+    return buildList {
+        add(
+            formatProxyConfigSummary(
+                ProxyConfigDisplay(
+                    protocol = displayProtocolName(),
+                    innerEncryption = displayVlessEncryptionMethod(),
+                    security = security.type,
+                    pqAlgorithm = displayPqAlgorithm(),
+                    transport = transport.type.normalizedXrayTransportType(),
+                ),
             ),
-        ),
-    )
-    if (rawConfigJson.isNotBlank()) add("raw")
-}.joinToString(PROXY_CONFIG_SEPARATOR)
+        )
+        if (rawConfigJson.isNotBlank()) add("raw")
+    }.joinToString(PROXY_CONFIG_SEPARATOR)
+}
 
 internal data class ProxyConfigDisplay(
     val protocol: String,
@@ -99,6 +112,19 @@ private fun ServerConfig.isEncryptedVless(): Boolean = protocol == Protocol.VLES
 
 private fun ServerConfig.encryptionValue(): String = extra["encryption"]?.trim().orEmpty()
 
+private fun String.proxyOutboundCountOrNull(): Int? {
+    if (isBlank()) return null
+    return runCatching {
+        val root = Json.parseToJsonElement(this) as? JsonObject ?: return@runCatching null
+        val outbounds = root["outbounds"] as? JsonArray ?: return@runCatching null
+        outbounds.count { element ->
+            val outbound = element as? JsonObject ?: return@count false
+            val protocol = (outbound["protocol"] as? JsonPrimitive)?.contentOrNull?.lowercase()
+            protocol !in SPECIAL_OUTBOUND_PROTOCOLS
+        }
+    }.getOrNull()
+}
+
 private fun String?.normalizedDisplayPart(): String? = this
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
@@ -109,6 +135,7 @@ private val VLESS_ENCRYPTION_METHODS = setOf("native", "xorpub", "random")
 private const val PROXY_CONFIG_SEPARATOR = " • "
 
 internal const val SERVER_EXTRA_XHTTP_EXTRA = "xhttpExtra"
+internal const val SERVER_EXTRA_PROXY_OUTBOUND_COUNT = "proxyOutboundCount"
 internal const val SERVER_EXTRA_PQ_ALGORITHM = "pqAlgorithm"
 internal const val SERVER_EXTRA_MLDSA65_VERIFY = "mldsa65Verify"
 internal const val SERVER_EXTRA_SPIDER_X = "spiderX"
@@ -123,3 +150,5 @@ internal const val SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS = "hysteriaUdpHopPorts"
 internal const val SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL = "hysteriaUdpHopInterval"
 internal const val SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT = "hysteriaUdpIdleTimeout"
 internal const val SERVER_EXTRA_HYSTERIA_CONGESTION = "hysteriaCongestion"
+
+private val SPECIAL_OUTBOUND_PROTOCOLS = setOf("freedom", "blackhole", "dns")

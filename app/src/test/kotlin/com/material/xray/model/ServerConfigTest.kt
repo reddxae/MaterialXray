@@ -22,6 +22,30 @@ class ServerConfigTest {
     }
 
     @Test
+    fun `endpointSummary detects multiple proxy outbounds in persisted raw configs`() {
+        val config = ServerConfig(
+            protocol = Protocol.VLESS,
+            name = "Auto",
+            address = "example.com",
+            port = 443,
+            password = "id",
+            rawConfigJson = """
+                {
+                  "outbounds": [
+                    { "protocol": "vless" },
+                    { "protocol": "trojan" },
+                    { "protocol": "hysteria" },
+                    { "protocol": "freedom" },
+                    { "protocol": "blackhole" }
+                  ]
+                }
+            """.trimIndent(),
+        )
+
+        assertEquals("multiconnect • 3 outbounds", config.endpointSummary())
+    }
+
+    @Test
     fun `endpointSummary omits raw for generated configs`() {
         val config = ServerConfig(
             protocol = Protocol.VLESS,

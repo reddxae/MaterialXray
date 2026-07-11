@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.app.appKey
 import com.material.xray.data.db.dao.AppBypassDao
+import com.material.xray.data.db.dao.SubscriptionDao
 import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.AppRouteAssignment
 import com.material.xray.data.db.entity.AppRouteMode
@@ -16,6 +17,7 @@ import com.material.xray.data.db.entity.toAppBypassEntity
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
@@ -74,6 +76,7 @@ private data class AppListFilters(
 class AppsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val appBypassDao: AppBypassDao,
+    private val subscriptionDao: SubscriptionDao,
     private val serverRepository: ServerRepository,
     private val settingsRepository: SettingsRepository,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
@@ -95,6 +98,24 @@ class AppsViewModel @Inject constructor(
 
     val appSpecificServerNoteShown: StateFlow<Boolean> = settingsRepository.appSpecificServerNoteShown
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepository.routingPolicyControl
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
+
+    val automaticRoutingProviderName: StateFlow<String> = combine(
+        settingsRepository.lastServerId,
+        serverRepository.observeAll(),
+        subscriptionDao.observeAll(),
+    ) { selectedServerId, servers, subscriptions ->
+        val subscriptionId = servers.firstOrNull { it.id == selectedServerId }?.subscriptionId
+        subscriptions.firstOrNull { it.id == subscriptionId }?.name?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "the selected subscription"
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        "the selected subscription",
+    )
 
     private val bypassedApps = appBypassDao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -256,6 +277,12 @@ class AppsViewModel @Inject constructor(
     fun setAppSpecificServerNoteShown() {
         viewModelScope.launch {
             settingsRepository.setAppSpecificServerNoteShown(true)
+        }
+    }
+
+    fun switchToManualRouting() {
+        viewModelScope.launch {
+            settingsRepository.setRoutingPolicyControl(RoutingPolicyControl.User)
         }
     }
 

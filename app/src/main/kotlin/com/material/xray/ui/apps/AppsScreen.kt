@@ -18,11 +18,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -33,12 +36,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.material.xray.model.RoutingPolicyControl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +76,8 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val isLoadingApps by viewModel.isLoadingApps.collectAsStateWithLifecycle()
     val appSpecificServerNoteShown by viewModel.appSpecificServerNoteShown.collectAsStateWithLifecycle()
+    val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
+    val automaticRoutingProviderName by viewModel.automaticRoutingProviderName.collectAsStateWithLifecycle()
     val density = LocalDensity.current
     val iconSize = 40.dp
     val iconPixelSize = remember(density) { with(density) { iconSize.roundToPx() } }
@@ -82,9 +91,19 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
         }
     }
     var editingApp by remember { mutableStateOf<AppItem?>(null) }
+    var pendingManualEdit by remember { mutableStateOf<AppItem?>(null) }
     var pendingSpecificServerRoute by remember { mutableStateOf<AppRouteSelection?>(null) }
     val pullToRefreshState = rememberPullToRefreshState()
     val showInitialLoading = isLoadingApps && apps.isEmpty()
+
+    LaunchedEffect(routingPolicyControl) {
+        if (routingPolicyControl == RoutingPolicyControl.User) {
+            pendingManualEdit?.let { app ->
+                pendingManualEdit = null
+                editingApp = app
+            }
+        }
+    }
 
     PullToRefreshBox(
         isRefreshing = isLoadingApps && !showInitialLoading,
@@ -101,6 +120,10 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                     CircularProgressIndicator()
                 }
                 return@Column
+            }
+
+            if (routingPolicyControl == RoutingPolicyControl.SubscriptionProvider) {
+                SubscriptionRoutingBanner(automaticRoutingProviderName)
             }
 
             OutlinedTextField(
@@ -166,7 +189,13 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                                     )
                                 }
                             },
-                            modifier = Modifier.clickable { editingApp = app },
+                            modifier = Modifier.clickable {
+                                if (routingPolicyControl == RoutingPolicyControl.SubscriptionProvider) {
+                                    pendingManualEdit = app
+                                } else {
+                                    editingApp = app
+                                }
+                            },
                         )
                     }
                 }
@@ -194,6 +223,16 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                 )
             }
         }
+    }
+
+    if (pendingManualEdit != null) {
+        AutomaticRoutingDialog(
+            providerName = automaticRoutingProviderName,
+            onDismiss = { pendingManualEdit = null },
+            onSwitchToManual = {
+                viewModel.switchToManualRouting()
+            },
+        )
     }
 
     editingApp?.let { app ->
@@ -226,13 +265,61 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
 }
 
 @Composable
+private fun SubscriptionRoutingBanner(providerName: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = "App routing is managed by $providerName",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
 fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
     val showSystemApps by viewModel.showSystemApps.collectAsStateWithLifecycle()
     val showWorkProfileApps by viewModel.showWorkProfileApps.collectAsStateWithLifecycle()
     val hasWorkProfileApps by viewModel.hasWorkProfileApps.collectAsStateWithLifecycle()
     val isLoadingApps by viewModel.isLoadingApps.collectAsStateWithLifecycle()
+    val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
+    val automaticRoutingProviderName by viewModel.automaticRoutingProviderName.collectAsStateWithLifecycle()
     var pendingBulkAction by remember { mutableStateOf<BulkAppRouteAction?>(null) }
+    var pendingAutomaticBulkAction by remember { mutableStateOf<BulkAppRouteAction?>(null) }
     var appRoutingMenuExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(routingPolicyControl) {
+        if (routingPolicyControl == RoutingPolicyControl.User) {
+            pendingAutomaticBulkAction?.let { action ->
+                pendingAutomaticBulkAction = null
+                pendingBulkAction = action
+            }
+        }
+    }
+
+    fun requestBulkAction(action: BulkAppRouteAction) {
+        if (routingPolicyControl == RoutingPolicyControl.SubscriptionProvider) {
+            pendingAutomaticBulkAction = action
+        } else {
+            pendingBulkAction = action
+        }
+    }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(
@@ -253,14 +340,14 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
                     text = { Text("Reset to defaults") },
                     onClick = {
                         appRoutingMenuExpanded = false
-                        pendingBulkAction = BulkAppRouteAction.ResetToDefaults
+                        requestBulkAction(BulkAppRouteAction.ResetToDefaults)
                     },
                 )
                 DropdownMenuItem(
                     text = { Text("Bypass all apps") },
                     onClick = {
                         appRoutingMenuExpanded = false
-                        pendingBulkAction = BulkAppRouteAction.BypassAllApps
+                        requestBulkAction(BulkAppRouteAction.BypassAllApps)
                     },
                 )
                 HorizontalDivider()
@@ -294,6 +381,16 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
         }
     }
 
+    if (pendingAutomaticBulkAction != null) {
+        AutomaticRoutingDialog(
+            providerName = automaticRoutingProviderName,
+            onDismiss = { pendingAutomaticBulkAction = null },
+            onSwitchToManual = {
+                viewModel.switchToManualRouting()
+            },
+        )
+    }
+
     pendingBulkAction?.let { action ->
         BulkAppRouteConfirmationDialog(
             action = action,
@@ -318,6 +415,56 @@ private data class AppRouteSelection(
     val app: AppItem,
     val option: AppRouteOption,
 )
+
+@Composable
+private fun AutomaticRoutingDialog(
+    providerName: String,
+    onDismiss: () -> Unit,
+    onSwitchToManual: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "App routing is automatic",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Text(
+                buildAnnotatedString {
+                    append("Your current app routing rules are provided by ")
+                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                    append(providerName)
+                    pop()
+                    append(" and are updated automatically. Editing them will disable automatic updates.")
+                },
+            )
+        },
+        confirmButton = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onSwitchToManual,
+                    shape = CircleShape,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Switch to manual mode")
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = CircleShape,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Leave as is")
+                }
+            }
+        },
+    )
+}
 
 @Composable
 private fun SpecificServerRouteNoteDialog(

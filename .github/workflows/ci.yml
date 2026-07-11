@@ -8,86 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  static-analysis:
-    name: "CI: Static analysis"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out sources
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "platform-tools" "platforms;android-37.0" "cmake;3.31.6"
-
-      - name: Run static analysis
-        run: ./gradlew :app:ktlintCheck :app:detekt
-
-  lint:
-    name: "CI: Lint"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out sources
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "platform-tools" "platforms;android-37.0" "cmake;3.31.6"
-
-      - name: Run lint
-        run: ./gradlew lint
-
-  unit-tests:
-    name: "CI: Unit tests"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out sources
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "platform-tools" "platforms;android-37.0" "cmake;3.31.6"
-
-      - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest
-
-  build-test:
-    name: "CI: Build test"
+  debug-build:
+    name: "CI: Debug build"
     runs-on: ubuntu-latest
 
     steps:

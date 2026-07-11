@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: kotlin-static-analysis
+        name: Kotlin static analysis
+        entry: ./gradlew :app:ktlintCheck :app:detekt
+        language: system
+        files: '(^|/).*\.kts?$|^\.editorconfig$|^config/detekt/detekt\.yml$'
+        pass_filenames: false

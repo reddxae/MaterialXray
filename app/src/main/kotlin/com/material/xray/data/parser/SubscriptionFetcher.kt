@@ -98,15 +98,14 @@ class SubscriptionFetcher @Inject constructor(
         ).build()
 
         return client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("Subscription request failed with HTTP ${response.code}")
+            val responseError = when {
+                !response.isSuccessful -> "Subscription request failed with HTTP ${response.code}"
+                !response.request.url.isHttps -> "Subscription must be fetched over HTTPS"
+                else -> null
             }
+            if (responseError != null) throw IOException(responseError)
 
             val resolvedUrl = response.request.url.toString()
-            if (!response.request.url.isHttps) {
-                throw IOException("Subscription must be fetched over HTTPS")
-            }
-
             val bodyText = response.body.string()
 
             val metadata = parseMetadata(response)

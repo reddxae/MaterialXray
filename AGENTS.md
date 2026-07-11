@@ -2,6 +2,7 @@
 
 ## Commands
 - Run Gradle from the repo root with the wrapper: `./gradlew :app:assembleDebug`.
+- Install the prek-managed Git hook with `prek install`; run all hook checks explicitly with `prek run --all-files`.
 - Unit tests: `./gradlew :app:testDebugUnitTest`.
 - Single test class: `./gradlew :app:testDebugUnitTest --tests com.material.xray.core.xray.ConfigGeneratorTest`.
 - Single Kotlin backtick-named test: `./gradlew :app:testDebugUnitTest --tests "com.material.xray.core.xray.ConfigGeneratorTest.generates TUN inbound with correct name and MTU"`.
@@ -26,8 +27,13 @@
 - `local.properties`, Gradle outputs, `.cxx`, and most local IDE state are gitignored; do not depend on local-only values except SDK path or local signing credentials.
 
 ## CI
-- `.github/workflows/android-ci.yml` is manual only (`workflow_dispatch`) and builds a signed release APK with Java 21 and release signing secrets; it does not run tests/lint on push.
-- The README CI section describes push/debug behavior, but the workflow file is the executable source of truth.
+- `.github/workflows/ci.yml` only builds and uploads the debug APK on pushes and pull requests.
+- `.github/workflows/release.yml` manually builds, signs, uploads, and publishes a release APK.
+
+## QA
+- Do not call a repository change truly 'done' until `./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug` succeeds. These build-dependent checks intentionally run locally rather than in CI or prek.
+- After the Gradle QA command, run `prek run --all-files` so ktlint and detekt validate the final worktree.
+- If a required check cannot run, report that explicitly.
 
 ## Agent Workflow
 - After implementing a change, you should check whether a device is attached over ADB. If it is, you should install the *release build* of the app on the device to let the User verify the change.

@@ -55,6 +55,12 @@ Run unit tests:
 ./gradlew testDebugUnitTest
 ```
 
+Install the repository hooks with [prek](https://prek.j178.dev/):
+
+```sh
+prek install
+```
+
 Install the debug build to a connected device:
 
 ```sh
@@ -63,9 +69,9 @@ Install the debug build to a connected device:
 
 ## CI
 
-GitHub Actions builds `app:assembleDebug` on every pushed commit and uploads `app-debug.apk` as a workflow artifact.
+GitHub Actions builds `app:assembleDebug` on pushes and pull requests and uploads `app-debug.apk` as a workflow artifact.
 
-When the pushed ref is a tag that starts with `v` such as `v1.3.2`, the workflow switches to `app:assembleRelease`, signs the APK from CI secrets, and publishes a GitHub Release with the signed APK attached.
+The separate, manually dispatched release workflow builds `app:assembleRelease`, signs the APK from CI secrets, and publishes a GitHub Release with the signed APK attached.
 
 ## Runtime Notes
 

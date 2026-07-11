@@ -18,10 +18,13 @@ import com.material.xray.data.db.entity.AppBypassEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
+import com.material.xray.data.repository.SubscriptionRoutingRepository
 import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.data.repository.toSubscriptionMetadata
+import com.material.xray.data.repository.toSubscriptionRouting
 import com.material.xray.data.repository.withSubscriptionAppRouting
 import com.material.xray.data.repository.withSubscriptionMetadata
+import com.material.xray.data.repository.withSubscriptionRouting
 import com.material.xray.model.BackupData
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
@@ -61,6 +64,7 @@ class SettingsViewModel @Inject constructor(
     private val appBypassDao: AppBypassDao,
     private val connectionStateHolder: ConnectionStateHolder,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
+    private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val routingChangeManager: RoutingChangeManager,
     private val geoDataManager: GeoDataManager,
     private val launcherIconManager: LauncherIconManager,
@@ -256,11 +260,14 @@ class SettingsViewModel @Inject constructor(
     fun setRoutingPolicyControl(policy: RoutingPolicyControl) = viewModelScope.launch {
         if (policy == routingPolicyControl.value) return@launch
         settingsRepo.setRoutingPolicyControl(policy)
-        if (policy == RoutingPolicyControl.SubscriptionProvider &&
-            subscriptionAppRoutingRepository.applyForSelectedServerIfProviderControlled()
-        ) {
+        if (policy == RoutingPolicyControl.SubscriptionProvider) {
+            val appRoutingChanged = subscriptionAppRoutingRepository.applyForSelectedServerIfProviderControlled()
+            val routingChanged = subscriptionRoutingRepository.applyForSelectedServerIfProviderControlled()
+            if (!appRoutingChanged && !routingChanged) return@launch
             if (connectionStateHolder.state.value is ConnectionState.Connected) {
-                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
+                routingChangeManager.markPendingChanges(
+                    if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
+                )
             }
             reloadActiveConnectionIfConnected()
         }
@@ -312,6 +319,7 @@ class SettingsViewModel @Inject constructor(
                             customHeaders = sub.customHeaders,
                             metadata = sub.toSubscriptionMetadata(),
                             appRouting = sub.toSubscriptionAppRouting(),
+                            routing = sub.toSubscriptionRouting(),
                         )
                     },
                     bypassedApps = bypassed,
@@ -349,7 +357,8 @@ class SettingsViewModel @Inject constructor(
                             customUserAgent = sub.customUserAgent,
                             customHeaders = sub.customHeaders,
                         ).withSubscriptionMetadata(sub.metadata)
-                            .withSubscriptionAppRouting(sub.appRouting),
+                            .withSubscriptionAppRouting(sub.appRouting)
+                            .withSubscriptionRouting(sub.routing),
                     )
                 }
                 backup.bypassedApps.forEach { value ->

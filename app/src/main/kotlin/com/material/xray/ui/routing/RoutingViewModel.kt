@@ -2,13 +2,19 @@ package com.material.xray.ui.routing
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.material.xray.data.db.dao.SubscriptionDao
+import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.RoutingRule
+import com.material.xray.model.RoutingRuleCatalog
+import com.material.xray.model.SubscriptionRouting
 import com.material.xray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -16,9 +22,27 @@ import kotlinx.coroutines.launch
 class RoutingViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val routingChangeManager: RoutingChangeManager,
+    private val serverRepository: ServerRepository,
+    private val subscriptionDao: SubscriptionDao,
 ) : ViewModel() {
     val rules: StateFlow<List<RoutingRule>> = settingsRepository.routingRules
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepository.routingPolicyControl
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
+    val automaticRoutingProviderName: StateFlow<String> = combine(
+        settingsRepository.lastServerId,
+        serverRepository.observeAll(),
+        subscriptionDao.observeAll(),
+    ) { selectedServerId, servers, subscriptions ->
+        val subscriptionId = servers.firstOrNull { it.id == selectedServerId }?.subscriptionId
+        subscriptions.firstOrNull { it.id == subscriptionId }?.name?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: "the selected subscription"
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        "the selected subscription",
+    )
 
     fun updateRule(rule: RoutingRule) {
         viewModelScope.launch {
@@ -42,7 +66,31 @@ class RoutingViewModel @Inject constructor(
         }
     }
 
+    fun setAllRulesEnabled(enabled: Boolean) {
+        val updatedRules = rules.value.map { it.copy(enabled = enabled) }
+        if (updatedRules == rules.value) return
+        viewModelScope.launch {
+            settingsRepository.setRoutingRules(updatedRules)
+            routingChangeManager.markPendingChanges()
+        }
+    }
+
+    fun resetRulesToDefaults() {
+        viewModelScope.launch {
+            settingsRepository.setSubscriptionRouting(
+                SubscriptionRouting(RoutingRuleCatalog.defaults()),
+            )
+            routingChangeManager.markPendingChanges()
+        }
+    }
+
     fun applyPendingChangesIfNeeded() {
         routingChangeManager.maybeReloadActiveConnection()
+    }
+
+    fun switchToManualRouting() {
+        viewModelScope.launch {
+            settingsRepository.setRoutingPolicyControl(RoutingPolicyControl.User)
+        }
     }
 }

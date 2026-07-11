@@ -50,12 +50,12 @@ enum class RoutingPolicyControl(
     User(
         value = "user",
         label = "User-controlled",
-        description = "Keep app routing under manual control",
+        description = "Keep routing rules and app routing under manual control",
     ),
     SubscriptionProvider(
         value = "subscription_provider",
         label = "Subscription provider",
-        description = "Apply per-app routing from the selected subscription provider",
+        description = "Apply routing rules and per-app routing from the selected subscription provider",
     ),
     ;
 

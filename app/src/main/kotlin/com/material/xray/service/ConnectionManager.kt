@@ -350,6 +350,8 @@ class ConnectionManager(
             bypassLan = runtimeSettings.bypassLan,
             allowIpv6 = runtimeSettings.allowIpv6,
             routingRules = runtimeSettings.routingRules,
+            routingDomainStrategy = runtimeSettings.routingDomainStrategy,
+            routingDomainMatcher = runtimeSettings.routingDomainMatcher,
             appProxyRoutes = appRoutingPlan.proxyRoutes,
             physicalInterface = physicalRoute?.dev,
             xrayApiSocketName = xrayApiSocketName,

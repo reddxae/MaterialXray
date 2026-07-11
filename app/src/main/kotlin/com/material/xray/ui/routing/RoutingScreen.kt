@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,12 +27,15 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -41,6 +45,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -67,12 +72,16 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
@@ -89,6 +98,16 @@ private data class EditableRoutingRule(
     val rule: RoutingRule,
     val isNew: Boolean,
 )
+
+private sealed interface RoutingRuleAction {
+    data object Add : RoutingRuleAction
+    data object EnableAll : RoutingRuleAction
+    data object DisableAll : RoutingRuleAction
+    data object ResetToDefault : RoutingRuleAction
+    data class Edit(val rule: RoutingRule) : RoutingRuleAction
+    data class Toggle(val rule: RoutingRule, val enabled: Boolean) : RoutingRuleAction
+    data class Delete(val ruleIds: Set<String>) : RoutingRuleAction
+}
 
 private val protocolOptions = listOf(
     "http" to "HTTP traffic",
@@ -120,13 +139,57 @@ private val matchModeOptions = listOf(
 @Composable
 fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
     val rules by viewModel.rules.collectAsStateWithLifecycle()
+    val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
+    val automaticRoutingProviderName by viewModel.automaticRoutingProviderName.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { RoutingTab.entries.size })
     val coroutineScope = rememberCoroutineScope()
     var previousTab by remember { mutableIntStateOf(pagerState.currentPage) }
     var selectedRuleIds by remember { mutableStateOf(emptySet<String>()) }
     var editingRule by remember { mutableStateOf<EditableRoutingRule?>(null) }
+    var pendingManualAction by remember { mutableStateOf<RoutingRuleAction?>(null) }
+    var confirmResetToDefault by remember { mutableStateOf(false) }
+    var rulesMenuExpanded by remember { mutableStateOf(false) }
     val selectionMode by remember { derivedStateOf { selectedRuleIds.isNotEmpty() } }
     val selectedTab = pagerState.currentPage
+
+    fun applyRuleAction(action: RoutingRuleAction) {
+        when (action) {
+            RoutingRuleAction.Add -> {
+                editingRule = EditableRoutingRule(
+                    rule = RoutingRule(
+                        id = "custom-${System.currentTimeMillis()}",
+                        name = "New Rule",
+                        outboundTag = "proxy",
+                    ),
+                    isNew = true,
+                )
+            }
+            RoutingRuleAction.EnableAll -> viewModel.setAllRulesEnabled(true)
+            RoutingRuleAction.DisableAll -> viewModel.setAllRulesEnabled(false)
+            RoutingRuleAction.ResetToDefault -> confirmResetToDefault = true
+            is RoutingRuleAction.Edit -> editingRule = EditableRoutingRule(rule = action.rule, isNew = false)
+            is RoutingRuleAction.Toggle -> viewModel.updateRule(action.rule.copy(enabled = action.enabled))
+            is RoutingRuleAction.Delete -> {
+                viewModel.deleteRules(action.ruleIds)
+                selectedRuleIds = emptySet()
+            }
+        }
+    }
+
+    fun requestRuleAction(action: RoutingRuleAction) {
+        if (routingPolicyControl == RoutingPolicyControl.SubscriptionProvider) {
+            pendingManualAction = action
+        } else {
+            applyRuleAction(action)
+        }
+    }
+
+    LaunchedEffect(routingPolicyControl) {
+        if (routingPolicyControl == RoutingPolicyControl.User) {
+            pendingManualAction?.let(::applyRuleAction)
+            pendingManualAction = null
+        }
+    }
 
     LaunchedEffect(selectedTab) {
         if (previousTab != selectedTab) {
@@ -161,26 +224,49 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                                 }
                                 IconButton(
                                     onClick = {
-                                        viewModel.deleteRules(selectedRuleIds)
-                                        selectedRuleIds = emptySet()
+                                        requestRuleAction(RoutingRuleAction.Delete(selectedRuleIds))
                                     },
                                 ) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete selected rules")
                                 }
                             } else {
                                 IconButton(
-                                    onClick = {
-                                        editingRule = EditableRoutingRule(
-                                            rule = RoutingRule(
-                                                id = "custom-${System.currentTimeMillis()}",
-                                                name = "New Rule",
-                                                outboundTag = "proxy",
-                                            ),
-                                            isNew = true,
-                                        )
-                                    },
+                                    onClick = { requestRuleAction(RoutingRuleAction.Add) },
                                 ) {
                                     Icon(Icons.Default.Add, contentDescription = "Add rule")
+                                }
+                                Box {
+                                    IconButton(onClick = { rulesMenuExpanded = true }) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "Routing rules menu")
+                                    }
+                                    DropdownMenu(
+                                        expanded = rulesMenuExpanded,
+                                        onDismissRequest = { rulesMenuExpanded = false },
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Enable all") },
+                                            enabled = rules.any { !it.enabled },
+                                            onClick = {
+                                                rulesMenuExpanded = false
+                                                requestRuleAction(RoutingRuleAction.EnableAll)
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Disable all") },
+                                            enabled = rules.any { it.enabled },
+                                            onClick = {
+                                                rulesMenuExpanded = false
+                                                requestRuleAction(RoutingRuleAction.DisableAll)
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Reset to default") },
+                                            onClick = {
+                                                rulesMenuExpanded = false
+                                                requestRuleAction(RoutingRuleAction.ResetToDefault)
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -209,14 +295,16 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
             when (RoutingTab.entries[page]) {
                 RoutingTab.Rules -> RoutingRulesTab(
                     rules = rules,
+                    providerManaged = routingPolicyControl == RoutingPolicyControl.SubscriptionProvider,
+                    providerName = automaticRoutingProviderName,
                     selectionMode = selectionMode,
                     selectedRuleIds = selectedRuleIds,
-                    onRuleToggled = { rule, enabled -> viewModel.updateRule(rule.copy(enabled = enabled)) },
+                    onRuleToggled = { rule, enabled -> requestRuleAction(RoutingRuleAction.Toggle(rule, enabled)) },
                     onRuleClick = { rule ->
                         if (selectionMode) {
                             selectedRuleIds = selectedRuleIds.toggle(rule.id)
                         } else {
-                            editingRule = EditableRoutingRule(rule = rule, isNew = false)
+                            requestRuleAction(RoutingRuleAction.Edit(rule))
                         }
                     },
                     onRuleLongClick = { rule ->
@@ -235,6 +323,37 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
             onSave = { updatedRule ->
                 if (editableRule.isNew) viewModel.addRule(updatedRule) else viewModel.updateRule(updatedRule)
                 editingRule = null
+            },
+        )
+    }
+
+    if (pendingManualAction != null) {
+        AutomaticRuleRoutingDialog(
+            providerName = automaticRoutingProviderName,
+            onDismiss = { pendingManualAction = null },
+            onSwitchToManual = viewModel::switchToManualRouting,
+        )
+    }
+
+    if (confirmResetToDefault) {
+        AlertDialog(
+            onDismissRequest = { confirmResetToDefault = false },
+            title = { Text("Reset to default?") },
+            text = { Text("All routing rules and matching behavior will be reset to the app defaults.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.resetRulesToDefaults()
+                        confirmResetToDefault = false
+                    },
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmResetToDefault = false }) {
+                    Text("Cancel")
+                }
             },
         )
     }
@@ -266,6 +385,8 @@ private fun RoutingTabSelector(
 @Composable
 private fun RoutingRulesTab(
     rules: List<RoutingRule>,
+    providerManaged: Boolean,
+    providerName: String,
     selectionMode: Boolean,
     selectedRuleIds: Set<String>,
     onRuleToggled: (RoutingRule, Boolean) -> Unit,
@@ -279,6 +400,34 @@ private fun RoutingRulesTab(
             contentPadding = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (providerManaged) {
+                item(contentType = "providerRoutingBanner") {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Text(
+                                text = "Routing rules are managed by $providerName",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
             items(items = rules, key = { it.id }, contentType = { "routingRule" }) { rule ->
                 val selected = rule.id in selectedRuleIds
                 val containerColor by animateColorAsState(
@@ -374,6 +523,56 @@ private fun RoutingRulesTab(
                 ),
         )
     }
+}
+
+@Composable
+private fun AutomaticRuleRoutingDialog(
+    providerName: String,
+    onDismiss: () -> Unit,
+    onSwitchToManual: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Routing rules are automatic",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Text(
+                buildAnnotatedString {
+                    append("Your current routing rules are provided by ")
+                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                    append(providerName)
+                    pop()
+                    append(" and are updated automatically. Editing them will disable automatic updates.")
+                },
+            )
+        },
+        confirmButton = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onSwitchToManual,
+                    shape = CircleShape,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Switch to manual mode")
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = CircleShape,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Leave as is")
+                }
+            }
+        },
+    )
 }
 
 @Composable

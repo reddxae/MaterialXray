@@ -42,4 +42,35 @@ class BackupDataTest {
 
         assertEquals(false, restored.subscriptions.single().preferJson)
     }
+
+    @Test
+    fun `backup round trip preserves provider routing`() {
+        val routing = SubscriptionRouting(
+            rules = listOf(
+                RoutingRule(
+                    id = "provider-block",
+                    name = "Block ads",
+                    outboundTag = "block",
+                    domains = listOf("geosite:category-ads-all"),
+                ),
+            ),
+            domainStrategy = "IPIfNonMatch",
+            domainMatcher = "hybrid",
+        )
+        val backup = BackupData(
+            subscriptions = listOf(
+                BackupData.BackupSubscription(
+                    name = "Provider",
+                    url = "https://example.com/sub",
+                    routing = routing,
+                ),
+            ),
+            bypassedApps = emptyList(),
+            settings = emptyMap(),
+        )
+
+        val restored = json.decodeFromString<BackupData>(json.encodeToString(backup))
+
+        assertEquals(routing, restored.subscriptions.single().routing)
+    }
 }

@@ -20,6 +20,7 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionMetadata
 import com.material.xray.model.SubscriptionRequestIdentity
+import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import java.io.IOException
 import java.util.UUID
@@ -46,6 +47,7 @@ data class FetchedSubscription(
     val resolvedUrl: String,
     val permanentRedirectUrl: String? = null,
     val appRouting: SubscriptionAppRouting? = null,
+    val routing: SubscriptionRouting? = null,
 )
 
 class SubscriptionFetcher @Inject constructor(
@@ -124,6 +126,7 @@ class SubscriptionFetcher @Inject constructor(
                 resolvedUrl = resolvedUrl,
                 permanentRedirectUrl = response.permanentRedirectTarget(originalUrl = originalUrl),
                 appRouting = parseAppRouting(response),
+                routing = parseRouting(response),
             )
         }
     }
@@ -389,6 +392,8 @@ class SubscriptionFetcher @Inject constructor(
     private fun parseMetadata(response: Response): SubscriptionMetadata = SubscriptionStandardHeaders.parseMetadata(response.headers)
 
     private fun parseAppRouting(response: Response): SubscriptionAppRouting? = SubscriptionStandardHeaders.parseAppRouting(response.headers)
+
+    private fun parseRouting(response: Response): SubscriptionRouting? = SubscriptionRoutingHeaderParser.parse(response.headers)
 
     private fun isJsonContentType(contentType: String?): Boolean = SubscriptionStandardHeaders.isJsonContentType(contentType)
 

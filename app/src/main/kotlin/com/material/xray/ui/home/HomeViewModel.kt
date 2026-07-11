@@ -14,12 +14,15 @@ import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.data.repository.SubscriptionRefreshCoordinator
 import com.material.xray.data.repository.SubscriptionRepository
+import com.material.xray.data.repository.SubscriptionRoutingRepository
 import com.material.xray.data.repository.toSubscriptionAppRouting
+import com.material.xray.data.repository.toSubscriptionRouting
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionAppRouting
+import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
@@ -64,6 +67,11 @@ data class ServerLatencyState(
     val method: PingMethod? = null,
 )
 
+data class SubscriptionRoutingData(
+    val appRouting: SubscriptionAppRouting?,
+    val routing: SubscriptionRouting?,
+)
+
 sealed interface HomeUiEvent {
     data class Toast(val message: String) : HomeUiEvent
 }
@@ -77,6 +85,7 @@ class HomeViewModel @Inject constructor(
     private val serverRepo: ServerRepository,
     private val subscriptionRepo: SubscriptionRepository,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
+    private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val subscriptionRefreshCoordinator: SubscriptionRefreshCoordinator,
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
     private val connectionStateHolder: ConnectionStateHolder,
@@ -135,8 +144,8 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     private val _runningConfig = MutableStateFlow<String?>(null)
     val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
-    private val _pendingSubscriptionRouting = MutableStateFlow<SubscriptionAppRouting?>(null)
-    val pendingSubscriptionRouting: StateFlow<SubscriptionAppRouting?> = _pendingSubscriptionRouting.asStateFlow()
+    private val _pendingSubscriptionRouting = MutableStateFlow<SubscriptionRoutingData?>(null)
+    val pendingSubscriptionRouting: StateFlow<SubscriptionRoutingData?> = _pendingSubscriptionRouting.asStateFlow()
 
     init {
         refreshTunnelInterfaceState()
@@ -272,14 +281,19 @@ class HomeViewModel @Inject constructor(
     }
 
     fun requestApplySubscriptionRouting(sub: SubscriptionEntity) {
-        val routing = sub.toSubscriptionAppRouting() ?: return
+        val routing = SubscriptionRoutingData(
+            appRouting = sub.toSubscriptionAppRouting(),
+            routing = sub.toSubscriptionRouting(),
+        )
+        if (routing.appRouting == null && routing.routing == null) return
         _pendingSubscriptionRouting.value = routing
     }
 
     fun applyPendingSubscriptionRouting() {
         viewModelScope.launch {
-            val routing = _pendingSubscriptionRouting.value ?: return@launch
-            applySubscriptionRouting(routing)
+            val data = _pendingSubscriptionRouting.value ?: return@launch
+            data.appRouting?.let { applySubscriptionRouting(it) }
+            data.routing?.let { applySubscriptionRouting(it) }
             _pendingSubscriptionRouting.value = null
         }
     }
@@ -376,11 +390,21 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private suspend fun applySubscriptionRouting(routing: SubscriptionRouting) {
+        if (subscriptionRoutingRepository.apply(routing)) {
+            routingChangeManager.markPendingChanges(PendingRoutingChange.XRAY_CONFIG)
+        }
+    }
+
     private suspend fun applyProviderRoutingForServer(server: ServerEntity?) {
         if (server == null || routingPolicyControl.value != RoutingPolicyControl.SubscriptionProvider) return
-        if (subscriptionAppRoutingRepository.applyForSubscription(server.subscriptionId)) {
+        val appRoutingChanged = subscriptionAppRoutingRepository.applyForSubscription(server.subscriptionId)
+        val routingChanged = subscriptionRoutingRepository.applyForSubscription(server.subscriptionId)
+        if (appRoutingChanged || routingChanged) {
             if (connectionState.value is ConnectionState.Connected) {
-                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
+                routingChangeManager.markPendingChanges(
+                    if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
+                )
             }
         }
     }

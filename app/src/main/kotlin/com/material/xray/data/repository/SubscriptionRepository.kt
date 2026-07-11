@@ -10,6 +10,7 @@ import com.material.xray.data.parser.SubscriptionFetcher
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionRequestIdentity
+import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.parseSubscriptionHeaders
 import javax.inject.Inject
@@ -48,6 +49,7 @@ class SubscriptionRepository @Inject constructor(
         val serverIdByConfigJson: Map<String, Long>,
         val serverIdReplacements: Map<Long, Long>,
         val appRouting: SubscriptionAppRouting? = null,
+        val routing: SubscriptionRouting? = null,
     )
 
     suspend fun add(
@@ -151,6 +153,7 @@ class SubscriptionRepository @Inject constructor(
                 .associate { server -> server.configJson to server.id },
             serverIdReplacements = buildServerIdReplacements(existingServers, insertedServers),
             appRouting = fetched.appRouting,
+            routing = fetched.routing,
         )
     }
 
@@ -203,6 +206,7 @@ class SubscriptionRepository @Inject constructor(
             resolvedName = resolveDisplayName(providerName),
             lastUpdated = System.currentTimeMillis(),
         ).withSubscriptionAppRouting(fetched.appRouting)
+            .withSubscriptionRouting(fetched.routing)
     }
 
     private suspend fun SubscriptionEntity.resolveDisplayName(providerName: String?): String {

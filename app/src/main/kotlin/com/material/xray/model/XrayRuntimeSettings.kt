@@ -12,4 +12,6 @@ data class XrayRuntimeSettings(
     val bypassLan: Boolean,
     val allowIpv6: Boolean,
     val routingRules: List<RoutingRule>,
+    val routingDomainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
+    val routingDomainMatcher: String? = null,
 )

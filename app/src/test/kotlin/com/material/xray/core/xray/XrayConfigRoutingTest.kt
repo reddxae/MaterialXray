@@ -70,6 +70,18 @@ class XrayConfigRoutingTest {
         assertEquals("app-in-rules", rules.last().array("inboundTag").single())
     }
 
+    @Test
+    fun `buildRouting applies provider domain settings`() {
+        val routing = buildRouting(
+            routingRules = emptyList(),
+            domainStrategy = "IPIfNonMatch",
+            domainMatcher = "hybrid",
+        )
+
+        assertEquals("IPIfNonMatch", routing.getValue("domainStrategy").jsonPrimitive.content)
+        assertEquals("hybrid", routing.getValue("domainMatcher").jsonPrimitive.content)
+    }
+
     private fun JsonObject.array(key: String): List<String> = getValue(key).jsonArray.map { it.jsonPrimitive.content }
 
     private fun directRule() = RoutingRule(

@@ -1,6 +1,7 @@
 package com.material.xray.core.xray
 
 import com.material.xray.model.RoutingRule
+import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.Json
@@ -25,6 +26,8 @@ internal class RawConfigTunInjector(
         bypassLan: Boolean,
         allowIpv6: Boolean = false,
         routingRules: List<RoutingRule>,
+        routingDomainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
+        routingDomainMatcher: String? = null,
         appProxyRoutes: List<AppProxyRoute>,
         physicalInterface: String?,
         xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
@@ -60,7 +63,14 @@ internal class RawConfigTunInjector(
         original["stats"] = buildStatsConfig()
         original["policy"] = buildStatsPolicy()
         original["routing"] = mergeRouting(
-            generated = buildRouting(routingRules, appProxyRoutes, bypassLan, domesticDnsServers),
+            generated = buildRouting(
+                routingRules,
+                appProxyRoutes,
+                bypassLan,
+                domesticDnsServers,
+                routingDomainStrategy,
+                routingDomainMatcher,
+            ),
             raw = original["routing"] as? JsonObject,
         )
 

@@ -13,7 +13,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 
 @Database(
     entities = [ServerEntity::class, SubscriptionEntity::class, AppBypassEntity::class],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -121,6 +121,12 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE subscriptions ADD COLUMN preferJson INTEGER")
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE subscriptions ADD COLUMN providerRouting TEXT")
             }
         }
     }

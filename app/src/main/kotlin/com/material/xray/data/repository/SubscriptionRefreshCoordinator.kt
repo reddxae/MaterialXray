@@ -19,6 +19,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val appBypassDao: AppBypassDao,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
+    private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val routingChangeManager: RoutingChangeManager,
     private val connectionStateHolder: ConnectionStateHolder,
 ) {
@@ -104,12 +105,21 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         val result = refreshResult ?: return
         if (settingsRepository.routingPolicyControl.first() != RoutingPolicyControl.SubscriptionProvider) return
 
-        val selectedServer = selectedServerEntity() ?: return
-        if (selectedServer.subscriptionId != result.subscriptionId) return
+        val selectedServerId = settingsRepository.lastServerId.first()
+        val selectedSubscriptionId = if (selectedServerId in result.serverIdReplacements) {
+            result.subscriptionId
+        } else {
+            selectedServerEntity()?.subscriptionId
+        }
+        if (selectedSubscriptionId != result.subscriptionId) return
 
-        if (subscriptionAppRoutingRepository.applyForSubscription(result.subscriptionId)) {
+        val appRoutingChanged = subscriptionAppRoutingRepository.applyForSubscription(result.subscriptionId)
+        val routingChanged = subscriptionRoutingRepository.applyForSubscription(result.subscriptionId)
+        if (appRoutingChanged || routingChanged) {
             if (connectionStateHolder.state.value is ConnectionState.Connected) {
-                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
+                routingChangeManager.markPendingChanges(
+                    if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
+                )
             }
         }
     }

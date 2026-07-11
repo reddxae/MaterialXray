@@ -59,6 +59,90 @@ class SubscriptionFetcherTest {
     }
 
     @Test
+    fun `parse routing header decodes provider rules`() {
+        val payload = """
+            {
+              "domainStrategy": "IPIfNonMatch",
+              "domainMatcher": "hybrid",
+              "rules": [
+                {
+                  "__name__": "Block ads",
+                  "id": "block-ads-provider",
+                  "type": "field",
+                  "domain": ["geosite:category-ads-all"],
+                  "outboundTag": "block"
+                },
+                {
+                  "__name__": "DIRECT for RU domains",
+                  "id": "ru-domains-provider",
+                  "type": "field",
+                  "domain": ["domain:ru", "geosite:category-ru"],
+                  "outboundTag": "direct"
+                },
+                {
+                  "__name__": "DIRECT for RU IPs",
+                  "id": "ru-ips-provider",
+                  "type": "field",
+                  "ip": ["geoip:ru"],
+                  "outboundTag": "direct"
+                }
+              ]
+            }
+        """.trimIndent()
+        val headers = Headers.headersOf(
+            "routing",
+            Base64.getEncoder().encodeToString(payload.toByteArray()),
+        )
+
+        val routing = requireNotNull(SubscriptionRoutingHeaderParser.parse(headers))
+
+        assertEquals("IPIfNonMatch", routing.domainStrategy)
+        assertEquals("hybrid", routing.domainMatcher)
+        assertEquals(listOf("Block ads", "DIRECT for RU domains", "DIRECT for RU IPs"), routing.rules.map { it.name })
+        assertEquals(listOf("geosite:category-ads-all"), routing.rules[0].domains)
+        assertEquals("block", routing.rules[0].outboundTag)
+        assertEquals(listOf("geoip:ru"), routing.rules[2].ips)
+        assertEquals("direct", routing.rules[2].outboundTag)
+    }
+
+    @Test
+    fun `parse routing header ignores invalid payload`() {
+        val headers = Headers.headersOf("routing", "not-valid-routing")
+
+        assertNull(SubscriptionRoutingHeaderParser.parse(headers))
+    }
+
+    @Test
+    fun `parse routing header skips unsupported rules instead of broadening them`() {
+        val payload = """
+            {
+              "rules": [
+                {"outboundTag": "block", "domain": ["domain:missing-type.example"]},
+                {
+                  "type": "field",
+                  "outboundTag": "direct",
+                  "domain": ["domain:network-only.example"],
+                  "network": "tcp"
+                },
+                {
+                  "type": "field",
+                  "outboundTag": "direct",
+                  "domain": ["domain:supported.example"]
+                }
+              ]
+            }
+        """.trimIndent()
+        val headers = Headers.headersOf(
+            "routing",
+            Base64.getEncoder().encodeToString(payload.toByteArray()),
+        )
+
+        val routing = requireNotNull(SubscriptionRoutingHeaderParser.parse(headers))
+
+        assertEquals(listOf("domain:supported.example"), routing.rules.single().domains)
+    }
+
+    @Test
     fun `fetch parses json subscription outbound`() = runTest {
         val body = """
             {

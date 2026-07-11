@@ -2,6 +2,7 @@ package com.material.xray.core.xray
 
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.Json
@@ -24,6 +25,8 @@ class ConfigGenerator {
         bypassLan: Boolean = true,
         allowIpv6: Boolean = false,
         routingRules: List<RoutingRule> = emptyList(),
+        routingDomainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
+        routingDomainMatcher: String? = null,
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
         xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
@@ -40,6 +43,8 @@ class ConfigGenerator {
                 bypassLan = bypassLan,
                 allowIpv6 = allowIpv6,
                 routingRules = routingRules,
+                routingDomainStrategy = routingDomainStrategy,
+                routingDomainMatcher = routingDomainMatcher,
                 appProxyRoutes = appProxyRoutes,
                 physicalInterface = physicalInterface,
                 xrayApiSocketName = xrayApiSocketName,
@@ -76,7 +81,17 @@ class ConfigGenerator {
             put("api", buildStatsApi(xrayApiSocketName))
             put("stats", buildStatsConfig())
             put("policy", buildStatsPolicy())
-            put("routing", buildRouting(routingRules, appProxyRoutes, bypassLan, domesticDnsServers))
+            put(
+                "routing",
+                buildRouting(
+                    routingRules,
+                    appProxyRoutes,
+                    bypassLan,
+                    domesticDnsServers,
+                    routingDomainStrategy,
+                    routingDomainMatcher,
+                ),
+            )
         }
         return json.encodeToString(JsonObject.serializer(), config)
     }
@@ -92,6 +107,8 @@ class ConfigGenerator {
         bypassLan: Boolean = true,
         allowIpv6: Boolean = false,
         routingRules: List<RoutingRule> = emptyList(),
+        routingDomainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
+        routingDomainMatcher: String? = null,
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
         xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
@@ -106,6 +123,8 @@ class ConfigGenerator {
         bypassLan = bypassLan,
         allowIpv6 = allowIpv6,
         routingRules = routingRules,
+        routingDomainStrategy = routingDomainStrategy,
+        routingDomainMatcher = routingDomainMatcher,
         appProxyRoutes = appProxyRoutes,
         physicalInterface = physicalInterface,
         xrayApiSocketName = xrayApiSocketName,

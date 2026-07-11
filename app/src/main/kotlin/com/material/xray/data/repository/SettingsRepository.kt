@@ -16,6 +16,7 @@ import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
+import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
@@ -64,6 +65,8 @@ class SettingsRepository @Inject constructor(
         val ROUTING_RULES_VERSION = intPreferencesKey("routing_rules_version")
         val ROUTING_RULE_STATES = stringPreferencesKey("routing_rule_states")
         val DELETED_DEFAULT_ROUTING_RULE_IDS = stringSetPreferencesKey("deleted_default_routing_rule_ids")
+        val ROUTING_DOMAIN_STRATEGY = stringPreferencesKey("routing_domain_strategy")
+        val ROUTING_DOMAIN_MATCHER = stringPreferencesKey("routing_domain_matcher")
         val USE_ROOT_SERVICE = booleanPreferencesKey("use_root_service")
         val NOTIFICATION_ENABLED = booleanPreferencesKey("notification_enabled")
         val NOTIFICATION_UPDATE_INTERVAL_MS = intPreferencesKey("notification_update_interval_ms")
@@ -148,6 +151,12 @@ class SettingsRepository @Inject constructor(
             deletedDefaultRuleIds = prefs[DELETED_DEFAULT_ROUTING_RULE_IDS].orEmpty(),
         )
     }
+    val routingDomainStrategy: Flow<String> = store.data.map { prefs ->
+        SubscriptionRouting.normalizeDomainStrategy(prefs[ROUTING_DOMAIN_STRATEGY])
+    }
+    val routingDomainMatcher: Flow<String?> = store.data.map { prefs ->
+        SubscriptionRouting.normalizeDomainMatcher(prefs[ROUTING_DOMAIN_MATCHER])
+    }
     val notificationSettings: Flow<NotificationSettings> = store.data.map { prefs ->
         NotificationSettings(
             enabled = prefs[NOTIFICATION_ENABLED] ?: true,
@@ -180,6 +189,8 @@ class SettingsRepository @Inject constructor(
         bypassLan = bypassLan.first(),
         allowIpv6 = allowIpv6.first(),
         routingRules = routingRules.first(),
+        routingDomainStrategy = routingDomainStrategy.first(),
+        routingDomainMatcher = routingDomainMatcher.first(),
     )
 
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
@@ -288,6 +299,18 @@ class SettingsRepository @Inject constructor(
         prefs.remove(ROUTING_RULE_STATES)
     }
 
+    suspend fun setSubscriptionRouting(routing: SubscriptionRouting?) = store.edit { prefs ->
+        val normalized = routing?.normalized()
+        val rules = normalized?.rules.orEmpty()
+        prefs[ROUTING_RULES] = encodeRoutingRules(rules)
+        prefs[ROUTING_RULES_VERSION] = CURRENT_ROUTING_RULES_VERSION
+        prefs[DELETED_DEFAULT_ROUTING_RULE_IDS] = deletedDefaultRuleIds(rules)
+        prefs.remove(ROUTING_RULE_STATES)
+        prefs[ROUTING_DOMAIN_STRATEGY] = normalized?.domainStrategy ?: SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY
+        normalized?.domainMatcher?.let { prefs[ROUTING_DOMAIN_MATCHER] = it }
+            ?: prefs.remove(ROUTING_DOMAIN_MATCHER)
+    }
+
     suspend fun getAllAsMap(): Map<String, String> {
         val prefs = store.data.first()
         return prefs.asMap().entries.associate { (k, v) -> k.name to v.toString() }
@@ -341,6 +364,10 @@ class SettingsRepository @Inject constructor(
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }
             map["routing_rules_version"]?.let { prefs[ROUTING_RULES_VERSION] = it.toIntOrNull() ?: CURRENT_ROUTING_RULES_VERSION }
             map["routing_rule_states"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULE_STATES] = it }
+            prefs[ROUTING_DOMAIN_STRATEGY] = SubscriptionRouting.normalizeDomainStrategy(map["routing_domain_strategy"])
+            map["routing_domain_matcher"]
+                ?.let(SubscriptionRouting::normalizeDomainMatcher)
+                ?.let { prefs[ROUTING_DOMAIN_MATCHER] = it }
             map["deleted_default_routing_rule_ids"]
                 ?.split(",")
                 ?.map { it.trim().trim('[', ']') }

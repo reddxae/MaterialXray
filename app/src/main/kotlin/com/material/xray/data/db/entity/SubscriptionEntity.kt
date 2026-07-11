@@ -28,4 +28,5 @@ data class SubscriptionEntity(
     val customHeaders: String? = null,
     val appRoutingPackages: String? = null,
     val appRoutingMode: String? = null,
+    val providerRouting: String? = null,
 )

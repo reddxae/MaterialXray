@@ -2,6 +2,7 @@ package com.material.xray.core.xray
 
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleOperator
+import com.material.xray.model.SubscriptionRouting
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -54,8 +55,11 @@ internal fun buildRouting(
     appProxyRoutes: List<AppProxyRoute> = emptyList(),
     bypassLan: Boolean = true,
     domesticDnsServers: String = "",
+    domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
+    domainMatcher: String? = null,
 ) = buildJsonObject {
-    put("domainStrategy", "IPOnDemand")
+    put("domainStrategy", SubscriptionRouting.normalizeDomainStrategy(domainStrategy))
+    SubscriptionRouting.normalizeDomainMatcher(domainMatcher)?.let { put("domainMatcher", it) }
     put(
         "rules",
         buildJsonArray {

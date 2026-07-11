@@ -111,11 +111,11 @@ import com.material.xray.R
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.toSubscriptionAppRouting
+import com.material.xray.data.repository.toSubscriptionRouting
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.ServerConfig
-import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
 import com.material.xray.service.ConnectionEvent
@@ -292,7 +292,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                         selectedServerId = uiState.selectedServerId,
                         defaultPingMethod = uiState.defaultPingMethod,
                         canApplyRouting = uiState.routingPolicyControl == RoutingPolicyControl.User &&
-                            subscription.toSubscriptionAppRouting() != null,
+                            (subscription.toSubscriptionAppRouting() != null || subscription.toSubscriptionRouting() != null),
                         onDelete = {
                             if (servers.isEmpty()) {
                                 viewModel.deleteSubscription(subscription)
@@ -593,7 +593,7 @@ private data class HomeUiState(
     val runningConfig: String?,
     val defaultPingMethod: PingMethod,
     val routingPolicyControl: RoutingPolicyControl,
-    val pendingSubscriptionRouting: SubscriptionAppRouting?,
+    val pendingSubscriptionRouting: SubscriptionRoutingData?,
 )
 
 private data class ConnectionUiState(

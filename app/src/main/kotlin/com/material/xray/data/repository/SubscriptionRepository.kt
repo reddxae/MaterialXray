@@ -167,7 +167,7 @@ class SubscriptionRepository @Inject constructor(
 
     suspend fun refreshDueSubscriptions(nowMillis: Long = System.currentTimeMillis()): Map<Long, RefreshResult> = buildMap {
         subscriptionDao.getAll()
-            .filter { it.isDueForAutoUpdate(nowMillis) }
+            .filter { it.isDueForRefresh(nowMillis) }
             .forEach { sub ->
                 runCatching { refresh(sub.id, sub.url) }
                     .getOrNull()
@@ -282,16 +282,19 @@ class SubscriptionRepository @Inject constructor(
         .filterValues { it == 1 }
         .keys
 
-    private fun SubscriptionEntity.isDueForAutoUpdate(nowMillis: Long): Boolean {
-        val interval = autoUpdateIntervalHours
-        if (interval <= 0) return false
-
-        val intervalMillis = interval * MILLIS_PER_HOUR
-        return lastUpdated <= 0L || nowMillis - lastUpdated >= intervalMillis
-    }
-
     private companion object {
         val FALLBACK_NAME_PATTERN = Regex("""Subscription \d+""")
-        const val MILLIS_PER_HOUR = 60L * 60L * 1000L
     }
 }
+
+internal fun SubscriptionEntity.isDueForRefresh(nowMillis: Long): Boolean {
+    if (lastUpdated <= 0L) return true
+
+    val interval = autoUpdateIntervalHours
+    if (interval <= 0) return false
+
+    val intervalMillis = interval * MILLIS_PER_HOUR
+    return nowMillis - lastUpdated >= intervalMillis
+}
+
+private const val MILLIS_PER_HOUR = 60L * 60L * 1000L

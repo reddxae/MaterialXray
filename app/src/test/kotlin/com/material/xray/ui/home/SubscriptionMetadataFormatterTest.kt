@@ -42,6 +42,24 @@ class SubscriptionMetadataFormatterTest {
     }
 
     @Test
+    fun uncappedTrafficDoesNotCreateQuotaProgressState() {
+        val state = buildSubscriptionMetadataUiState(
+            subscription = SubscriptionEntity(
+                name = "Sub",
+                url = "https://example.com",
+                subscriptionDownloadBytes = 5L * GIB,
+                subscriptionTotalBytes = null,
+            ),
+            text = EnglishSubscriptionMetadataText,
+            clock = clock,
+            zoneId = zoneId,
+        )
+
+        assertEquals("∞ traffic, ↓ 5.0 GB", state.traffic?.summary)
+        assertNull(state.traffic?.quotaText)
+    }
+
+    @Test
     fun expiryFormatterHidesFarFutureAndMarksPastValuesExpired() {
         assertNull(
             formatSubscriptionExpiryUiState(

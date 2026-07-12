@@ -62,7 +62,10 @@ internal class RawConfigTunInjector(
         )
         original["log"] = buildLogConfig(logLevel)
         original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6)
-        original["api"] = buildStatsApi(xrayApiSocketName)
+        original["api"] = buildStatsApi(
+            socketName = xrayApiSocketName,
+            enableObservatory = original["observatory"] is JsonObject || original["burstObservatory"] is JsonObject,
+        )
         original["stats"] = buildStatsConfig()
         original["policy"] = buildStatsPolicy(xrayBufferSizeKiB)
         original["routing"] = mergeRouting(

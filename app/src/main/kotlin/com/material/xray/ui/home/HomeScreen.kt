@@ -249,6 +249,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     connectionState = uiState.connectionState,
                     selectedServerName = connectionUiState.displayServerName,
                     selectedServerDetail = connectionUiState.selectedServerDetail,
+                    activeBalancerServer = uiState.activeBalancerServer,
                     buttonColor = connectionUiState.buttonColor,
                     isConnected = connectionUiState.isConnected,
                     isRestartRequired = connectionUiState.isRestartRequired,
@@ -536,6 +537,7 @@ private fun RawConfigDialogHost(
 private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
+    val activeBalancerServer by viewModel.activeBalancerServer.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
     val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
@@ -549,6 +551,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     return HomeUiState(
         connectionState = connectionState,
         selectedServer = selectedServer,
+        activeBalancerServer = activeBalancerServer,
         selectedServerId = selectedServerId,
         useRootService = useRootService,
         subscriptions = subscriptions,
@@ -604,6 +607,7 @@ private fun ServerConfig.localizedEndpointSummary(): String {
 private data class HomeUiState(
     val connectionState: ConnectionState,
     val selectedServer: ServerConfig?,
+    val activeBalancerServer: ActiveBalancerServerState?,
     val selectedServerId: Long,
     val useRootService: Boolean,
     val subscriptions: List<SubscriptionEntity>,
@@ -630,6 +634,7 @@ private fun ConnectionPanel(
     connectionState: ConnectionState,
     selectedServerName: String,
     selectedServerDetail: String,
+    activeBalancerServer: ActiveBalancerServerState?,
     buttonColor: Color,
     isConnected: Boolean,
     isRestartRequired: Boolean,
@@ -640,6 +645,7 @@ private fun ConnectionPanel(
     onViewConfig: () -> Unit,
 ) {
     val buttonEnabled = (canStart || isConnected || isRestartRequired || isInterfaceBusy) && !isTransitioning
+    val activeBalancerLabel = activeBalancerServer?.let { balancerServerLabel(it) }
     val containerColor = if (buttonEnabled) {
         buttonColor.copy(alpha = 0.15f)
     } else {
@@ -741,8 +747,28 @@ private fun ConnectionPanel(
             }
         }
 
+        AnimatedVisibility(visible = isConnected && activeBalancerLabel != null) {
+            Text(
+                text = activeBalancerLabel.orEmpty(),
+                modifier = Modifier.padding(top = 12.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+
         Spacer(modifier = Modifier.height(10.dp))
     }
+}
+
+@Composable
+private fun balancerServerLabel(server: ActiveBalancerServerState): String = if (server.latencyMs == null) {
+    stringResource(R.string.home_balancer_active_server, server.title)
+} else {
+    stringResource(R.string.home_balancer_active_server_with_latency, server.title, server.latencyMs)
 }
 
 @Composable

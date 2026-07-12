@@ -41,6 +41,7 @@ import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
+import com.material.xray.model.primaryBalancerTag
 import dagger.hilt.android.AndroidEntryPoint
 import java.text.NumberFormat
 import javax.inject.Inject
@@ -96,6 +97,7 @@ class XrayService : VpnService() {
     private var processWatchdogJob: Job? = null
     private var processWatchdogPid: Int? = null
     private var processRecoveryJob: Job? = null
+    private var balancerSelectionJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var activeUseRootService = true
     private var notificationSettings = NotificationSettings()
@@ -242,6 +244,7 @@ class XrayService : VpnService() {
         if (::networkRetargetWorker.isInitialized) networkRetargetWorker.close()
         releaseNetworkRetargetWakeLock()
         processRecoveryJob?.cancel()
+        stopBalancerSelectionTracker()
         stopProcessWatchdog()
         stopLogTail()
         scope.cancel()
@@ -476,13 +479,36 @@ class XrayService : VpnService() {
 
     private fun handleStateSideEffects(state: ConnectionState) {
         when (state) {
-            is ConnectionState.Connected -> startProcessWatchdog(state)
+            is ConnectionState.Connected -> {
+                startProcessWatchdog(state)
+                startBalancerSelectionTracker()
+            }
             else -> {
+                stopBalancerSelectionTracker()
                 stopProcessWatchdog()
                 stopNotificationMetrics()
             }
         }
         updateNotificationMetricsJob()
+    }
+
+    private fun startBalancerSelectionTracker() {
+        stopBalancerSelectionTracker()
+        val balancerTag = activeConfig?.primaryBalancerTag() ?: return
+
+        balancerSelectionJob = scope.launch(Dispatchers.IO) {
+            while (isActive && connectionStateHolder.state.value is ConnectionState.Connected) {
+                val selection = connectionManager.readBalancerSelection(balancerTag)
+                connectionStateHolder.updateActiveBalancerSelection(selection)
+                delay(BALANCER_SELECTION_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun stopBalancerSelectionTracker() {
+        balancerSelectionJob?.cancel()
+        balancerSelectionJob = null
+        connectionStateHolder.updateActiveBalancerSelection(null)
     }
 
     private fun startProcessWatchdog(state: ConnectionState.Connected) {
@@ -1353,6 +1379,7 @@ class XrayService : VpnService() {
         private const val CONNECTION_RETRY_DELAY_MS = 1_500L
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
+        private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
         private const val MAX_XRAY_PROCESS_MEMORY_MB = 512L
         private const val VPN_ADDRESS = "10.10.14.1"
         private const val VPN_PREFIX_LENGTH = 30

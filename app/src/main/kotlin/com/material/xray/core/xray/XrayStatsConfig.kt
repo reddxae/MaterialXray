@@ -11,10 +11,20 @@ internal const val XRAY_API_TIMEOUT_MS = 2_000L
 
 internal const val XRAY_API_TAG = "api"
 
-internal fun buildStatsApi(socketName: String = XRAY_API_SOCKET_NAME_PREFIX) = buildJsonObject {
+internal fun buildStatsApi(
+    socketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+    enableObservatory: Boolean = false,
+) = buildJsonObject {
     put("tag", XRAY_API_TAG)
     put("listen", "@$socketName")
-    put("services", buildJsonArray { add("StatsService") })
+    put(
+        "services",
+        buildJsonArray {
+            add("StatsService")
+            add("RoutingService")
+            if (enableObservatory) add("ObservatoryService")
+        },
+    )
 }
 
 internal fun buildStatsPolicy(

@@ -57,6 +57,10 @@ class RawConfigTunInjectorTest {
         )
 
         val root = json.parseToJsonElement(result).jsonObject
+        assertEquals(
+            listOf("StatsService", "RoutingService"),
+            root.getValue("api").jsonObject.getValue("services").jsonArray.map { it.jsonPrimitive.content },
+        )
         val inbounds = root.getValue("inbounds").jsonArray
         assertEquals(listOf("tun-in", "app-in-7"), inbounds.map { it.jsonObject["tag"]!!.jsonPrimitive.content })
         assertTrue(inbounds.all { it.jsonObject["protocol"]!!.jsonPrimitive.content == "tun" })
@@ -144,6 +148,10 @@ class RawConfigTunInjectorTest {
 
         val root = json.parseToJsonElement(result).jsonObject
         val routing = root.getValue("routing").jsonObject
+        assertEquals(
+            listOf("StatsService", "RoutingService", "ObservatoryService"),
+            root.getValue("api").jsonObject.getValue("services").jsonArray.map { it.jsonPrimitive.content },
+        )
         val rules = routing.getValue("rules").jsonArray.map { it.jsonObject }
         assertEquals("IPIfNonMatch", routing.getValue("domainStrategy").jsonPrimitive.content)
         assertEquals("dns-out", rules.first().getValue("outboundTag").jsonPrimitive.content)

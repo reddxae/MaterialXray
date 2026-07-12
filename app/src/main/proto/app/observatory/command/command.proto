@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package xray.core.app.observatory.command;
+option java_package = "com.xray.core.app.observatory.command";
+option java_multiple_files = true;
+
+import "app/observatory/config.proto";
+
+message GetOutboundStatusRequest {}
+
+message GetOutboundStatusResponse {
+  xray.core.app.observatory.ObservationResult status = 1;
+}
+
+service ObservatoryService {
+  rpc GetOutboundStatus(GetOutboundStatusRequest) returns (GetOutboundStatusResponse) {}
+}

@@ -27,6 +27,8 @@ import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
+import com.material.xray.model.maskedBalancerOutboundAddress
+import com.material.xray.model.matchesBalancerOutbound
 import com.material.xray.model.proxyOutboundCount
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.service.ConnectionStateHolder
@@ -69,6 +71,11 @@ data class ServerListItem(
 data class ServerLatencyState(
     val latencyMs: Int,
     val method: PingMethod? = null,
+)
+
+data class ActiveBalancerServerState(
+    val title: String,
+    val latencyMs: Long?,
 )
 
 data class SubscriptionRoutingData(
@@ -140,6 +147,28 @@ class HomeViewModel @Inject constructor(
 
     val selectedServer: StateFlow<ServerConfig?> = combine(selectedServerId, allServers) { id, list ->
         list.find { it.id == id }?.let { runCatching { serverRepo.parseConfig(it) }.getOrNull() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val activeBalancerServer: StateFlow<ActiveBalancerServerState?> = combine(
+        connectionStateHolder.activeBalancerSelection,
+        selectedServerId,
+        selectedServer,
+        allServers,
+    ) { selection, selectedId, selectedConfig, servers ->
+        if (selection == null || selectedConfig == null) return@combine null
+        val selectedEntity = servers.firstOrNull { it.id == selectedId } ?: return@combine null
+        val matchingTitle = servers.asSequence()
+            .filter { it.id != selectedId && it.subscriptionId == selectedEntity.subscriptionId }
+            .firstOrNull { entity ->
+                runCatching {
+                    selectedConfig.matchesBalancerOutbound(selection.outboundTag, serverRepo.parseConfig(entity))
+                }.getOrDefault(false)
+            }
+            ?.name
+        val title = matchingTitle
+            ?: selectedConfig.maskedBalancerOutboundAddress(selection.outboundTag)
+            ?: return@combine null
+        ActiveBalancerServerState(title = title, latencyMs = selection.latencyMs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private val refreshOperations = MutableStateFlow(0)

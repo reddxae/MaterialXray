@@ -15,6 +15,7 @@ import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XRAY_API_SOCKET_NAME_PREFIX
 import com.material.xray.core.xray.XrayBinary
+import com.material.xray.core.xray.XrayRoutingClient
 import com.material.xray.core.xray.XrayState
 import com.material.xray.core.xray.XrayStatsClient
 import com.material.xray.data.db.dao.AppBypassDao
@@ -48,6 +49,7 @@ class ConnectionManager(
     private val cleanupManager = CleanupManager(context, shell)
     private val stateFile = StateFile(context)
     private var xrayStatsClient = XrayStatsClient()
+    private var xrayRoutingClient = XrayRoutingClient()
     private val processSupervisor = XrayProcessSupervisor(
         environment = AndroidXrayRuntimeEnvironment(context),
         commandRunner = RootShellCommandRunner(shell),
@@ -122,6 +124,7 @@ class ConnectionManager(
 
             val xrayApiSocketName = nextXrayApiSocketName()
             xrayStatsClient = XrayStatsClient(xrayApiSocketName)
+            xrayRoutingClient = XrayRoutingClient(xrayApiSocketName)
 
             writeXrayConfig(xrayServer, runtimeSettings, useRootService, appRoutingPlan, physicalRouteResult.route, xrayApiSocketName)
             val pid = startXrayProcess(useRootService, vpnInterface)
@@ -678,6 +681,8 @@ class ConnectionManager(
     }
 
     suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> = xrayStatsClient.queryOutboundTrafficStatsBytes()
+
+    internal suspend fun readBalancerSelection(balancerTag: String) = xrayRoutingClient.queryBalancerSelection(balancerTag)
 
     private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
         val appUid = context.applicationInfo.uid

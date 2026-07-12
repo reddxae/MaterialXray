@@ -130,6 +130,11 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         XrayRuntimeSettings.DEFAULT_TUN_MTU,
     )
+    val xrayMemoryRestartThresholdMiB = settingsRepo.xrayMemoryRestartThresholdMiB.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
+    )
     val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -244,6 +249,15 @@ class SettingsViewModel @Inject constructor(
         if (mtu == tunMtu.value || !XrayRuntimeSettings.isValidTunMtu(mtu)) return@launch
         settingsRepo.setTunMtu(mtu)
         reloadActiveConnectionIfConnected()
+    }
+    fun setXrayMemoryRestartThresholdMiB(thresholdMiB: Int) = viewModelScope.launch {
+        if (
+            thresholdMiB == xrayMemoryRestartThresholdMiB.value ||
+            !XrayRuntimeSettings.isValidXrayMemoryRestartThresholdMiB(thresholdMiB)
+        ) {
+            return@launch
+        }
+        settingsRepo.setXrayMemoryRestartThresholdMiB(thresholdMiB)
     }
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {
         if (level == xrayLogLevel.value) return@launch

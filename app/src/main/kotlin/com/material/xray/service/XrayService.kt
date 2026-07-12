@@ -97,6 +97,9 @@ class XrayService : VpnService() {
     private var processWatchdogJob: Job? = null
     private var processWatchdogPid: Int? = null
     private var processRecoveryJob: Job? = null
+
+    @Volatile
+    private var xrayMemoryRestartThresholdMiB = XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB
     private var balancerSelectionJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var activeUseRootService = true
@@ -164,6 +167,12 @@ class XrayService : VpnService() {
                 }
                 updateNotificationMetricsJob()
                 updateNotification()
+            }
+        }
+
+        scope.launch {
+            settingsRepo.xrayMemoryRestartThresholdMiB.collect { thresholdMiB ->
+                xrayMemoryRestartThresholdMiB = thresholdMiB
             }
         }
 
@@ -537,9 +546,10 @@ class XrayService : VpnService() {
         }
 
         val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid)
-        if (residentMemoryMb != null && residentMemoryMb > MAX_XRAY_PROCESS_MEMORY_MB) {
+        val thresholdMiB = xrayMemoryRestartThresholdMiB
+        if (XrayRuntimeSettings.shouldRestartForMemory(residentMemoryMb, thresholdMiB)) {
             recoverNativeProcess(
-                reason = "xray process $pid exceeded ${MAX_XRAY_PROCESS_MEMORY_MB} MiB RSS ($residentMemoryMb MiB); restarting...",
+                reason = "xray process $pid exceeded $thresholdMiB MiB RSS ($residentMemoryMb MiB); restarting...",
                 pidToKill = pid,
             )
             return false
@@ -1380,7 +1390,6 @@ class XrayService : VpnService() {
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
-        private const val MAX_XRAY_PROCESS_MEMORY_MB = 512L
         private const val VPN_ADDRESS = "10.10.14.1"
         private const val VPN_PREFIX_LENGTH = 30
         private const val ROOTLESS_TUN_NAME = "tun0"

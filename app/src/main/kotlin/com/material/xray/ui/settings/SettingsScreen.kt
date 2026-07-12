@@ -106,6 +106,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val allowIpv6 by viewModel.allowIpv6.collectAsStateWithLifecycle()
     val xrayBufferSizeKiB by viewModel.xrayBufferSizeKiB.collectAsStateWithLifecycle()
     val tunMtu by viewModel.tunMtu.collectAsStateWithLifecycle()
+    val xrayMemoryRestartThresholdMiB by viewModel.xrayMemoryRestartThresholdMiB.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
@@ -144,6 +145,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var editingTunName by remember(tunName) { mutableStateOf(tunName) }
     var editingXrayBufferSizeKiB by remember(xrayBufferSizeKiB) { mutableStateOf(xrayBufferSizeKiB.toString()) }
     var editingTunMtu by remember(tunMtu) { mutableStateOf(tunMtu.toString()) }
+    var editingXrayMemoryRestartThresholdMiB by remember(xrayMemoryRestartThresholdMiB) {
+        mutableStateOf(xrayMemoryRestartThresholdMiB.toString())
+    }
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
     var editingDomesticDns by remember(domesticDnsServers) { mutableStateOf(domesticDnsServers) }
     var editingLatencyDns by remember(latencyDnsServers) { mutableStateOf(latencyDnsServers) }
@@ -156,17 +160,32 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         derivedStateOf { editingXrayBufferSizeKiB.toIntOrNull() }
     }
     val parsedTunMtu by remember(editingTunMtu) { derivedStateOf { editingTunMtu.toIntOrNull() } }
+    val parsedXrayMemoryRestartThresholdMiB by remember(editingXrayMemoryRestartThresholdMiB) {
+        derivedStateOf { editingXrayMemoryRestartThresholdMiB.toIntOrNull() }
+    }
     val isXrayBufferSizeKiBValid by remember(parsedXrayBufferSizeKiB) {
         derivedStateOf { parsedXrayBufferSizeKiB?.let(XrayRuntimeSettings::isValidXrayBufferSizeKiB) == true }
     }
     val isTunMtuValid by remember(parsedTunMtu) {
         derivedStateOf { parsedTunMtu?.let(XrayRuntimeSettings::isValidTunMtu) == true }
     }
+    val isXrayMemoryRestartThresholdMiBValid by remember(parsedXrayMemoryRestartThresholdMiB) {
+        derivedStateOf {
+            parsedXrayMemoryRestartThresholdMiB
+                ?.let(XrayRuntimeSettings::isValidXrayMemoryRestartThresholdMiB) == true
+        }
+    }
     val hasXrayBufferSizeKiBChanges by remember(editingXrayBufferSizeKiB, xrayBufferSizeKiB) {
         derivedStateOf { editingXrayBufferSizeKiB != xrayBufferSizeKiB.toString() }
     }
     val hasTunMtuChanges by remember(editingTunMtu, tunMtu) {
         derivedStateOf { editingTunMtu != tunMtu.toString() }
+    }
+    val hasXrayMemoryRestartThresholdMiBChanges by remember(
+        editingXrayMemoryRestartThresholdMiB,
+        xrayMemoryRestartThresholdMiB,
+    ) {
+        derivedStateOf { editingXrayMemoryRestartThresholdMiB != xrayMemoryRestartThresholdMiB.toString() }
     }
     val hasDnsChanges by remember(editingDns, dnsServers) { derivedStateOf { editingDns != dnsServers } }
     val hasDomesticDnsChanges by remember(editingDomesticDns, domesticDnsServers) {
@@ -390,6 +409,24 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     isValid = isTunMtuValid,
                     hasChanges = hasTunMtuChanges,
                     onSave = { parsedTunMtu?.let(viewModel::setTunMtu) },
+                )
+                AdvancedIntegerSetting(
+                    value = editingXrayMemoryRestartThresholdMiB,
+                    onValueChange = { editingXrayMemoryRestartThresholdMiB = it },
+                    label = stringResource(R.string.settings_xray_memory_restart_threshold_label),
+                    supportingText = stringResource(
+                        R.string.settings_xray_memory_restart_threshold_supporting_text,
+                        XrayRuntimeSettings.MIN_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
+                        XrayRuntimeSettings.MAX_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
+                        XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
+                    ),
+                    suffix = stringResource(R.string.settings_mib_abbreviation),
+                    isValid = isXrayMemoryRestartThresholdMiBValid,
+                    hasChanges = hasXrayMemoryRestartThresholdMiBChanges,
+                    onSave = {
+                        parsedXrayMemoryRestartThresholdMiB
+                            ?.let(viewModel::setXrayMemoryRestartThresholdMiB)
+                    },
                 )
                 ExposedDropdownMenuBox(
                     expanded = defaultOutboundExpanded,

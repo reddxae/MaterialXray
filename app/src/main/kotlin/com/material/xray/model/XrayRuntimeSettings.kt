@@ -24,6 +24,9 @@ data class XrayRuntimeSettings(
         const val DEFAULT_TUN_MTU = 1500
         const val MIN_TUN_MTU = 1280
         const val MAX_TUN_MTU = 1500
+        const val DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB = 200
+        const val MIN_XRAY_MEMORY_RESTART_THRESHOLD_MIB = 64
+        const val MAX_XRAY_MEMORY_RESTART_THRESHOLD_MIB = 32_768
 
         fun isValidXrayBufferSizeKiB(value: Int): Boolean = value in MIN_XRAY_BUFFER_SIZE_KIB..MAX_XRAY_BUFFER_SIZE_KIB
 
@@ -34,5 +37,13 @@ data class XrayRuntimeSettings(
         fun isValidTunMtu(value: Int): Boolean = value in MIN_TUN_MTU..MAX_TUN_MTU
 
         fun normalizeTunMtu(value: Int?): Int = value?.takeIf(::isValidTunMtu) ?: DEFAULT_TUN_MTU
+
+        fun isValidXrayMemoryRestartThresholdMiB(value: Int): Boolean = value in MIN_XRAY_MEMORY_RESTART_THRESHOLD_MIB..MAX_XRAY_MEMORY_RESTART_THRESHOLD_MIB
+
+        fun normalizeXrayMemoryRestartThresholdMiB(value: Int?): Int = value
+            ?.takeIf(::isValidXrayMemoryRestartThresholdMiB)
+            ?: DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB
+
+        fun shouldRestartForMemory(residentMemoryMiB: Long?, thresholdMiB: Int): Boolean = residentMemoryMiB != null && residentMemoryMiB > thresholdMiB
     }
 }

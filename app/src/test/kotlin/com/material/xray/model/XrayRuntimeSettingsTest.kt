@@ -24,4 +24,20 @@ class XrayRuntimeSettingsTest {
         assertTrue(XrayRuntimeSettings.isValidTunMtu(1280))
         assertFalse(XrayRuntimeSettings.isValidTunMtu(1501))
     }
+
+    @Test
+    fun `normalizes core RAM restart threshold`() {
+        assertEquals(200, XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(null))
+        assertEquals(200, XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(63))
+        assertEquals(512, XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(512))
+        assertTrue(XrayRuntimeSettings.isValidXrayMemoryRestartThresholdMiB(32_768))
+        assertFalse(XrayRuntimeSettings.isValidXrayMemoryRestartThresholdMiB(32_769))
+    }
+
+    @Test
+    fun `restarts only when core RAM usage exceeds threshold`() {
+        assertFalse(XrayRuntimeSettings.shouldRestartForMemory(null, 200))
+        assertFalse(XrayRuntimeSettings.shouldRestartForMemory(200, 200))
+        assertTrue(XrayRuntimeSettings.shouldRestartForMemory(201, 200))
+    }
 }

@@ -33,6 +33,7 @@ import kotlinx.serialization.json.Json
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
 @Singleton
+@Suppress("TooManyFunctions")
 class SettingsRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
@@ -48,6 +49,7 @@ class SettingsRepository @Inject constructor(
         val ROUTE_TABLE = intPreferencesKey("route_table")
         val XRAY_BUFFER_SIZE_KIB = intPreferencesKey("xray_buffer_size_kib")
         val TUN_MTU = intPreferencesKey("tun_mtu")
+        val XRAY_MEMORY_RESTART_THRESHOLD_MIB = intPreferencesKey("xray_memory_restart_threshold_mib")
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
         val BYPASS_LAN = booleanPreferencesKey("bypass_lan")
         val ALLOW_IPV6 = booleanPreferencesKey("allow_ipv6")
@@ -105,6 +107,9 @@ class SettingsRepository @Inject constructor(
     }
     val tunMtu: Flow<Int> = store.data.map { prefs ->
         XrayRuntimeSettings.normalizeTunMtu(prefs[TUN_MTU])
+    }
+    val xrayMemoryRestartThresholdMiB: Flow<Int> = store.data.map { prefs ->
+        XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(prefs[XRAY_MEMORY_RESTART_THRESHOLD_MIB])
     }
     val autoConnect: Flow<Boolean> = store.data.map { it[AUTO_CONNECT] ?: false }
     val bypassLan: Flow<Boolean> = store.data.map { it[BYPASS_LAN] ?: true }
@@ -214,6 +219,10 @@ class SettingsRepository @Inject constructor(
     suspend fun setTunMtu(mtu: Int) {
         require(XrayRuntimeSettings.isValidTunMtu(mtu))
         store.edit { it[TUN_MTU] = mtu }
+    }
+    suspend fun setXrayMemoryRestartThresholdMiB(thresholdMiB: Int) {
+        require(XrayRuntimeSettings.isValidXrayMemoryRestartThresholdMiB(thresholdMiB))
+        store.edit { it[XRAY_MEMORY_RESTART_THRESHOLD_MIB] = thresholdMiB }
     }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
     suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
@@ -345,6 +354,9 @@ class SettingsRepository @Inject constructor(
                 map["xray_buffer_size_kib"]?.toIntOrNull(),
             )
             prefs[TUN_MTU] = XrayRuntimeSettings.normalizeTunMtu(map["tun_mtu"]?.toIntOrNull())
+            prefs[XRAY_MEMORY_RESTART_THRESHOLD_MIB] = XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(
+                map["xray_memory_restart_threshold_mib"]?.toIntOrNull(),
+            )
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
             prefs[BYPASS_LAN] = map["bypass_lan"]?.toBooleanStrictOrNull() ?: true
             prefs[ALLOW_IPV6] = map["allow_ipv6"]?.toBooleanStrictOrNull() ?: false

@@ -24,6 +24,7 @@ class XrayConfigRoutingTest {
         )
 
         assertEquals("UseIPv4", dns.getValue("queryStrategy").jsonPrimitive.content)
+        assertTrue("tag" !in dns)
         val servers = dns.getValue("servers").jsonArray
         assertEquals("localhost", servers.first().jsonPrimitive.content)
         val domesticServers = servers.drop(1).map { it.jsonObject }
@@ -34,6 +35,17 @@ class XrayConfigRoutingTest {
             assertTrue("domain:example" in domains)
             assertEquals("domestic-dns", server.getValue("tag").jsonPrimitive.content)
         }
+    }
+
+    @Test
+    fun `buildDns tags configured default servers for routing`() {
+        val dns = buildDns(servers = "1.1.1.1, 8.8.8.8")
+
+        assertEquals("default-dns", dns.getValue("tag").jsonPrimitive.content)
+        assertEquals(
+            listOf("1.1.1.1", "8.8.8.8"),
+            dns.getValue("servers").jsonArray.map { it.jsonPrimitive.content },
+        )
     }
 
     @Test
@@ -52,6 +64,7 @@ class XrayConfigRoutingTest {
                 appProxyRoute(inboundTag = "app-in-rules", outboundTag = "proxy", applyRoutingRules = true),
             ),
             bypassLan = true,
+            dnsServers = "1.1.1.1",
             domesticDnsServers = "77.88.8.8",
         )
 
@@ -59,14 +72,16 @@ class XrayConfigRoutingTest {
         assertEquals("IPOnDemand", routing.getValue("domainStrategy").jsonPrimitive.content)
         assertEquals(listOf("tun-in", "app-in-direct", "app-in-rules"), rules[0].array("inboundTag"))
         assertEquals("dns-out", rules[0].getValue("outboundTag").jsonPrimitive.content)
-        assertEquals("domestic-dns", rules[1].array("inboundTag").single())
-        assertEquals("app-in-direct", rules[2].array("inboundTag").single())
-        assertEquals("geoip:private", rules[3].array("ip").single())
-        assertEquals("geosite:private", rules[4].array("domain").single())
-        assertEquals(listOf("domain:one", "domain:two"), rules[5].array("domain"))
-        assertEquals(listOf("geoip:one"), rules[6].array("ip"))
-        assertEquals("443", rules[7].getValue("port").jsonPrimitive.content)
-        assertEquals(listOf("tcp", "udp"), rules[8].array("protocol"))
+        assertEquals("default-dns", rules[1].array("inboundTag").single())
+        assertEquals("direct", rules[1].getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("domestic-dns", rules[2].array("inboundTag").single())
+        assertEquals("app-in-direct", rules[3].array("inboundTag").single())
+        assertEquals("geoip:private", rules[4].array("ip").single())
+        assertEquals("geosite:private", rules[5].array("domain").single())
+        assertEquals(listOf("domain:one", "domain:two"), rules[6].array("domain"))
+        assertEquals(listOf("geoip:one"), rules[7].array("ip"))
+        assertEquals("443", rules[8].getValue("port").jsonPrimitive.content)
+        assertEquals(listOf("tcp", "udp"), rules[9].array("protocol"))
         assertEquals("app-in-rules", rules.last().array("inboundTag").single())
     }
 

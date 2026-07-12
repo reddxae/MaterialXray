@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+private const val DEFAULT_DNS_TAG = "default-dns"
 private const val DOMESTIC_DNS_TAG = "domestic-dns"
 private const val SYSTEM_DNS_SERVER = "localhost"
 
@@ -25,6 +26,9 @@ internal fun buildDns(
     val defaultServers = servers.commaSeparatedValues()
     if (!allowIpv6) {
         put("queryStrategy", "UseIPv4")
+    }
+    if (defaultServers.isNotEmpty()) {
+        put("tag", DEFAULT_DNS_TAG)
     }
     put(
         "servers",
@@ -54,6 +58,7 @@ internal fun buildRouting(
     routingRules: List<RoutingRule>,
     appProxyRoutes: List<AppProxyRoute> = emptyList(),
     bypassLan: Boolean = true,
+    dnsServers: String = "",
     domesticDnsServers: String = "",
     domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     domainMatcher: String? = null,
@@ -64,6 +69,9 @@ internal fun buildRouting(
         "rules",
         buildJsonArray {
             add(dnsRoutingRule(appProxyRoutes))
+            if (dnsServers.commaSeparatedValues().isNotEmpty()) {
+                add(defaultDnsRoutingRule())
+            }
             if (domesticDnsServers.isNotBlank()) {
                 add(domesticDnsRoutingRule())
             }
@@ -110,6 +118,12 @@ private fun dnsRoutingRule(appProxyRoutes: List<AppProxyRoute>) = buildJsonObjec
     )
     put("port", "53")
     put("outboundTag", "dns-out")
+}
+
+private fun defaultDnsRoutingRule() = buildJsonObject {
+    put("type", "field")
+    put("inboundTag", buildJsonArray { add(DEFAULT_DNS_TAG) })
+    put("outboundTag", "direct")
 }
 
 private fun domesticDnsRoutingRule() = buildJsonObject {

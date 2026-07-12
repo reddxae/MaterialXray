@@ -137,6 +137,9 @@ class RawConfigTunInjectorTest {
         val rules = routing.getValue("rules").jsonArray.map { it.jsonObject }
         assertEquals("IPIfNonMatch", routing.getValue("domainStrategy").jsonPrimitive.content)
         assertEquals("dns-out", rules.first().getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("default-dns", root.getValue("dns").jsonObject.getValue("tag").jsonPrimitive.content)
+        assertEquals("default-dns", rules[1].getValue("inboundTag").jsonArray.single().jsonPrimitive.content)
+        assertEquals("direct", rules[1].getValue("outboundTag").jsonPrimitive.content)
         assertEquals("balance", rules.last().getValue("balancerTag").jsonPrimitive.content)
         assertEquals("balance", routing.getValue("balancers").jsonArray.single().jsonObject.getValue("tag").jsonPrimitive.content)
         assertEquals(

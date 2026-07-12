@@ -155,11 +155,17 @@ class ConfigGeneratorTest {
         val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255, dnsServers = "1.1.1.1,8.8.8.8")
         val json = Json.parseToJsonElement(config).jsonObject
         assertNotNull(json["dns"])
+        assertEquals("default-dns", json["dns"]!!.jsonObject["tag"]!!.jsonPrimitive.content)
         val rules = json["routing"]!!.jsonObject["rules"]!!.jsonArray
         val dnsRule = rules.firstOrNull { it.jsonObject["port"]?.jsonPrimitive?.content == "53" }
         assertNotNull("Should have DNS port 53 routing rule", dnsRule)
         val inboundTags = dnsRule!!.jsonObject["inboundTag"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("tun-in"), inboundTags)
+        val upstreamRule = rules.firstOrNull {
+            it.jsonObject["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
+        }
+        assertNotNull("Default DNS queries should be routed directly", upstreamRule)
+        assertEquals("direct", upstreamRule!!.jsonObject["outboundTag"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -169,6 +175,12 @@ class ConfigGeneratorTest {
         val servers = json["dns"]!!.jsonObject["servers"]!!.jsonArray
 
         assertEquals(listOf("localhost"), servers.map { it.jsonPrimitive.content })
+        assertTrue("tag" !in json["dns"]!!.jsonObject)
+        assertTrue(
+            json["routing"]!!.jsonObject["rules"]!!.jsonArray.none {
+                it.jsonObject["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
+            },
+        )
     }
 
     @Test

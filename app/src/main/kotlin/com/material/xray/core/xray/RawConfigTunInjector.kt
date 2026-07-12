@@ -64,12 +64,13 @@ internal class RawConfigTunInjector(
         original["policy"] = buildStatsPolicy()
         original["routing"] = mergeRouting(
             generated = buildRouting(
-                routingRules,
-                appProxyRoutes,
-                bypassLan,
-                domesticDnsServers,
-                routingDomainStrategy,
-                routingDomainMatcher,
+                routingRules = routingRules,
+                appProxyRoutes = appProxyRoutes,
+                bypassLan = bypassLan,
+                dnsServers = dnsServers,
+                domesticDnsServers = domesticDnsServers,
+                domainStrategy = routingDomainStrategy,
+                domainMatcher = routingDomainMatcher,
             ),
             raw = original["routing"] as? JsonObject,
         )

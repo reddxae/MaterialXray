@@ -84,12 +84,13 @@ class ConfigGenerator {
             put(
                 "routing",
                 buildRouting(
-                    routingRules,
-                    appProxyRoutes,
-                    bypassLan,
-                    domesticDnsServers,
-                    routingDomainStrategy,
-                    routingDomainMatcher,
+                    routingRules = routingRules,
+                    appProxyRoutes = appProxyRoutes,
+                    bypassLan = bypassLan,
+                    dnsServers = dnsServers,
+                    domesticDnsServers = domesticDnsServers,
+                    domainStrategy = routingDomainStrategy,
+                    domainMatcher = routingDomainMatcher,
                 ),
             )
         }

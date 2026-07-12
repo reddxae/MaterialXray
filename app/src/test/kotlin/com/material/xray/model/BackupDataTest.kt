@@ -44,6 +44,23 @@ class BackupDataTest {
     }
 
     @Test
+    fun `backup round trip preserves xray performance settings`() {
+        val settings = mapOf(
+            "xray_buffer_size_kib" to "1024",
+            "tun_mtu" to "1400",
+        )
+        val backup = BackupData(
+            subscriptions = emptyList(),
+            bypassedApps = emptyList(),
+            settings = settings,
+        )
+
+        val restored = json.decodeFromString<BackupData>(json.encodeToString(backup))
+
+        assertEquals(settings, restored.settings)
+    }
+
+    @Test
     fun `backup round trip preserves provider routing`() {
         val routing = SubscriptionRouting(
             rules = listOf(

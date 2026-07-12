@@ -85,6 +85,7 @@ import com.material.xray.model.NotificationStyle
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
+import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
@@ -103,6 +104,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val rootAvailable by viewModel.rootAvailable.collectAsStateWithLifecycle()
     val bypassLan by viewModel.bypassLan.collectAsStateWithLifecycle()
     val allowIpv6 by viewModel.allowIpv6.collectAsStateWithLifecycle()
+    val xrayBufferSizeKiB by viewModel.xrayBufferSizeKiB.collectAsStateWithLifecycle()
+    val tunMtu by viewModel.tunMtu.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
@@ -139,6 +142,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     }
 
     var editingTunName by remember(tunName) { mutableStateOf(tunName) }
+    var editingXrayBufferSizeKiB by remember(xrayBufferSizeKiB) { mutableStateOf(xrayBufferSizeKiB.toString()) }
+    var editingTunMtu by remember(tunMtu) { mutableStateOf(tunMtu.toString()) }
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
     var editingDomesticDns by remember(domesticDnsServers) { mutableStateOf(domesticDnsServers) }
     var editingLatencyDns by remember(latencyDnsServers) { mutableStateOf(latencyDnsServers) }
@@ -147,6 +152,22 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var editingLatencyCheckUrl by remember(latencyCheckUrl) { mutableStateOf(latencyCheckUrl) }
     val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val hasTunNameChanges by remember(editingTunName, tunName) { derivedStateOf { editingTunName != tunName } }
+    val parsedXrayBufferSizeKiB by remember(editingXrayBufferSizeKiB) {
+        derivedStateOf { editingXrayBufferSizeKiB.toIntOrNull() }
+    }
+    val parsedTunMtu by remember(editingTunMtu) { derivedStateOf { editingTunMtu.toIntOrNull() } }
+    val isXrayBufferSizeKiBValid by remember(parsedXrayBufferSizeKiB) {
+        derivedStateOf { parsedXrayBufferSizeKiB?.let(XrayRuntimeSettings::isValidXrayBufferSizeKiB) == true }
+    }
+    val isTunMtuValid by remember(parsedTunMtu) {
+        derivedStateOf { parsedTunMtu?.let(XrayRuntimeSettings::isValidTunMtu) == true }
+    }
+    val hasXrayBufferSizeKiBChanges by remember(editingXrayBufferSizeKiB, xrayBufferSizeKiB) {
+        derivedStateOf { editingXrayBufferSizeKiB != xrayBufferSizeKiB.toString() }
+    }
+    val hasTunMtuChanges by remember(editingTunMtu, tunMtu) {
+        derivedStateOf { editingTunMtu != tunMtu.toString() }
+    }
     val hasDnsChanges by remember(editingDns, dnsServers) { derivedStateOf { editingDns != dnsServers } }
     val hasDomesticDnsChanges by remember(editingDomesticDns, domesticDnsServers) {
         derivedStateOf { editingDomesticDns != domesticDnsServers }
@@ -340,6 +361,36 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
 
             if (showAdvancedOptions) {
+                AdvancedIntegerSetting(
+                    value = editingXrayBufferSizeKiB,
+                    onValueChange = { editingXrayBufferSizeKiB = it },
+                    label = stringResource(R.string.settings_xray_buffer_size_label),
+                    supportingText = stringResource(
+                        R.string.settings_xray_buffer_size_supporting_text,
+                        XrayRuntimeSettings.MIN_XRAY_BUFFER_SIZE_KIB,
+                        XrayRuntimeSettings.MAX_XRAY_BUFFER_SIZE_KIB,
+                        XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
+                    ),
+                    suffix = stringResource(R.string.settings_kib_abbreviation),
+                    isValid = isXrayBufferSizeKiBValid,
+                    hasChanges = hasXrayBufferSizeKiBChanges,
+                    onSave = { parsedXrayBufferSizeKiB?.let(viewModel::setXrayBufferSizeKiB) },
+                )
+                AdvancedIntegerSetting(
+                    value = editingTunMtu,
+                    onValueChange = { editingTunMtu = it },
+                    label = stringResource(R.string.settings_tun_mtu_label),
+                    supportingText = stringResource(
+                        R.string.settings_tun_mtu_supporting_text,
+                        XrayRuntimeSettings.MIN_TUN_MTU,
+                        XrayRuntimeSettings.MAX_TUN_MTU,
+                        XrayRuntimeSettings.DEFAULT_TUN_MTU,
+                    ),
+                    suffix = stringResource(R.string.settings_bytes_abbreviation),
+                    isValid = isTunMtuValid,
+                    hasChanges = hasTunMtuChanges,
+                    onSave = { parsedTunMtu?.let(viewModel::setTunMtu) },
+                )
                 ExposedDropdownMenuBox(
                     expanded = defaultOutboundExpanded,
                     onExpandedChange = { defaultOutboundExpanded = it },
@@ -995,6 +1046,35 @@ private fun RootTunNameSetting(
     )
     if (hasTunNameChanges) {
         Button(onClick = onSave) { Text(stringResource(R.string.settings_save)) }
+    }
+}
+
+@Composable
+private fun AdvancedIntegerSetting(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    supportingText: String,
+    suffix: String,
+    isValid: Boolean,
+    hasChanges: Boolean,
+    onSave: () -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { newValue -> onValueChange(newValue.filter(Char::isDigit).take(5)) },
+        label = { Text(label) },
+        supportingText = { Text(supportingText) },
+        suffix = { Text(suffix) },
+        isError = value.isNotEmpty() && !isValid,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (hasChanges) {
+        Button(onClick = onSave, enabled = isValid) {
+            Text(stringResource(R.string.settings_save))
+        }
     }
 }
 

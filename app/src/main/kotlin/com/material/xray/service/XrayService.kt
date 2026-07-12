@@ -814,7 +814,7 @@ class XrayService : VpnService() {
 
         val builder = Builder()
             .setSession(getString(R.string.app_name))
-            .setMtu(VPN_MTU)
+            .setMtu(runtimeSettings.tunMtu)
             .addAddress(VPN_ADDRESS, VPN_PREFIX_LENGTH)
             .addRoute("0.0.0.0", 0)
 
@@ -1269,7 +1269,6 @@ class XrayService : VpnService() {
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val MAX_XRAY_PROCESS_MEMORY_MB = 512L
-        private const val VPN_MTU = 1500
         private const val VPN_ADDRESS = "10.10.14.1"
         private const val VPN_PREFIX_LENGTH = 30
         private const val ROOTLESS_TUN_NAME = "tun0"

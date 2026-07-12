@@ -37,6 +37,7 @@ import com.material.xray.model.NotificationStyle
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
+import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.service.ConnectionStateHolder
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
@@ -119,6 +120,16 @@ class SettingsViewModel @Inject constructor(
     val useRootService = settingsRepo.useRootService.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val bypassLan = settingsRepo.bypassLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val allowIpv6 = settingsRepo.allowIpv6.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val xrayBufferSizeKiB = settingsRepo.xrayBufferSizeKiB.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
+    )
+    val tunMtu = settingsRepo.tunMtu.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        XrayRuntimeSettings.DEFAULT_TUN_MTU,
+    )
     val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -220,6 +231,18 @@ class SettingsViewModel @Inject constructor(
     fun setAllowIpv6(enabled: Boolean) = viewModelScope.launch {
         if (enabled == allowIpv6.value) return@launch
         settingsRepo.setAllowIpv6(enabled)
+        reloadActiveConnectionIfConnected()
+    }
+    fun setXrayBufferSizeKiB(bufferSizeKiB: Int) = viewModelScope.launch {
+        if (bufferSizeKiB == xrayBufferSizeKiB.value || !XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB)) {
+            return@launch
+        }
+        settingsRepo.setXrayBufferSizeKiB(bufferSizeKiB)
+        reloadActiveConnectionIfConnected()
+    }
+    fun setTunMtu(mtu: Int) = viewModelScope.launch {
+        if (mtu == tunMtu.value || !XrayRuntimeSettings.isValidTunMtu(mtu)) return@launch
+        settingsRepo.setTunMtu(mtu)
         reloadActiveConnectionIfConnected()
     }
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {

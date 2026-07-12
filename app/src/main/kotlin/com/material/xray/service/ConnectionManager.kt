@@ -359,6 +359,8 @@ class ConnectionManager(
             appProxyRoutes = appRoutingPlan.proxyRoutes,
             physicalInterface = physicalRoute?.dev,
             xrayApiSocketName = xrayApiSocketName,
+            xrayBufferSizeKiB = runtimeSettings.xrayBufferSizeKiB,
+            tunMtu = runtimeSettings.tunMtu,
         )
         xrayBinary.writeConfig(configJson)
         log.append(LogSource.APP, "Config written to ${xrayBinary.configPath()}")

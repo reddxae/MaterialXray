@@ -5,6 +5,7 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
+import com.material.xray.model.XrayRuntimeSettings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -30,6 +31,8 @@ class ConfigGenerator {
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
         xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+        xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
+        tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
     ): String {
         if (server.rawConfigJson.isNotBlank()) {
             return injectTunIntoRawConfig(
@@ -48,6 +51,8 @@ class ConfigGenerator {
                 appProxyRoutes = appProxyRoutes,
                 physicalInterface = physicalInterface,
                 xrayApiSocketName = xrayApiSocketName,
+                xrayBufferSizeKiB = xrayBufferSizeKiB,
+                tunMtu = tunMtu,
             )
         }
 
@@ -57,9 +62,9 @@ class ConfigGenerator {
             put(
                 "inbounds",
                 buildJsonArray {
-                    add(buildTunInbound(tunName, "tun-in"))
+                    add(buildTunInbound(tunName, "tun-in", tunMtu))
                     appProxyRoutes.forEach { route ->
-                        add(buildTunInbound(route.tunName, route.inboundTag))
+                        add(buildTunInbound(route.tunName, route.inboundTag, tunMtu))
                     }
                 },
             )
@@ -80,7 +85,7 @@ class ConfigGenerator {
             )
             put("api", buildStatsApi(xrayApiSocketName))
             put("stats", buildStatsConfig())
-            put("policy", buildStatsPolicy())
+            put("policy", buildStatsPolicy(xrayBufferSizeKiB))
             put(
                 "routing",
                 buildRouting(
@@ -113,6 +118,8 @@ class ConfigGenerator {
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
         xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+        xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
+        tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
     ): String = RawConfigTunInjector(json).inject(
         rawJson = rawJson,
         tunName = tunName,
@@ -129,5 +136,7 @@ class ConfigGenerator {
         appProxyRoutes = appProxyRoutes,
         physicalInterface = physicalInterface,
         xrayApiSocketName = xrayApiSocketName,
+        xrayBufferSizeKiB = xrayBufferSizeKiB,
+        tunMtu = tunMtu,
     )
 }

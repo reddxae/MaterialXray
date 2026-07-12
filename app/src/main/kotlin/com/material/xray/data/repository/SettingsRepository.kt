@@ -46,6 +46,8 @@ class SettingsRepository @Inject constructor(
         val LATENCY_DNS_SERVERS = stringPreferencesKey("latency_dns_servers")
         val FWMARK = intPreferencesKey("fwmark")
         val ROUTE_TABLE = intPreferencesKey("route_table")
+        val XRAY_BUFFER_SIZE_KIB = intPreferencesKey("xray_buffer_size_kib")
+        val TUN_MTU = intPreferencesKey("tun_mtu")
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
         val BYPASS_LAN = booleanPreferencesKey("bypass_lan")
         val ALLOW_IPV6 = booleanPreferencesKey("allow_ipv6")
@@ -98,6 +100,12 @@ class SettingsRepository @Inject constructor(
     val latencyDnsServers: Flow<String> = store.data.map { it[LATENCY_DNS_SERVERS] ?: DEFAULT_LATENCY_DNS_SERVERS }
     val fwmark: Flow<Int> = store.data.map { it[FWMARK] ?: 255 }
     val routeTable: Flow<Int> = store.data.map { it[ROUTE_TABLE] ?: 100 }
+    val xrayBufferSizeKiB: Flow<Int> = store.data.map { prefs ->
+        XrayRuntimeSettings.normalizeXrayBufferSizeKiB(prefs[XRAY_BUFFER_SIZE_KIB])
+    }
+    val tunMtu: Flow<Int> = store.data.map { prefs ->
+        XrayRuntimeSettings.normalizeTunMtu(prefs[TUN_MTU])
+    }
     val autoConnect: Flow<Boolean> = store.data.map { it[AUTO_CONNECT] ?: false }
     val bypassLan: Flow<Boolean> = store.data.map { it[BYPASS_LAN] ?: true }
     val allowIpv6: Flow<Boolean> = store.data.map { it[ALLOW_IPV6] ?: false }
@@ -189,6 +197,8 @@ class SettingsRepository @Inject constructor(
         bypassLan = bypassLan.first(),
         allowIpv6 = allowIpv6.first(),
         routingRules = routingRules.first(),
+        xrayBufferSizeKiB = xrayBufferSizeKiB.first(),
+        tunMtu = tunMtu.first(),
         routingDomainStrategy = routingDomainStrategy.first(),
         routingDomainMatcher = routingDomainMatcher.first(),
     )
@@ -197,8 +207,14 @@ class SettingsRepository @Inject constructor(
     suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }
     suspend fun setDomesticDnsServers(servers: String) = store.edit { it[DOMESTIC_DNS_SERVERS] = servers }
     suspend fun setLatencyDnsServers(servers: String) = store.edit { it[LATENCY_DNS_SERVERS] = servers }
-    suspend fun setFwmark(mark: Int) = store.edit { it[FWMARK] = mark }
-    suspend fun setRouteTable(table: Int) = store.edit { it[ROUTE_TABLE] = table }
+    suspend fun setXrayBufferSizeKiB(bufferSizeKiB: Int) {
+        require(XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB))
+        store.edit { it[XRAY_BUFFER_SIZE_KIB] = bufferSizeKiB }
+    }
+    suspend fun setTunMtu(mtu: Int) {
+        require(XrayRuntimeSettings.isValidTunMtu(mtu))
+        store.edit { it[TUN_MTU] = mtu }
+    }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
     suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
     suspend fun setAllowIpv6(enabled: Boolean) = store.edit { it[ALLOW_IPV6] = enabled }
@@ -325,6 +341,10 @@ class SettingsRepository @Inject constructor(
             map["latency_dns_servers"]?.let { prefs[LATENCY_DNS_SERVERS] = it }
             map["fwmark"]?.let { prefs[FWMARK] = it.toIntOrNull() ?: 255 }
             map["route_table"]?.let { prefs[ROUTE_TABLE] = it.toIntOrNull() ?: 100 }
+            prefs[XRAY_BUFFER_SIZE_KIB] = XrayRuntimeSettings.normalizeXrayBufferSizeKiB(
+                map["xray_buffer_size_kib"]?.toIntOrNull(),
+            )
+            prefs[TUN_MTU] = XrayRuntimeSettings.normalizeTunMtu(map["tun_mtu"]?.toIntOrNull())
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
             prefs[BYPASS_LAN] = map["bypass_lan"]?.toBooleanStrictOrNull() ?: true
             prefs[ALLOW_IPV6] = map["allow_ipv6"]?.toBooleanStrictOrNull() ?: false

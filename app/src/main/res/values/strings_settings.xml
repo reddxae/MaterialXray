@@ -17,6 +17,10 @@
     <string name="settings_latency_dns_servers_label">Latency DNS Servers</string>
     <string name="settings_latency_dns_servers_supporting_text">Used only for node latency checks, e.g. 77.88.8.8,77.88.8.1</string>
     <string name="settings_xray_log_level_label">Xray Log Level</string>
+    <string name="settings_xray_buffer_size_label">Xray buffer size</string>
+    <string name="settings_xray_buffer_size_supporting_text">Per-request userspace buffer. Range: %1$d-%2$d KiB. Default: %3$d KiB.</string>
+    <string name="settings_tun_mtu_label">TUN MTU</string>
+    <string name="settings_tun_mtu_supporting_text">Packet MTU used by Xray and Android VPN. Range: %1$d-%2$d bytes. Default: %3$d bytes.</string>
     <string name="settings_default_value">Default: %1$s</string>
     <string name="settings_geoip_url_label">GeoIP URL</string>
     <string name="settings_geoip_url_supporting_text">Direct URL for the geoip.dat download</string>
@@ -67,6 +71,8 @@
     <string name="settings_tun_interface_name_default">Default: %1$s</string>
     <string name="settings_done">Done</string>
     <string name="settings_milliseconds_abbreviation" translatable="false">ms</string>
+    <string name="settings_kib_abbreviation" translatable="false">KiB</string>
+    <string name="settings_bytes_abbreviation" translatable="false">B</string>
     <string name="settings_update_frequency_range">Range: %1$d-%2$d %4$s. Default: %3$d %4$s.</string>
     <string name="settings_cancel">Cancel</string>
     <string name="settings_notification_fields_title">Notification fields</string>

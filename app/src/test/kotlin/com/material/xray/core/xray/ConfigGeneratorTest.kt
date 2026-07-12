@@ -40,14 +40,28 @@ class ConfigGeneratorTest {
 
     @Test
     fun `generates TUN inbound with correct name and MTU`() {
-        val config = generator.generate(vlessReality, tunName = "wlan2", fwmark = 255)
+        val config = generator.generate(vlessReality, tunName = "wlan2", fwmark = 255, tunMtu = 1400)
         val json = Json.parseToJsonElement(config).jsonObject
         val inbounds = json["inbounds"]!!.jsonArray
         val tun = inbounds.first { it.jsonObject["protocol"]?.jsonPrimitive?.content == "tun" }.jsonObject
         assertEquals(0, tun["port"]?.jsonPrimitive?.int)
         val settings = tun["settings"]!!.jsonObject
         assertEquals("wlan2", settings["name"]?.jsonPrimitive?.content)
-        assertEquals(1500, settings["MTU"]?.jsonPrimitive?.int)
+        assertEquals(1400, settings["MTU"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `configures xray request buffer size`() {
+        val config = generator.generate(vlessReality, xrayBufferSizeKiB = 1024)
+        val json = Json.parseToJsonElement(config).jsonObject
+
+        assertEquals(
+            1024,
+            json.getValue("policy").jsonObject
+                .getValue("levels").jsonObject
+                .getValue("0").jsonObject
+                .getValue("bufferSize").jsonPrimitive.int,
+        )
     }
 
     @Test
@@ -292,6 +306,7 @@ class ConfigGeneratorTest {
         val appServer = vlessReality.copy(name = "Apps", address = "5.6.7.8")
         val config = generator.generate(
             vlessReality,
+            tunMtu = 1400,
             appProxyRoutes = listOf(
                 AppProxyRoute(
                     inboundTag = "app-in-42",
@@ -302,6 +317,11 @@ class ConfigGeneratorTest {
             ),
         )
         val json = Json.parseToJsonElement(config).jsonObject
+        assertTrue(
+            json["inbounds"]!!.jsonArray.all { inbound ->
+                inbound.jsonObject["settings"]!!.jsonObject["MTU"]!!.jsonPrimitive.int == 1400
+            },
+        )
 
         val appInbound = json["inbounds"]!!.jsonArray.first {
             it.jsonObject["tag"]?.jsonPrimitive?.content == "app-in-42"

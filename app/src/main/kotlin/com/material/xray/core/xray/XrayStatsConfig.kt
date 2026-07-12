@@ -1,5 +1,6 @@
 package com.material.xray.core.xray
 
+import com.material.xray.model.XrayRuntimeSettings
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -16,7 +17,20 @@ internal fun buildStatsApi(socketName: String = XRAY_API_SOCKET_NAME_PREFIX) = b
     put("services", buildJsonArray { add("StatsService") })
 }
 
-internal fun buildStatsPolicy() = buildJsonObject {
+internal fun buildStatsPolicy(
+    xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
+) = buildJsonObject {
+    put(
+        "levels",
+        buildJsonObject {
+            put(
+                "0",
+                buildJsonObject {
+                    put("bufferSize", xrayBufferSizeKiB)
+                },
+            )
+        },
+    )
     put(
         "system",
         buildJsonObject {

@@ -4,6 +4,7 @@ import com.material.xray.model.RoutingRule
 import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
+import com.material.xray.model.XrayRuntimeSettings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -31,9 +32,11 @@ internal class RawConfigTunInjector(
         appProxyRoutes: List<AppProxyRoute>,
         physicalInterface: String?,
         xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+        xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
+        tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
     ): String {
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
-        original["inbounds"] = buildTunInbounds(tunName, appProxyRoutes)
+        original["inbounds"] = buildTunInbounds(tunName, appProxyRoutes, tunMtu)
 
         val normalizedOutbounds = normalizeOutbounds(original["outbounds"] as? JsonArray, fwmark, physicalInterface, allowIpv6)
         val proxyOutbound = normalizedOutbounds.firstOrNull { outbound ->
@@ -61,7 +64,7 @@ internal class RawConfigTunInjector(
         original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6)
         original["api"] = buildStatsApi(xrayApiSocketName)
         original["stats"] = buildStatsConfig()
-        original["policy"] = buildStatsPolicy()
+        original["policy"] = buildStatsPolicy(xrayBufferSizeKiB)
         original["routing"] = mergeRouting(
             generated = buildRouting(
                 routingRules = routingRules,
@@ -94,11 +97,12 @@ internal class RawConfigTunInjector(
     private fun buildTunInbounds(
         tunName: String,
         appProxyRoutes: List<AppProxyRoute>,
+        tunMtu: Int,
     ): JsonArray = JsonArray(
         buildList {
-            add(buildTunInbound(tunName, "tun-in"))
+            add(buildTunInbound(tunName, "tun-in", tunMtu))
             appProxyRoutes.forEach { route ->
-                add(buildTunInbound(route.tunName, route.inboundTag))
+                add(buildTunInbound(route.tunName, route.inboundTag, tunMtu))
             }
         },
     )

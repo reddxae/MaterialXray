@@ -52,6 +52,8 @@ class RawConfigTunInjectorTest {
                 ),
             ),
             physicalInterface = "wlan0",
+            xrayBufferSizeKiB = 1024,
+            tunMtu = 1400,
         )
 
         val root = json.parseToJsonElement(result).jsonObject
@@ -60,8 +62,16 @@ class RawConfigTunInjectorTest {
         assertTrue(inbounds.all { it.jsonObject["protocol"]!!.jsonPrimitive.content == "tun" })
         assertTrue(inbounds.none { "listen" in it.jsonObject })
         assertTrue(inbounds.all { it.jsonObject["port"]!!.jsonPrimitive.content == "0" })
+        assertTrue(inbounds.all { it.jsonObject["settings"]!!.jsonObject["MTU"]!!.jsonPrimitive.content == "1400" })
         assertEquals("xray0", inbounds.first().jsonObject["settings"]!!.jsonObject["name"]!!.jsonPrimitive.content)
         assertEquals("xray0a1", inbounds.last().jsonObject["settings"]!!.jsonObject["name"]!!.jsonPrimitive.content)
+        assertEquals(
+            1024,
+            root.getValue("policy").jsonObject
+                .getValue("levels").jsonObject
+                .getValue("0").jsonObject
+                .getValue("bufferSize").jsonPrimitive.content.toInt(),
+        )
 
         val outbounds = root.getValue("outbounds").jsonArray.map { it.jsonObject }
         assertEquals(

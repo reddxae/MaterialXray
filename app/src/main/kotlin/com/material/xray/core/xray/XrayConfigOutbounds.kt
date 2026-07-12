@@ -16,6 +16,7 @@ import com.material.xray.model.SERVER_EXTRA_SPIDER_X
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayOutbound
+import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.normalizedXrayTransportType
 import java.net.URI
 import java.net.URLDecoder
@@ -34,14 +35,18 @@ import kotlinx.serialization.json.put
 
 internal val SPECIAL_OUTBOUND_PROTOCOLS = setOf("freedom", "dns", "blackhole")
 
-internal fun buildTunInbound(tunName: String, tag: String) = buildJsonObject {
+internal fun buildTunInbound(
+    tunName: String,
+    tag: String,
+    mtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
+) = buildJsonObject {
     put("port", 0)
     put("protocol", "tun")
     put(
         "settings",
         buildJsonObject {
             put("name", tunName)
-            put("MTU", 1500)
+            put("MTU", mtu)
         },
     )
     put(

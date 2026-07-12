@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Check out sources
@@ -76,6 +78,11 @@ jobs:
           echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
           echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
           echo "version_tag=v$version_name" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.artifact.outputs.apk_path }}
 
       - name: Upload release APK
         uses: actions/upload-artifact@v7

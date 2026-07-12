@@ -73,6 +73,14 @@ GitHub Actions builds `app:assembleDebug` on pushes and pull requests and upload
 
 The separate, manually dispatched release workflow builds `app:assembleRelease`, signs the APK from CI secrets, and publishes a GitHub Release with the signed APK attached.
 
+## CI Verification
+
+Our GitHub Actions release builds since `v0.5.0` are attested with build provenance. You can verify that a given APK was built by our release workflow - and not modified since - with:
+```sh
+gh attestation verify <filename.apk> --repo reddxae/MaterialXray
+```
+*Note: Releases before v0.5.0 are not attested and will not verify.*
+
 ## Runtime Notes
 
 Material Xray downloads `geoip.dat` and `geosite.dat` into the runtime directory when needed, writes an Xray config, starts the correct Xray build for the selected service mode, and then either applies Android policy routing in root service mode or passes the Android `VpnService` TUN fd to Xray in rootless mode.

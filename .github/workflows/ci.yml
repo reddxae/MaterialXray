@@ -14,17 +14,17 @@ jobs:
 
     steps:
       - name: Check out sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
         run: |
@@ -35,7 +35,7 @@ jobs:
         run: ./gradlew :app:assembleDebug
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MaterialXray-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk

@@ -13,8 +13,11 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.Handler
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.material.xray.R
 import com.material.xray.core.app.AppInventory
@@ -24,6 +27,7 @@ import com.material.xray.core.xray.GeoDataManager
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.core.xray.TunManager
+import com.material.xray.core.xray.XrayState
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.AppRouteAssignment
 import com.material.xray.data.db.entity.AppRouteMode
@@ -85,8 +89,10 @@ class XrayService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var activeConfig: ServerConfig? = null
     private val networkCallbacks = mutableListOf<ConnectivityManager.NetworkCallback>()
-    private var networkReconnectJob: Job? = null
+    private lateinit var networkRetargetWorker: NetworkRetargetWorker
     private var activePhysicalNetwork: PhysicalNetworkSnapshot? = null
+    private var networkCallbacksAvailable = false
+    private var lastNetworkSafetyCheckAtMs = 0L
     private var processWatchdogJob: Job? = null
     private var processWatchdogPid: Int? = null
     private var processRecoveryJob: Job? = null
@@ -99,6 +105,14 @@ class XrayService : VpnService() {
     private var notificationMetricsIntervalMs = 0
     private var lastNotificationContent: NotificationContent? = null
     private val connectionCommandMutex = Mutex()
+    private val networkRetargetWakeLock by lazy {
+        getSystemService(PowerManager::class.java).newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "$packageName:network-retarget",
+        ).apply {
+            setReferenceCounted(false)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -122,6 +136,14 @@ class XrayService : VpnService() {
             stateHolder = connectionStateHolder,
             log = logBuffer,
             onXrayLogReady = { startLogTail() },
+        )
+        networkRetargetWorker = NetworkRetargetWorker(
+            scope = scope,
+            settleDelayMs = NETWORK_RETARGET_SETTLE_DELAY_MS,
+            shouldHandle = { activeUseRootService && activeConfig != null },
+            beforeBatch = ::acquireNetworkRetargetWakeLock,
+            afterBatch = ::releaseNetworkRetargetWakeLock,
+            handle = ::retargetNetworkUntilStable,
         )
 
         scope.launch {
@@ -158,7 +180,6 @@ class XrayService : VpnService() {
                 launchConnectionCommand {
                     val config = Json.decodeFromString<ServerConfig>(configJson)
                     activeConfig = config
-                    networkReconnectJob?.cancel()
                     stopLogTail()
                     connectWithCurrentSettings(config)
                 }
@@ -173,7 +194,6 @@ class XrayService : VpnService() {
                 launchConnectionCommand {
                     val config = Json.decodeFromString<ServerConfig>(configJson)
                     activeConfig = config
-                    networkReconnectJob?.cancel()
                     stopLogTail()
                     stopProcessWatchdog()
                     logBuffer.append(LogSource.APP, "Switching to ${config.name}...")
@@ -192,7 +212,6 @@ class XrayService : VpnService() {
                 launchConnectionCommand {
                     activeConfig = null
                     activePhysicalNetwork = null
-                    networkReconnectJob?.cancel()
                     stopLogTail()
                     stopProcessWatchdog()
                     connectionManager.disconnect()
@@ -210,6 +229,9 @@ class XrayService : VpnService() {
                 launchConnectionCommand { restoreRunningConnectionStatus() }
             }
         }
+        if (intent == null) {
+            launchConnectionCommand { restoreRunningConnectionStatus() }
+        }
         return START_STICKY
     }
 
@@ -217,7 +239,8 @@ class XrayService : VpnService() {
         unregisterNetworkCallback()
         activeConfig = null
         activePhysicalNetwork = null
-        networkReconnectJob?.cancel()
+        if (::networkRetargetWorker.isInitialized) networkRetargetWorker.close()
+        releaseNetworkRetargetWakeLock()
         processRecoveryJob?.cancel()
         stopProcessWatchdog()
         stopLogTail()
@@ -339,7 +362,6 @@ class XrayService : VpnService() {
 
     private suspend fun reloadActiveConnection() {
         val config = activeConfig ?: return
-        networkReconnectJob?.cancel()
         stopLogTail()
         stopProcessWatchdog()
         logBuffer.append(LogSource.APP, "Applying routing changes...")
@@ -363,7 +385,6 @@ class XrayService : VpnService() {
             return
         }
 
-        networkReconnectJob?.cancel()
         logBuffer.append(LogSource.APP, "Applying app routing changes...")
         connectionStateHolder.update(ConnectionState.ApplyingRoutingChanges)
         updateNotification()
@@ -390,6 +411,7 @@ class XrayService : VpnService() {
             activePhysicalNetwork = currentPhysicalNetworkSnapshot()
             handleStateSideEffects(alreadyConnected)
             updateNotification()
+            scheduleNetworkRetarget("running status restored", settle = false)
             return
         }
 
@@ -412,6 +434,9 @@ class XrayService : VpnService() {
         activePhysicalNetwork = currentPhysicalNetworkSnapshot()
         handleStateSideEffects(restoredState)
         updateNotification()
+        if (activeConfig != null) {
+            scheduleNetworkRetarget("service state restored", settle = false)
+        }
     }
 
     private suspend fun detectRestorableRunningConnection(): ConnectionState.Connected? = withContext(Dispatchers.IO) {
@@ -423,15 +448,21 @@ class XrayService : VpnService() {
         if (!connectionManager.isProcessAlive(state.xrayPid)) return@withContext null
         if (!TunInterfaceDetector.isInterfaceUp(state.tunName)) return@withContext null
 
-        val currentRoute = connectionManager.detectPhysicalRoute(state.tunName)
+        val persistedRoute = selectRestoredPhysicalRoute(state, fallback = null)
+        val fallbackRoute = if (persistedRoute == null) {
+            connectionManager.detectPhysicalRoute(state.tunName)
+        } else {
+            null
+        }
+        val restoredRoute = persistedRoute ?: fallbackRoute
         ConnectionState.Connected(
             serverName = state.serverName.takeIf { it.isNotBlank() }
                 ?: getString(R.string.notification_selected_server),
             corePid = state.xrayPid,
             tunName = state.tunName,
-            physicalInterface = currentRoute?.dev ?: state.physicalInterface ?: "unknown",
-            physicalGateway = currentRoute?.gateway ?: state.physicalGateway,
-            physicalTable = currentRoute?.table ?: state.physicalTable,
+            physicalInterface = restoredRoute?.dev ?: "unknown",
+            physicalGateway = restoredRoute?.gateway,
+            physicalTable = restoredRoute?.table,
             startTime = state.timestamp,
         )
     }
@@ -459,6 +490,7 @@ class XrayService : VpnService() {
 
         stopProcessWatchdog()
         processWatchdogPid = state.corePid
+        lastNetworkSafetyCheckAtMs = SystemClock.elapsedRealtime()
         processWatchdogJob = scope.launch(Dispatchers.IO) {
             var keepWatching = true
             while (isActive && keepWatching) {
@@ -478,15 +510,35 @@ class XrayService : VpnService() {
             return false
         }
 
-        val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid) ?: return true
-        if (residentMemoryMb > MAX_XRAY_PROCESS_MEMORY_MB) {
+        val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid)
+        if (residentMemoryMb != null && residentMemoryMb > MAX_XRAY_PROCESS_MEMORY_MB) {
             recoverNativeProcess(
                 reason = "xray process $pid exceeded ${MAX_XRAY_PROCESS_MEMORY_MB} MiB RSS ($residentMemoryMb MiB); restarting...",
                 pidToKill = pid,
             )
             return false
         }
+        maybeScheduleNetworkSafetyCheck()
         return true
+    }
+
+    private suspend fun maybeScheduleNetworkSafetyCheck() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastNetworkSafetyCheckAtMs < NETWORK_SAFETY_CHECK_INTERVAL_MS) return
+        lastNetworkSafetyCheckAtMs = now
+
+        withContext(Dispatchers.Main.immediate) {
+            if (!activeUseRootService || activeConfig == null) return@withContext
+
+            val currentNetwork = currentPhysicalNetworkSnapshot() ?: return@withContext
+            val networkChanged = activePhysicalNetwork?.sameNetwork(currentNetwork) != true
+            if (networkChanged || !networkCallbacksAvailable) {
+                scheduleNetworkRetarget(
+                    reason = if (networkChanged) "watchdog observed a new network" else "network callback fallback",
+                    settle = false,
+                )
+            }
+        }
     }
 
     private fun stopProcessWatchdog() {
@@ -594,7 +646,6 @@ class XrayService : VpnService() {
             connectionCommandMutex.withLock {
                 val config = activeConfig ?: return@withLock
 
-                networkReconnectJob?.cancel()
                 stopLogTail()
                 stopProcessWatchdog()
                 logBuffer.append(LogSource.APP, reason)
@@ -614,47 +665,67 @@ class XrayService : VpnService() {
 
     private fun registerNetworkCallback() {
         val connectivityManager = getSystemService(ConnectivityManager::class.java)
-        registerNetworkWatcher("default") { callback ->
-            connectivityManager.registerDefaultNetworkCallback(callback)
+        val callbackHandler = Handler(mainLooper)
+        val defaultRegistered = registerNetworkWatcher("default") { callback ->
+            connectivityManager.registerDefaultNetworkCallback(callback, callbackHandler)
         }
 
         val physicalNetworkRequest = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
-        registerNetworkWatcher("physical") { callback ->
-            connectivityManager.registerNetworkCallback(physicalNetworkRequest, callback)
+        val physicalRegistered = registerNetworkWatcher("physical") { callback ->
+            connectivityManager.registerNetworkCallback(physicalNetworkRequest, callback, callbackHandler)
         }
+        networkCallbacksAvailable = defaultRegistered || physicalRegistered
     }
 
     private fun registerNetworkWatcher(
         source: String,
         register: (ConnectivityManager.NetworkCallback) -> Unit,
-    ) {
+    ): Boolean {
         val callback = networkCallback(source)
-        runCatching {
+        return runCatching {
             register(callback)
             networkCallbacks += callback
+        }.fold(
+            onSuccess = { true },
+            onFailure = { error ->
+                logBuffer.append(LogSource.APP, "Could not watch $source network changes: ${error.message}")
+                false
+            },
+        )
+    }
+
+    private fun acquireNetworkRetargetWakeLock() {
+        runCatching {
+            networkRetargetWakeLock.acquire(NETWORK_RETARGET_WAKE_LOCK_TIMEOUT_MS)
         }.onFailure { error ->
-            logBuffer.append(LogSource.APP, "Could not watch $source network changes: ${error.message}")
+            logBuffer.append(LogSource.APP, "Could not hold CPU awake for network change: ${error.message}")
+        }
+    }
+
+    private fun releaseNetworkRetargetWakeLock() {
+        runCatching {
+            if (networkRetargetWakeLock.isHeld) networkRetargetWakeLock.release()
         }
     }
 
     private fun networkCallback(source: String) = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            scheduleNetworkRetarget("$source available")
+            scheduleNetworkRetarget("$source available", settle = false)
         }
 
         override fun onLost(network: Network) {
-            scheduleNetworkRetarget("$source lost")
+            scheduleNetworkRetarget("$source lost", settle = false)
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-            scheduleNetworkRetarget("$source capabilities changed")
+            scheduleNetworkRetarget("$source capabilities changed", settle = true)
         }
 
         override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
-            scheduleNetworkRetarget("$source link properties changed")
+            scheduleNetworkRetarget("$source link properties changed", settle = true)
         }
     }
 
@@ -666,35 +737,23 @@ class XrayService : VpnService() {
             }
         }
         networkCallbacks.clear()
+        networkCallbacksAvailable = false
     }
 
-    private fun scheduleNetworkRetarget(reason: String) {
+    private fun scheduleNetworkRetarget(reason: String, settle: Boolean) {
         if (!activeUseRootService) return
         activeConfig ?: return
-        connectionStateHolder.state.value as? ConnectionState.Connected ?: return
-
-        networkReconnectJob?.cancel()
-        networkReconnectJob = scope.launch {
-            delay(NETWORK_RETARGET_DEBOUNCE_MS)
-            retargetNetworkUntilStable(reason)
-        }
+        networkRetargetWorker.signal(reason, settle)
     }
 
     private suspend fun retargetNetworkUntilStable(reason: String) {
-        var attempt = 1
-        while (attempt <= NETWORK_RETARGET_MAX_ATTEMPTS && currentCoroutineContext().isActive) {
-            when (retargetNetwork(reason, attempt)) {
-                NetworkRetargetResult.Done -> return
-                NetworkRetargetResult.Retry -> {
-                    attempt++
-                    if (attempt <= NETWORK_RETARGET_MAX_ATTEMPTS) {
-                        delay(NETWORK_RETARGET_RETRY_DELAY_MS)
-                    }
-                }
-            }
+        val stabilized = retryNetworkRetarget(NETWORK_RETARGET_RETRY_DELAYS_MS) { attempt ->
+            retargetNetwork(reason, attempt)
         }
-        logBuffer.append(LogSource.APP, "Network changed ($reason), but no usable physical route appeared")
-        updateNotification(getString(R.string.notification_status_waiting_for_physical_route))
+        if (!stabilized) {
+            logBuffer.append(LogSource.APP, "Network changed ($reason), but no usable physical route appeared")
+            updateNotification(getString(R.string.notification_status_waiting_for_physical_route))
+        }
     }
 
     private suspend fun retargetNetwork(reason: String, attempt: Int): NetworkRetargetResult = connectionCommandMutex.withLock {
@@ -719,11 +778,7 @@ class XrayService : VpnService() {
             currentNetwork != null &&
             !previousNetwork.sameNetwork(currentNetwork)
         val physicalRouteChanged = !currentRoute.matches(latestState)
-        if (previousNetwork != null && currentNetwork == null) {
-            if (attempt == 1) {
-                logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for an active physical network")
-            }
-            updateNotification(getString(R.string.notification_status_waiting_for_physical_network))
+        if (shouldWaitForMatchingPhysicalNetwork(reason, attempt, previousNetwork, currentNetwork, currentRoute)) {
             return@withLock NetworkRetargetResult.Retry
         }
 
@@ -778,6 +833,34 @@ class XrayService : VpnService() {
                 NetworkRetargetResult.Done
             }
         }
+    }
+
+    private fun shouldWaitForMatchingPhysicalNetwork(
+        reason: String,
+        attempt: Int,
+        previousNetwork: PhysicalNetworkSnapshot?,
+        currentNetwork: PhysicalNetworkSnapshot?,
+        currentRoute: TunManager.PhysicalRoute,
+    ): Boolean {
+        if (previousNetwork != null && currentNetwork == null) {
+            if (attempt == 1) {
+                logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for an active physical network")
+            }
+            updateNotification(getString(R.string.notification_status_waiting_for_physical_network))
+            return true
+        }
+        if (currentNetwork?.interfaceName != null && currentRoute.dev != currentNetwork.interfaceName) {
+            if (attempt == 1) {
+                logBuffer.append(
+                    LogSource.APP,
+                    "Network changed ($reason), waiting for root route ${currentRoute.dev} to match " +
+                        "Android interface ${currentNetwork.interfaceName}",
+                )
+            }
+            updateNotification(getString(R.string.notification_status_waiting_for_physical_route))
+            return true
+        }
+        return false
     }
 
     private suspend fun reconnectForPhysicalRouteChange(
@@ -889,7 +972,6 @@ class XrayService : VpnService() {
         launchConnectionCommand {
             activeConfig = null
             activePhysicalNetwork = null
-            networkReconnectJob?.cancel()
             stopLogTail()
             stopProcessWatchdog()
             connectionManager.disconnect()
@@ -927,6 +1009,7 @@ class XrayService : VpnService() {
         return PhysicalNetworkSnapshot(
             handle = networkHandle,
             label = transports.joinToString("+"),
+            interfaceName = connectivityManager.getLinkProperties(this)?.interfaceName,
             validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
             priority = transports.minOf(::transportPriority),
         )
@@ -1212,12 +1295,18 @@ class XrayService : VpnService() {
     private data class PhysicalNetworkSnapshot(
         val handle: Long,
         val label: String,
+        val interfaceName: String?,
         val validated: Boolean,
         val priority: Int,
     ) {
-        fun sameNetwork(other: PhysicalNetworkSnapshot): Boolean = handle == other.handle
+        fun sameNetwork(other: PhysicalNetworkSnapshot): Boolean = handle == other.handle &&
+            interfaceName == other.interfaceName
 
-        fun describe(): String = "$label#$handle" + if (validated) " validated" else " unvalidated"
+        fun describe(): String = buildString {
+            append("$label#$handle")
+            if (!interfaceName.isNullOrBlank()) append(" on $interfaceName")
+            append(if (validated) " validated" else " unvalidated")
+        }
     }
 
     private data class NotificationMetrics(
@@ -1244,11 +1333,6 @@ class XrayService : VpnService() {
         val directBps: Long,
     )
 
-    private enum class NetworkRetargetResult {
-        Done,
-        Retry,
-    }
-
     companion object {
         const val CHANNEL_ID = "xray_service"
         const val FAILURE_CHANNEL_ID = "xray_connection_failures"
@@ -1261,9 +1345,10 @@ class XrayService : VpnService() {
         const val ACTION_RELOAD_APP_ROUTING = "com.material.xray.RELOAD_APP_ROUTING"
         const val ACTION_RESTORE_STATUS = "com.material.xray.RESTORE_STATUS"
         const val EXTRA_SERVER_CONFIG = "server_config"
-        private const val NETWORK_RETARGET_DEBOUNCE_MS = 1_500L
-        private const val NETWORK_RETARGET_RETRY_DELAY_MS = 2_000L
-        private const val NETWORK_RETARGET_MAX_ATTEMPTS = 30
+        private const val NETWORK_RETARGET_SETTLE_DELAY_MS = 250L
+        private const val NETWORK_RETARGET_WAKE_LOCK_TIMEOUT_MS = 30_000L
+        private const val NETWORK_SAFETY_CHECK_INTERVAL_MS = 60_000L
+        private val NETWORK_RETARGET_RETRY_DELAYS_MS = listOf(250L, 500L, 1_000L, 2_000L, 4_000L, 8_000L)
         private const val CONNECTION_MAX_ATTEMPTS = 3
         private const val CONNECTION_RETRY_DELAY_MS = 1_500L
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
@@ -1317,4 +1402,16 @@ class XrayService : VpnService() {
             )
         }
     }
+}
+
+internal fun selectRestoredPhysicalRoute(
+    state: XrayState,
+    fallback: TunManager.PhysicalRoute?,
+): TunManager.PhysicalRoute? {
+    val persistedInterface = state.physicalInterface?.takeIf { it.isNotBlank() } ?: return fallback
+    return TunManager.PhysicalRoute(
+        dev = persistedInterface,
+        gateway = state.physicalGateway,
+        table = state.physicalTable,
+    )
 }

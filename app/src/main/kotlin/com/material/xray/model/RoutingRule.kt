@@ -26,16 +26,6 @@ data class RoutingRule(
     val operator: RoutingRuleOperator = RoutingRuleOperator.AND,
     val enabled: Boolean = true,
 ) {
-    fun contentText(): String = buildList {
-        val cleanDomains = domains.cleanEntries()
-        val cleanIps = ips.cleanEntries()
-        if (cleanDomains.isNotEmpty()) add("Domain: ${cleanDomains.joinToString(", ")}")
-        if (cleanIps.isNotEmpty()) add("IP: ${cleanIps.joinToString(", ")}")
-        port?.takeIf { it.isNotBlank() }?.let { add("Port: $it") }
-        val cleanProtocols = protocols.cleanEntries()
-        if (cleanProtocols.isNotEmpty()) add("Protocol: ${cleanProtocols.joinToString(", ")}")
-    }.joinToString("\n")
-
     fun toXrayRule(): JsonObject = buildJsonObject {
         val cleanDomains = domains.cleanEntries()
         val cleanIps = ips.cleanEntries()

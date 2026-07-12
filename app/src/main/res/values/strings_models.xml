@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ping_method_httping_label">httping (recommended)</string>
+    <string name="ping_method_httping_description">End-to-end test. Ensures that the configuration is valid and measures real-world delay.</string>
+    <string name="ping_method_tcping_label" translatable="false">tcping</string>
+    <string name="ping_method_tcping_description">TCP handshake test. Only indicates basic connectivity status and one-way delay.</string>
+
+    <string name="subscription_user_agent_automatic_label">Automatic</string>
+    <string name="subscription_user_agent_automatic_description">Identify as Material Xray and include device info headers.</string>
+    <string name="subscription_user_agent_happ_label" translatable="false">Happ</string>
+    <string name="subscription_user_agent_happ_description">Mimic the Happ client. Useful for providers that only serve known clients.</string>
+    <string name="subscription_user_agent_custom_label">Custom</string>
+    <string name="subscription_user_agent_custom_description">Send your own User-Agent and headers exactly as entered.</string>
+
+    <string name="routing_policy_user_label">User-controlled</string>
+    <string name="routing_policy_user_description">Keep routing rules and app routing under manual control</string>
+    <string name="routing_policy_subscription_provider_label">Subscription provider</string>
+    <string name="routing_policy_subscription_provider_description">Apply routing rules and per-app routing from the selected subscription provider</string>
+
+    <string name="xray_outbound_proxy_label">proxy</string>
+    <string name="xray_outbound_proxy_description">Send traffic through the selected proxy server</string>
+    <string name="xray_outbound_direct_label">direct</string>
+    <string name="xray_outbound_direct_description">Bypass the proxy and connect directly.</string>
+    <string name="xray_outbound_block_label">block</string>
+    <string name="xray_outbound_block_description">Drop traffic with a blackhole outbound.</string>
+
+    <string name="xray_log_level_debug">debug</string>
+    <string name="xray_log_level_info">info</string>
+    <string name="xray_log_level_warning">warning</string>
+    <string name="xray_log_level_error">error</string>
+    <string name="xray_log_level_none">none</string>
+
+    <string name="launcher_icon_default">Default</string>
+    <string name="launcher_icon_material">Material</string>
+
+    <string name="notification_field_traffic_speed_label">Traffic speed</string>
+    <string name="notification_field_traffic_speed_description">Proxy and direct throughput</string>
+    <string name="notification_field_ram_usage_label">Xray RAM</string>
+    <string name="notification_field_ram_usage_description">Native core resident memory</string>
+    <string name="notification_field_connection_count_label">Connections</string>
+    <string name="notification_field_connection_count_description">Open sockets owned by the core</string>
+
+    <string name="notification_style_normal_label">Normal</string>
+    <string name="notification_style_normal_description">Each field on its own line</string>
+    <string name="notification_style_compact_label">Compact</string>
+    <string name="notification_style_compact_description">All fields on a single line</string>
+</resources>

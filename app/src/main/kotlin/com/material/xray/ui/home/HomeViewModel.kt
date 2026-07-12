@@ -1,8 +1,10 @@
 package com.material.xray.ui.home
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.material.xray.R
 import com.material.xray.core.network.LatencyProbeResult
 import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.core.xray.StateFile
@@ -25,6 +27,7 @@ import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
+import com.material.xray.model.proxyOutboundCount
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.service.ConnectionStateHolder
 import com.material.xray.service.PendingRoutingChange
@@ -33,6 +36,7 @@ import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -73,7 +77,7 @@ data class SubscriptionRoutingData(
 )
 
 sealed interface HomeUiEvent {
-    data class Toast(val message: String) : HomeUiEvent
+    data class Toast(@param:StringRes val messageResId: Int) : HomeUiEvent
 }
 
 const val LATENCY_TESTING = Int.MIN_VALUE
@@ -213,7 +217,7 @@ class HomeViewModel @Inject constructor(
             ?.takeIf { it.isNotBlank() }
 
         ConnectionState.Connected(
-            serverName = persistedServerName ?: selectedServerName ?: "Selected server",
+            serverName = persistedServerName ?: selectedServerName ?: context.getString(R.string.home_selected_server),
             corePid = persistedState?.xrayPid ?: -1,
             tunName = activeTunName,
             physicalInterface = persistedState?.physicalInterface ?: "unknown",
@@ -229,7 +233,7 @@ class HomeViewModel @Inject constructor(
                 runCatching { activeConfigFile.takeIf { it.isFile }?.readText() }
                     .getOrNull()
                     ?.takeIf { it.isNotBlank() }
-                    ?: "No active Xray config file was found."
+                    ?: context.getString(R.string.home_no_active_xray_config)
             }
         }
     }
@@ -269,14 +273,14 @@ class HomeViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             runCatching { subscriptionRepo.add(name, url, preferJson, userAgentMode, customUserAgent, customHeaders) }
-                .onFailure { _uiEvents.emit(HomeUiEvent.Toast("Unable to fetch link")) }
+                .onFailure { _uiEvents.emit(HomeUiEvent.Toast(R.string.home_unable_to_fetch_link)) }
         }
     }
 
     fun addLink(link: String) {
         viewModelScope.launch {
             runCatching { subscriptionRepo.addLink(link) }
-                .onFailure { _uiEvents.emit(HomeUiEvent.Toast("Unable to fetch link")) }
+                .onFailure { _uiEvents.emit(HomeUiEvent.Toast(R.string.home_unable_to_fetch_link)) }
         }
     }
 
@@ -480,12 +484,23 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun ServerEntity.toListItem(latency: ServerLatencyState?): ServerListItem {
-        val summary = endpointSummaryCache.getOrPut(configJson) {
+        val localeKey = context.resources.configuration.locales.toLanguageTags()
+        val summary = endpointSummaryCache.getOrPut("$localeKey\u0000$configJson") {
             runCatching {
                 val config = json.decodeFromString<ServerConfig>(configJson)
-                config.endpointSummary()
+                val outboundCount = config.proxyOutboundCount()
+                if (outboundCount == null) {
+                    config.endpointSummary()
+                } else {
+                    context.resources.getQuantityString(
+                        R.plurals.home_server_multiconnect_summary,
+                        outboundCount,
+                        outboundCount,
+                    )
+                }
             }.getOrElse {
-                "${protocol.lowercase()} • unknown • unknown"
+                val unknown = context.getString(R.string.home_server_endpoint_unknown)
+                "${protocol.lowercase(Locale.ROOT)} • $unknown • $unknown"
             }
         }
         return ServerListItem(entity = this, endpointSummary = summary, latency = latency)

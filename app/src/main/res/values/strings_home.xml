@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_unable_to_fetch_link">Unable to fetch link</string>
+    <string name="home_clipboard_xray_config_label">Xray config</string>
+
+    <string name="home_root_fallback_message">Unable to access root on this device. Material Xray will fall back to rootless mode.</string>
+    <string name="home_action_continue">Continue</string>
+    <string name="home_action_cancel">Cancel</string>
+    <string name="home_action_close">Close</string>
+    <string name="home_action_copy">Copy</string>
+    <string name="home_action_start">Start</string>
+    <string name="home_action_stop">Stop</string>
+    <string name="home_action_restart">Restart</string>
+    <string name="home_action_edit">Edit</string>
+    <string name="home_action_support">Support</string>
+    <string name="home_action_remove">Remove</string>
+    <string name="home_action_open">Open</string>
+    <string name="home_action_save">Save</string>
+    <string name="home_action_add">Add</string>
+
+    <string name="home_no_server_selected">No server selected</string>
+    <string name="home_select_server_below">Select a server below</string>
+    <string name="home_selected_server">Selected server</string>
+    <string name="home_server_endpoint_unknown">unknown</string>
+    <plurals name="home_server_multiconnect_summary">
+        <item quantity="one">multiconnect &#8226; %1$d outbound</item>
+        <item quantity="other">multiconnect &#8226; %1$d outbounds</item>
+    </plurals>
+    <string name="home_no_active_xray_config">No active Xray config file was found.</string>
+    <string name="home_connection_connected">Connected</string>
+    <string name="home_connection_connecting">Connecting&#8230;</string>
+    <string name="home_connection_applying_routing">Applying routing changes&#8230;</string>
+    <string name="home_connection_updating_routing">Updating routing data&#8230;</string>
+    <string name="home_connection_restart_required">Restart required</string>
+    <string name="home_connection_interface_busy">Interface busy</string>
+    <string name="home_connection_disconnecting">Disconnecting&#8230;</string>
+    <string name="home_connection_error">Error</string>
+    <string name="home_connection_disconnected">Disconnected</string>
+    <string name="home_connection_interface_busy_detail">The selected interface is currently in use by another client.\nSelect &quot;Restart&quot; to shut it down and connect to the selected server.</string>
+    <string name="home_connection_restart_required_detail">The client has been relaunched. Select Restart to regain control.</string>
+
+    <string name="home_active_xray_config_title">Active Xray Config</string>
+    <string name="home_no_subscriptions_title">No subscriptions yet</string>
+    <string name="home_no_subscriptions_message">Add a subscription to show servers here.</string>
+    <string name="home_add_server_or_subscription">Add new server or subscription</string>
+    <string name="home_paste_from_clipboard">Paste from clipboard</string>
+    <string name="home_scan_qr_code">Scan QR code</string>
+    <string name="home_add_manually">Add manually</string>
+    <string name="home_no_servers_in_subscription">No servers in this subscription.</string>
+
+    <string name="home_subscription_refresh_content_description">Refresh %1$s</string>
+    <string name="home_subscription_test_content_description">Test %1$s with %2$s</string>
+    <string name="home_subscription_menu_content_description">Subscription menu</string>
+    <string name="home_subscription_show_description">Show description</string>
+    <string name="home_subscription_hide_description">Hide description</string>
+    <string name="home_subscription_apply_routing">Apply routing</string>
+    <string name="home_choose_ping_method_title">Choose method</string>
+    <string name="home_open_link_title">Open link?</string>
+
+    <string name="home_latency_testing">Testing&#8230;</string>
+    <string name="home_latency_not_available">N/A</string>
+    <string name="home_latency_milliseconds">%1$d ms</string>
+    <string name="home_zero_gigabytes">0 GB</string>
+
+    <string name="home_edit_subscription_title">Edit subscription</string>
+    <string name="home_field_name">Name</string>
+    <string name="home_name_from_provider_hint">Leave empty to get the name from the subscription provider</string>
+    <string name="home_field_url" translatable="false">URL</string>
+    <string name="home_auto_update_label">Auto update</string>
+    <string name="home_auto_update_manual">Manual update only</string>
+    <string name="home_duration_manual">Manual only</string>
+    <plurals name="home_auto_update_every_hours">
+        <item quantity="one">Auto update every hour</item>
+        <item quantity="other">Auto update every %1$d hours</item>
+    </plurals>
+    <plurals name="home_auto_update_every_days">
+        <item quantity="one">Auto update every day</item>
+        <item quantity="other">Auto update every %1$d days</item>
+    </plurals>
+    <plurals name="home_duration_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <plurals name="home_duration_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+
+    <string name="home_apply_subscription_routing_title">Apply subscription routing?</string>
+    <string name="home_apply_subscription_routing_message">This action will override the existing routing setup.</string>
+    <string name="home_apply_subscription_routing_confirm">Yes, apply</string>
+    <string name="home_apply_subscription_routing_dismiss">No, thanks</string>
+    <string name="home_remove_subscription_title">Remove subscription?</string>
+    <plurals name="home_remove_subscription_message">
+        <item quantity="one">The server from this subscription will be removed.</item>
+        <item quantity="other">All %1$d servers from this subscription will be removed.</item>
+    </plurals>
+
+    <string name="home_fetch_type_label">Fetch type</string>
+    <string name="home_fetch_type_json_first">JSON first</string>
+    <string name="home_fetch_type_compatibility">Compatibility mode</string>
+    <string name="home_fetch_type_json_first_description">Try the /json endpoint first, then fall back to the saved URL</string>
+    <string name="home_fetch_type_compatibility_description">Fetch directly from the saved URL</string>
+    <string name="home_field_user_agent" translatable="false">User-Agent</string>
+    <string name="home_user_agent_example">For example: %1$s</string>
+    <string name="home_user_agent_example_value" translatable="false">Happ/3.23.0</string>
+    <string name="home_field_headers">Headers</string>
+    <string name="home_headers_example">One per line, for example: X-Hwid: 0123456789abcdef</string>
+
+    <string name="home_subscription_unlimited_traffic">∞ traffic</string>
+    <string name="home_subscription_unlimited_traffic_downloaded">∞ traffic, ↓ %1$s</string>
+    <string name="home_subscription_used_of_total">%1$s of %2$s</string>
+    <string name="home_subscription_downloaded">↓ %1$s</string>
+    <string name="home_subscription_downloaded_expires_on">↓ %1$s, expires on %2$s</string>
+    <string name="home_subscription_downloaded_expired">↓ %1$s, expired</string>
+    <string name="home_subscription_expired_inline">expired</string>
+    <string name="home_subscription_expired_standalone">Expired</string>
+    <string name="home_subscription_expires_on_inline">expires on %1$s</string>
+    <string name="home_subscription_expires_on_standalone">Expires on %1$s</string>
+    <string name="home_gigabytes">%1$s GB</string>
+</resources>

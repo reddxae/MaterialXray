@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -56,6 +57,7 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
+import com.material.xray.R
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -94,7 +96,7 @@ fun QrScannerOverlay(
         ScannerMask(modifier = Modifier.fillMaxSize())
 
         Text(
-            text = "Scan QR code",
+            text = stringResource(R.string.home_scan_qr_code),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 52.dp),
@@ -108,7 +110,7 @@ fun QrScannerOverlay(
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 42.dp),
         ) {
-            Text("Close", color = Color.White)
+            Text(stringResource(R.string.home_action_close), color = Color.White)
         }
     }
 }

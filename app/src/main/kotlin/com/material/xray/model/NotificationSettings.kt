@@ -30,21 +30,15 @@ data class NotificationSettings(
     }
 }
 
-enum class NotificationField(
-    val label: String,
-    val description: String,
-) {
-    TrafficSpeed("Traffic speed", "Proxy and direct throughput"),
-    RamUsage("Xray RAM", "Native core resident memory"),
-    ConnectionCount("Connections", "Open sockets owned by the core"),
+enum class NotificationField {
+    TrafficSpeed,
+    RamUsage,
+    ConnectionCount,
 }
 
-enum class NotificationStyle(
-    val label: String,
-    val description: String,
-) {
-    Normal("Normal", "Each field on its own line"),
-    Compact("Compact", "All fields on a single line"),
+enum class NotificationStyle {
+    Normal,
+    Compact,
     ;
 
     companion object {

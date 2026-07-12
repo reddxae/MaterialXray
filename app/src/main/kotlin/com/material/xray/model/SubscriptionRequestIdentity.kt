@@ -13,23 +13,15 @@ const val HAPP_USER_AGENT = "Happ/3.23.0"
  */
 enum class SubscriptionUserAgentMode(
     val value: String,
-    val label: String,
-    val description: String,
 ) {
     AUTO(
         value = "auto",
-        label = "Automatic",
-        description = "Identify as Material Xray and include device info headers.",
     ),
     HAPP(
         value = "happ",
-        label = "Happ",
-        description = "Mimic the Happ client. Useful for providers that only serve known clients.",
     ),
     CUSTOM(
         value = "custom",
-        label = "Custom",
-        description = "Send your own User-Agent and headers exactly as entered.",
     ),
     ;
 

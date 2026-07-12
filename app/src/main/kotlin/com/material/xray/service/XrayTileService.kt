@@ -3,6 +3,7 @@ package com.material.xray.service
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.drawable.Icon
+import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.material.xray.R
@@ -117,6 +118,9 @@ class XrayTileService : TileService() {
                 R.drawable.ic_launcher_material_monochrome,
             )
             state = snapshot.tileState()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                stateDescription = snapshot.stateDescription()
+            }
             updateTile()
         }
     }
@@ -135,6 +139,19 @@ class XrayTileService : TileService() {
         !hasSelectedServer -> Tile.STATE_UNAVAILABLE
         state.isTransitioning() -> Tile.STATE_UNAVAILABLE
         else -> Tile.STATE_INACTIVE
+    }
+
+    private fun TileSnapshot.stateDescription(): String = when {
+        state is ConnectionState.Connected -> getString(R.string.tile_state_connected)
+        !hasSelectedServer -> getString(R.string.tile_state_no_server_selected)
+        state is ConnectionState.Connecting -> getString(R.string.tile_state_connecting)
+        state is ConnectionState.ApplyingRoutingChanges -> getString(R.string.tile_state_applying_routing_changes)
+        state is ConnectionState.UpdatingRoutingData -> getString(R.string.tile_state_updating_routing_data)
+        state is ConnectionState.RestartRequired -> getString(R.string.tile_state_restart_required)
+        state is ConnectionState.InterfaceBusy -> getString(R.string.tile_state_interface_busy)
+        state is ConnectionState.Disconnecting -> getString(R.string.tile_state_disconnecting)
+        state is ConnectionState.Error -> getString(R.string.tile_state_connection_error)
+        else -> getString(R.string.tile_state_disconnected)
     }
 
     private fun ConnectionState.isTransitioning(): Boolean = this is ConnectionState.Connecting ||

@@ -1,5 +1,6 @@
 package com.material.xray.ui.routing
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -72,8 +73,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -81,17 +82,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.material.xray.R
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.RoutingRule
+import com.material.xray.model.RoutingRuleCatalog
 import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 import com.material.xray.ui.apps.AppRoutingMenuActions
+import com.material.xray.ui.text.descriptionResource
+import java.util.Locale
 import kotlinx.coroutines.launch
 
-private enum class RoutingTab(val title: String) {
-    Rules("Rules"),
-    Apps("Apps"),
+private enum class RoutingTab(@StringRes val titleResource: Int) {
+    Rules(R.string.routing_tab_rules),
+    Apps(R.string.routing_tab_apps),
 }
 
 private data class EditableRoutingRule(
@@ -109,29 +114,25 @@ private sealed interface RoutingRuleAction {
     data class Delete(val ruleIds: Set<String>) : RoutingRuleAction
 }
 
-private val protocolOptions = listOf(
-    "http" to "HTTP traffic",
-    "tls" to "TLS traffic",
-    "quic" to "QUIC traffic",
-    "bittorrent" to "BitTorrent traffic",
-)
+private val protocolOptions = listOf("http", "tls", "quic", "bittorrent")
+private val defaultRoutingRulesById = RoutingRuleCatalog.defaults().associateBy(RoutingRule::id)
 
 private data class MatchModeOption(
     val value: RoutingRuleOperator,
-    val label: String,
-    val description: String,
+    @param:StringRes val labelResource: Int,
+    @param:StringRes val descriptionResource: Int,
 )
 
 private val matchModeOptions = listOf(
     MatchModeOption(
         value = RoutingRuleOperator.AND,
-        label = "All conditions (AND)",
-        description = "All filled fields stay in one Xray rule. Traffic must satisfy every filled field.",
+        labelResource = R.string.routing_match_all_label,
+        descriptionResource = R.string.routing_match_all_description,
     ),
     MatchModeOption(
         value = RoutingRuleOperator.OR,
-        label = "Any condition group (OR)",
-        description = "Each filled field group becomes its own Xray rule. Traffic can match any one of them.",
+        labelResource = R.string.routing_match_any_label,
+        descriptionResource = R.string.routing_match_any_description,
     ),
 )
 
@@ -151,6 +152,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
     var rulesMenuExpanded by remember { mutableStateOf(false) }
     val selectionMode by remember { derivedStateOf { selectedRuleIds.isNotEmpty() } }
     val selectedTab = pagerState.currentPage
+    val newRuleName = stringResource(R.string.routing_new_rule_name)
 
     fun applyRuleAction(action: RoutingRuleAction) {
         when (action) {
@@ -158,7 +160,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                 editingRule = EditableRoutingRule(
                     rule = RoutingRule(
                         id = "custom-${System.currentTimeMillis()}",
-                        name = "New Rule",
+                        name = newRuleName,
                         outboundTag = "proxy",
                     ),
                     isNew = true,
@@ -209,8 +211,12 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                     Text(
                         when {
                             pagerState.currentPage == RoutingTab.Rules.ordinal && selectionMode ->
-                                "${selectedRuleIds.size} selected"
-                            else -> "Routing"
+                                pluralStringResource(
+                                    R.plurals.routing_rules_selected,
+                                    selectedRuleIds.size,
+                                    selectedRuleIds.size,
+                                )
+                            else -> stringResource(R.string.routing_title)
                         },
                     )
                 },
@@ -220,31 +226,43 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                         RoutingTab.Rules.ordinal -> {
                             if (selectionMode) {
                                 IconButton(onClick = { selectedRuleIds = emptySet() }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear selection")
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = stringResource(R.string.routing_clear_selection),
+                                    )
                                 }
                                 IconButton(
                                     onClick = {
                                         requestRuleAction(RoutingRuleAction.Delete(selectedRuleIds))
                                     },
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete selected rules")
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = stringResource(R.string.routing_delete_selected_rules),
+                                    )
                                 }
                             } else {
                                 IconButton(
                                     onClick = { requestRuleAction(RoutingRuleAction.Add) },
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add rule")
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = stringResource(R.string.routing_add_rule),
+                                    )
                                 }
                                 Box {
                                     IconButton(onClick = { rulesMenuExpanded = true }) {
-                                        Icon(Icons.Default.MoreVert, contentDescription = "Routing rules menu")
+                                        Icon(
+                                            Icons.Default.MoreVert,
+                                            contentDescription = stringResource(R.string.routing_rules_menu),
+                                        )
                                     }
                                     DropdownMenu(
                                         expanded = rulesMenuExpanded,
                                         onDismissRequest = { rulesMenuExpanded = false },
                                     ) {
                                         DropdownMenuItem(
-                                            text = { Text("Enable all") },
+                                            text = { Text(stringResource(R.string.routing_enable_all)) },
                                             enabled = rules.any { !it.enabled },
                                             onClick = {
                                                 rulesMenuExpanded = false
@@ -252,7 +270,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                                             },
                                         )
                                         DropdownMenuItem(
-                                            text = { Text("Disable all") },
+                                            text = { Text(stringResource(R.string.routing_disable_all)) },
                                             enabled = rules.any { it.enabled },
                                             onClick = {
                                                 rulesMenuExpanded = false
@@ -260,7 +278,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                                             },
                                         )
                                         DropdownMenuItem(
-                                            text = { Text("Reset to default") },
+                                            text = { Text(stringResource(R.string.routing_reset_to_default)) },
                                             onClick = {
                                                 rulesMenuExpanded = false
                                                 requestRuleAction(RoutingRuleAction.ResetToDefault)
@@ -338,8 +356,8 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
     if (confirmResetToDefault) {
         AlertDialog(
             onDismissRequest = { confirmResetToDefault = false },
-            title = { Text("Reset to default?") },
-            text = { Text("All routing rules and matching behavior will be reset to the app defaults.") },
+            title = { Text(stringResource(R.string.routing_reset_to_default_title)) },
+            text = { Text(stringResource(R.string.routing_reset_to_default_description)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -347,12 +365,12 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                         confirmResetToDefault = false
                     },
                 ) {
-                    Text("OK")
+                    Text(stringResource(R.string.routing_ok))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { confirmResetToDefault = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.routing_cancel))
                 }
             },
         )
@@ -375,7 +393,7 @@ private fun RoutingTabSelector(
                 onClick = { onSelected(index) },
                 shape = SegmentedButtonDefaults.itemShape(index, RoutingTab.entries.size),
             ) {
-                Text(tab.title)
+                Text(stringResource(tab.titleResource))
             }
         }
     }
@@ -386,7 +404,7 @@ private fun RoutingTabSelector(
 private fun RoutingRulesTab(
     rules: List<RoutingRule>,
     providerManaged: Boolean,
-    providerName: String,
+    providerName: String?,
     selectionMode: Boolean,
     selectedRuleIds: Set<String>,
     onRuleToggled: (RoutingRule, Boolean) -> Unit,
@@ -421,7 +439,9 @@ private fun RoutingRulesTab(
                                 modifier = Modifier.size(20.dp),
                             )
                             Text(
-                                text = "Routing rules are managed by $providerName",
+                                text = providerName?.let {
+                                    stringResource(R.string.routing_rules_managed_by_provider, it)
+                                } ?: stringResource(R.string.routing_rules_managed_by_selected_subscription),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -446,7 +466,7 @@ private fun RoutingRulesTab(
                     },
                     label = "routingRuleBorderColor",
                 )
-                val contentText = remember(rule) { rule.contentText().ifBlank { "No match content" } }
+                val contentText = routingRuleContentText(rule)
 
                 Surface(
                     color = containerColor,
@@ -478,7 +498,7 @@ private fun RoutingRulesTab(
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text(
-                                text = rule.name,
+                                text = routingRuleDisplayName(rule),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -527,7 +547,7 @@ private fun RoutingRulesTab(
 
 @Composable
 private fun AutomaticRuleRoutingDialog(
-    providerName: String,
+    providerName: String?,
     onDismiss: () -> Unit,
     onSwitchToManual: () -> Unit,
 ) {
@@ -535,20 +555,16 @@ private fun AutomaticRuleRoutingDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Routing rules are automatic",
+                text = stringResource(R.string.routing_rules_automatic_title),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
         },
         text = {
             Text(
-                buildAnnotatedString {
-                    append("Your current routing rules are provided by ")
-                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                    append(providerName)
-                    pop()
-                    append(" and are updated automatically. Editing them will disable automatic updates.")
-                },
+                providerName?.let {
+                    stringResource(R.string.routing_rules_automatic_provider_description, it)
+                } ?: stringResource(R.string.routing_rules_automatic_selected_subscription_description),
             )
         },
         confirmButton = {
@@ -561,14 +577,14 @@ private fun AutomaticRuleRoutingDialog(
                     shape = CircleShape,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Switch to manual mode")
+                    Text(stringResource(R.string.routing_switch_to_manual_mode))
                 }
                 OutlinedButton(
                     onClick = onDismiss,
                     shape = CircleShape,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Leave as is")
+                    Text(stringResource(R.string.routing_leave_as_is))
                 }
             }
         },
@@ -592,6 +608,19 @@ private fun EditRoutingRuleDialog(
     var selectedProtocols by remember(rule.id) { mutableStateOf(rule.protocols.toSet()) }
     val outboundOption = remember(selectedOutbound) { XrayOutbound.fromTag(selectedOutbound) }
     val matchModeOption = remember(selectedOperator) { matchModeOptions.first { it.value == selectedOperator } }
+    val outboundDescription = stringResource(outboundOption.descriptionResource)
+    val matchModeLabel = stringResource(matchModeOption.labelResource)
+    val matchModeDescription = stringResource(matchModeOption.descriptionResource)
+    val outboundOptions = XrayOutbound.entries.map { option ->
+        Triple(option.tag, option.tag, stringResource(option.descriptionResource))
+    }
+    val localizedMatchModeOptions = matchModeOptions.map { option ->
+        Triple(
+            option.value.name,
+            stringResource(option.labelResource),
+            stringResource(option.descriptionResource),
+        )
+    }
     val scrollState = rememberScrollState()
 
     AlertDialog(
@@ -606,21 +635,21 @@ private fun EditRoutingRuleDialog(
                             domains = splitCsv(domains.text),
                             ips = splitCsv(ips.text),
                             port = port.text.trim().ifEmpty { null },
-                            protocols = protocolOptions.map { it.first }.filter { it in selectedProtocols },
+                            protocols = protocolOptions.filter { it in selectedProtocols },
                             operator = selectedOperator,
                         ),
                     )
                 },
             ) {
-                Text("Save")
+                Text(stringResource(R.string.routing_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.routing_cancel))
             }
         },
-        title = { Text("Edit Rule") },
+        title = { Text(stringResource(R.string.routing_edit_rule_title)) },
         text = {
             Box(
                 modifier = Modifier
@@ -637,60 +666,60 @@ private fun EditRoutingRuleDialog(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Name") },
+                        label = { Text(stringResource(R.string.routing_name_label)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
 
                     DropdownSelector(
-                        label = "Outbound Tag",
-                        value = outboundOption.label,
-                        description = outboundOption.description,
+                        label = stringResource(R.string.routing_outbound_tag_label),
+                        value = outboundOption.tag,
+                        description = outboundDescription,
                         expanded = outboundExpanded,
                         onExpandedChange = { outboundExpanded = it },
-                        options = XrayOutbound.entries.map { Triple(it.tag, it.label, it.description) },
+                        options = outboundOptions,
                         onSelected = { selectedOutbound = it },
                     )
 
                     DropdownSelector(
-                        label = "Match Mode",
-                        value = matchModeOption.label,
-                        description = matchModeOption.description,
+                        label = stringResource(R.string.routing_match_mode_label),
+                        value = matchModeLabel,
+                        description = matchModeDescription,
                         expanded = operatorExpanded,
                         onExpandedChange = { operatorExpanded = it },
-                        options = matchModeOptions.map { Triple(it.value.name, it.label, it.description) },
+                        options = localizedMatchModeOptions,
                         onSelected = { selectedOperator = RoutingRuleOperator.valueOf(it) },
                     )
 
                     OutlinedTextField(
                         value = domains,
                         onValueChange = { domains = it },
-                        label = { Text("Domains") },
-                        supportingText = { Text("Comma-separated. Example: domain:ru, geosite:category-ads-all") },
+                        label = { Text(stringResource(R.string.routing_domains_label)) },
+                        supportingText = { Text(stringResource(R.string.routing_domains_supporting_text)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = ips,
                         onValueChange = { ips = it },
-                        label = { Text("IPs") },
-                        supportingText = { Text("Comma-separated. Example: geoip:ru, 1.2.3.0/24") },
+                        label = { Text(stringResource(R.string.routing_ips_label)) },
+                        supportingText = { Text(stringResource(R.string.routing_ips_supporting_text)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = port,
                         onValueChange = { port = it },
-                        label = { Text("Port") },
-                        supportingText = { Text("Single port or range, e.g. 443 or 0-65535") },
+                        label = { Text(stringResource(R.string.routing_port_label)) },
+                        supportingText = { Text(stringResource(R.string.routing_port_supporting_text)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    Text("Protocols", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.routing_protocols_label), style = MaterialTheme.typography.labelLarge)
                     Text(
-                        "If nothing is selected, all traffic is matched.",
+                        stringResource(R.string.routing_protocols_empty_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    protocolOptions.forEach { (protocol, _) ->
+                    protocolOptions.forEach { protocol ->
                         val checked = protocol in selectedProtocols
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
@@ -728,7 +757,7 @@ private fun EditRoutingRuleDialog(
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = protocol.uppercase(),
+                                        text = protocol.uppercase(Locale.ROOT),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
@@ -803,7 +832,10 @@ private fun DropdownSelector(
                     )
                 },
                 trailingIcon = {
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Open $label")
+                    Icon(
+                        Icons.Default.ArrowDropDown,
+                        contentDescription = stringResource(R.string.routing_open_selector, label),
+                    )
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -836,6 +868,38 @@ private fun DropdownSelector(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun routingRuleContentText(rule: RoutingRule): String {
+    val domains = rule.domains.map(String::trim).filter(String::isNotEmpty)
+    val ips = rule.ips.map(String::trim).filter(String::isNotEmpty)
+    val protocols = rule.protocols.map(String::trim).filter(String::isNotEmpty)
+    val domainText = domains.takeIf(List<String>::isNotEmpty)?.let {
+        pluralStringResource(R.plurals.routing_rule_domains, it.size, it.joinToString(", "))
+    }
+    val ipText = ips.takeIf(List<String>::isNotEmpty)?.let {
+        pluralStringResource(R.plurals.routing_rule_ips, it.size, it.joinToString(", "))
+    }
+    val portText = rule.port?.takeIf(String::isNotBlank)?.let {
+        stringResource(R.string.routing_rule_port, it)
+    }
+    val protocolText = protocols.takeIf(List<String>::isNotEmpty)?.let {
+        pluralStringResource(R.plurals.routing_rule_protocols, it.size, it.joinToString(", "))
+    }
+    return listOfNotNull(domainText, ipText, portText, protocolText)
+        .joinToString("\n")
+        .ifBlank { stringResource(R.string.routing_no_match_content) }
+}
+
+@Composable
+private fun routingRuleDisplayName(rule: RoutingRule): String {
+    if (rule.name != defaultRoutingRulesById[rule.id]?.name) return rule.name
+    return when (rule.id) {
+        "ru-direct" -> stringResource(R.string.routing_default_rule_ru_name)
+        "block-ads" -> stringResource(R.string.routing_default_rule_block_ads_name)
+        else -> rule.name
     }
 }
 

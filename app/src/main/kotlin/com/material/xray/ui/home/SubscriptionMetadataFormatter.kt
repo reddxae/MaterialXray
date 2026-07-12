@@ -1,6 +1,11 @@
 package com.material.xray.ui.home
 
+import android.content.res.Resources
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
+import com.material.xray.R
 import com.material.xray.data.db.entity.SubscriptionEntity
+import java.text.NumberFormat
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -8,6 +13,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.FormatStyle
 import java.util.Locale
 
 internal data class SubscriptionMetadataUiState(
@@ -28,11 +34,14 @@ internal data class SubscriptionTrafficUiState(
     val quotaText: String? = null,
     val progress: Float = 0f,
     val downloadText: String? = null,
+    val downloadSizeText: String? = null,
 )
 
 internal data class SubscriptionExpiryUiState(
     val inlineText: String,
     val standaloneText: String,
+    val dateText: String? = null,
+    val isExpired: Boolean = false,
 )
 
 internal data class MetadataTextSegment(
@@ -40,8 +49,43 @@ internal data class MetadataTextSegment(
     val emphasized: Boolean,
 )
 
+internal interface SubscriptionMetadataText {
+    val locale: Locale
+
+    fun getString(@StringRes resourceId: Int, vararg arguments: Any): String
+
+    fun getQuantityString(@PluralsRes resourceId: Int, quantity: Int, vararg arguments: Any): String
+}
+
+private class AndroidSubscriptionMetadataText(
+    private val resources: Resources,
+) : SubscriptionMetadataText {
+    override val locale: Locale = if (resources.configuration.locales.isEmpty) {
+        Locale.getDefault()
+    } else {
+        resources.configuration.locales[0]
+    }
+
+    override fun getString(resourceId: Int, vararg arguments: Any): String = resources.getString(resourceId, *arguments)
+
+    override fun getQuantityString(resourceId: Int, quantity: Int, vararg arguments: Any): String = resources.getQuantityString(resourceId, quantity, *arguments)
+}
+
 internal fun buildSubscriptionMetadataUiState(
     subscription: SubscriptionEntity,
+    resources: Resources,
+    clock: Clock = Clock.systemDefaultZone(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): SubscriptionMetadataUiState = buildSubscriptionMetadataUiState(
+    subscription = subscription,
+    text = AndroidSubscriptionMetadataText(resources),
+    clock = clock,
+    zoneId = zoneId,
+)
+
+internal fun buildSubscriptionMetadataUiState(
+    subscription: SubscriptionEntity,
+    text: SubscriptionMetadataText,
     clock: Clock = Clock.systemDefaultZone(),
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): SubscriptionMetadataUiState = SubscriptionMetadataUiState(
@@ -50,23 +94,41 @@ internal fun buildSubscriptionMetadataUiState(
         upload = subscription.subscriptionUploadBytes,
         download = subscription.subscriptionDownloadBytes,
         total = subscription.subscriptionTotalBytes,
+        text = text,
     ),
     expiry = subscription.subscriptionExpireAt?.let { expireAt ->
         formatSubscriptionExpiryUiState(
             epochSeconds = expireAt,
+            text = text,
             clock = clock,
             zoneId = zoneId,
         )
     },
-    updateIntervalText = formatAutoUpdateInterval(subscription.autoUpdateIntervalHours),
+    updateIntervalText = formatAutoUpdateInterval(subscription.autoUpdateIntervalHours, text),
 )
 
-internal fun SubscriptionTrafficUiState.detailText(expiry: SubscriptionExpiryUiState?): String? {
-    val downloaded = downloadText
+internal fun SubscriptionTrafficUiState.detailText(
+    expiry: SubscriptionExpiryUiState?,
+    resources: Resources,
+): String? = detailText(expiry, AndroidSubscriptionMetadataText(resources))
+
+private fun SubscriptionTrafficUiState.detailText(
+    expiry: SubscriptionExpiryUiState?,
+    text: SubscriptionMetadataText,
+): String? {
+    val downloadedSize = downloadSizeText
     return when {
         quotaText == null -> null
-        downloaded != null && expiry != null -> "$downloaded, ${expiry.inlineText}"
-        downloaded != null -> downloaded
+        downloadedSize != null && expiry?.isExpired == true -> text.getString(
+            R.string.home_subscription_downloaded_expired,
+            downloadedSize,
+        )
+        downloadedSize != null && expiry?.dateText != null -> text.getString(
+            R.string.home_subscription_downloaded_expires_on,
+            downloadedSize,
+            expiry.dateText,
+        )
+        downloadedSize != null -> downloadText
         expiry != null -> expiry.inlineText
         else -> null
     }
@@ -76,33 +138,66 @@ internal fun buildSubscriptionTrafficUiState(
     upload: Long?,
     download: Long?,
     total: Long?,
+    resources: Resources,
+): SubscriptionTrafficUiState? = buildSubscriptionTrafficUiState(
+    upload = upload,
+    download = download,
+    total = total,
+    text = AndroidSubscriptionMetadataText(resources),
+)
+
+private fun buildSubscriptionTrafficUiState(
+    upload: Long?,
+    download: Long?,
+    total: Long?,
+    text: SubscriptionMetadataText,
 ): SubscriptionTrafficUiState? {
     if (upload == null && download == null && total == null) return null
 
     val downloaded = download?.coerceAtLeast(0) ?: 0L
-    val downloadText = "$DOWNLOAD_TRAFFIC_PREFIX ${formatGigabyteCount(downloaded)}"
+    val downloadedSizeText = formatGigabyteCount(downloaded, text)
+    val downloadText = text.getString(R.string.home_subscription_downloaded, downloadedSizeText)
 
     return when {
         total == null || total <= 0 -> SubscriptionTrafficUiState(
             summary = if (download == null) {
-                INFINITE_TRAFFIC_TEXT
+                text.getString(R.string.home_subscription_unlimited_traffic)
             } else {
-                "$INFINITE_TRAFFIC_TEXT, $downloadText"
+                text.getString(R.string.home_subscription_unlimited_traffic_downloaded, downloadedSizeText)
             },
             downloadText = download?.let { downloadText },
+            downloadSizeText = download?.let { downloadedSizeText },
         )
 
         else -> SubscriptionTrafficUiState(
-            summary = "${formatGigabyteCount(downloaded)} of ${formatGigabyteCount(total)}",
-            quotaText = formatGigabyteCount(total),
+            summary = text.getString(
+                R.string.home_subscription_used_of_total,
+                downloadedSizeText,
+                formatGigabyteCount(total, text),
+            ),
+            quotaText = formatGigabyteCount(total, text),
             progress = (downloaded.toDouble() / total.toDouble()).coerceIn(0.0, 1.0).toFloat(),
             downloadText = downloadText,
+            downloadSizeText = downloadedSizeText,
         )
     }
 }
 
 internal fun formatSubscriptionExpiryUiState(
     epochSeconds: Long,
+    resources: Resources,
+    clock: Clock = Clock.systemDefaultZone(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): SubscriptionExpiryUiState? = formatSubscriptionExpiryUiState(
+    epochSeconds = epochSeconds,
+    text = AndroidSubscriptionMetadataText(resources),
+    clock = clock,
+    zoneId = zoneId,
+)
+
+internal fun formatSubscriptionExpiryUiState(
+    epochSeconds: Long,
+    text: SubscriptionMetadataText,
     clock: Clock = Clock.systemDefaultZone(),
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): SubscriptionExpiryUiState? {
@@ -113,17 +208,22 @@ internal fun formatSubscriptionExpiryUiState(
     if (expiresAt.isAfter(now.plus(LONG_TERM_SUBSCRIPTION_DURATION))) return null
     if (!expiresAt.isAfter(now)) {
         return SubscriptionExpiryUiState(
-            inlineText = "expired",
-            standaloneText = "Expired",
+            inlineText = text.getString(R.string.home_subscription_expired_inline),
+            standaloneText = text.getString(R.string.home_subscription_expired_standalone),
+            isExpired = true,
         )
     }
 
-    val formattedDate = SUBSCRIPTION_EXPIRY_DATE_FORMATTER.format(
-        expiresAt.atZone(zoneId).toLocalDate(),
-    )
+    val formattedDate = DateTimeFormatter
+        .ofLocalizedDate(FormatStyle.MEDIUM)
+        .withLocale(text.locale)
+        .format(
+            expiresAt.atZone(zoneId).toLocalDate(),
+        )
     return SubscriptionExpiryUiState(
-        inlineText = "expires on $formattedDate",
-        standaloneText = "Expires on $formattedDate",
+        inlineText = text.getString(R.string.home_subscription_expires_on_inline, formattedDate),
+        standaloneText = text.getString(R.string.home_subscription_expires_on_standalone, formattedDate),
+        dateText = formattedDate,
     )
 }
 
@@ -151,20 +251,30 @@ internal fun normalizeSubscriptionExpireInstant(
     }.getOrNull()
 }
 
-internal fun formatAutoUpdateInterval(intervalHours: Int): String = when (intervalHours) {
-    0 -> "Manual update only"
-    1 -> "Auto update every hour"
-    24 -> "Auto update every day"
-    72 -> "Auto update every 3 days"
-    else -> "Auto update every $intervalHours hours"
+internal fun formatAutoUpdateInterval(intervalHours: Int, resources: Resources): String = formatAutoUpdateInterval(intervalHours, AndroidSubscriptionMetadataText(resources))
+
+private fun formatAutoUpdateInterval(intervalHours: Int, text: SubscriptionMetadataText): String = when (intervalHours) {
+    0 -> text.getString(R.string.home_auto_update_manual)
+    24, 72 -> {
+        val days = intervalHours / 24
+        text.getQuantityString(R.plurals.home_auto_update_every_days, days, days)
+    }
+    else -> text.getQuantityString(
+        R.plurals.home_auto_update_every_hours,
+        intervalHours,
+        intervalHours,
+    )
 }
 
-internal fun metadataTextSegments(text: String): List<MetadataTextSegment> {
+internal fun metadataTextSegments(
+    text: String,
+    expiredStatusText: String? = null,
+): List<MetadataTextSegment> {
     val segments = mutableListOf<MetadataTextSegment>()
     var startIndex = 0
 
     while (startIndex < text.length) {
-        val nextToken = text.findNextEmphasizedToken(startIndex)
+        val nextToken = text.findNextEmphasizedToken(startIndex, expiredStatusText)
         if (nextToken == null) {
             segments += MetadataTextSegment(text.substring(startIndex), emphasized = false)
             break
@@ -196,38 +306,40 @@ private fun parseBasicDateExpireInstant(value: Long, zoneId: ZoneId): Instant? =
     null
 }
 
-private fun formatGigabyteCount(bytes: Long): String {
+private fun formatGigabyteCount(bytes: Long, text: SubscriptionMetadataText): String {
     val value = bytes.coerceAtLeast(0).toDouble() / BYTES_PER_GB
-    val formatted = if (value == 0.0 || value >= 10.0 && value % 1.0 == 0.0) {
-        String.format(Locale.US, "%.0f", value)
-    } else {
-        String.format(Locale.US, "%.1f", value)
-    }
-    return "$formatted GB"
+    val fractionDigits = if (value == 0.0 || value >= 10.0 && value % 1.0 == 0.0) 0 else 1
+    val formatted = NumberFormat.getNumberInstance(text.locale).apply {
+        minimumFractionDigits = fractionDigits
+        maximumFractionDigits = fractionDigits
+    }.format(value)
+    return text.getString(R.string.home_gigabytes, formatted)
 }
 
-private fun String.findNextEmphasizedToken(startIndex: Int): EmphasizedToken? {
+private fun String.findNextEmphasizedToken(
+    startIndex: Int,
+    expiredStatusText: String?,
+): EmphasizedToken? {
     val arrowIndex = indexOf(DOWNLOAD_TRAFFIC_PREFIX, startIndex)
-    val expiredIndex = indexOf(EXPIRED_STATUS_TEXT, startIndex, ignoreCase = true)
+    val expiredIndex = expiredStatusText
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { indexOf(it, startIndex, ignoreCase = true) }
+        ?: -1
 
     return listOfNotNull(
         arrowIndex.takeIf { it >= 0 }?.let {
             EmphasizedToken(it until it + DOWNLOAD_TRAFFIC_PREFIX.length, DOWNLOAD_TRAFFIC_PREFIX)
         },
         expiredIndex.takeIf { it >= 0 }?.let {
-            val value = substring(it, it + EXPIRED_STATUS_TEXT.length)
+            val value = substring(it, it + expiredStatusText.orEmpty().length)
             EmphasizedToken(it until it + value.length, value)
         },
     ).minByOrNull { it.range.first }
 }
 
-private const val INFINITE_TRAFFIC_TEXT = "∞ traffic"
 private const val DOWNLOAD_TRAFFIC_PREFIX = "↓"
-private const val EXPIRED_STATUS_TEXT = "expired"
 private const val BYTES_PER_GB = 1024.0 * 1024.0 * 1024.0
 private const val EPOCH_MILLIS_THRESHOLD = 100_000_000_000L
 private val SUBSCRIPTION_EXPIRY_YEAR_RANGE = 2000L..9999L
 private val SUBSCRIPTION_EXPIRY_BASIC_DATE_RANGE = 20_000_000L..99_991_231L
 private val LONG_TERM_SUBSCRIPTION_DURATION: Duration = Duration.ofDays(365)
-private val SUBSCRIPTION_EXPIRY_DATE_FORMATTER: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("dd.MM.yyyy", Locale.US)

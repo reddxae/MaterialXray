@@ -1,6 +1,7 @@
 package com.material.xray.ui.logs
 
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -40,11 +41,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.material.xray.R
 import com.material.xray.service.LogEntry
 import com.material.xray.service.LogSource
 import java.text.SimpleDateFormat
@@ -52,7 +55,11 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-private enum class LogFilter(val label: String) { ALL("All"), APP("App"), XRAY("Xray") }
+private enum class LogFilter(@param:StringRes val labelRes: Int) {
+    ALL(R.string.logs_filter_all),
+    APP(R.string.logs_filter_app),
+    XRAY(R.string.logs_filter_xray),
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,17 +76,17 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
-                title = { Text("Logs") },
+                title = { Text(stringResource(R.string.navigation_logs)) },
                 windowInsets = TopAppBarDefaults.windowInsets,
                 actions = {
                     IconButton(onClick = {
                         viewModel.copyAll()
-                        Toast.makeText(context, "Logs copied", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, R.string.logs_copied, Toast.LENGTH_SHORT).show()
                     }) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy all")
+                        Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.logs_copy_all))
                     }
                     IconButton(onClick = { viewModel.clear() }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Clear logs")
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.logs_clear))
                     }
                 },
             )
@@ -113,7 +120,7 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
                     entries = entries,
                     onCopy = { entry ->
                         viewModel.copyEntry(entry)
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, R.string.log_entry_copied, Toast.LENGTH_SHORT).show()
                     },
                 )
             }
@@ -159,7 +166,7 @@ private fun LogFilterSelector(
                 onClick = { onSelected(index) },
                 shape = SegmentedButtonDefaults.itemShape(index, LogFilter.entries.size),
             ) {
-                Text(filter.label)
+                Text(stringResource(filter.labelRes))
             }
         }
     }

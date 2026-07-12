@@ -17,5 +17,8 @@ sealed interface ConnectionState {
         val startTime: Long = System.currentTimeMillis(),
     ) : ConnectionState
     data object Disconnecting : ConnectionState
-    data class Error(val message: String) : ConnectionState
+    data class Error(
+        val message: String,
+        val retryable: Boolean = true,
+    ) : ConnectionState
 }

@@ -2,8 +2,11 @@ package com.material.xray.ui.apps
 
 import android.content.Context
 import android.graphics.drawable.Drawable
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.material.xray.R
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.app.appKey
 import com.material.xray.data.db.dao.AppBypassDao
@@ -19,6 +22,7 @@ import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.endpointSummary
+import com.material.xray.model.proxyOutboundCount
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -41,14 +45,28 @@ data class AppItem(
     val icon: Drawable?,
     val systemApp: Boolean,
     val profileId: Int,
-    val profileLabel: String,
     val workProfile: Boolean,
     val routeKey: String,
     val routeKind: AppRouteKind,
     val customRouted: Boolean,
-    val routeTitle: String,
-    val routeDescription: String,
+    val routeTitle: AppRouteText,
+    val routeDescription: AppRouteText,
 )
+
+sealed interface AppRouteText {
+    data class Resource(
+        @param:StringRes val resourceId: Int,
+        val arguments: List<Any> = emptyList(),
+    ) : AppRouteText
+
+    data class PluralResource(
+        @param:PluralsRes val resourceId: Int,
+        val quantity: Int,
+        val arguments: List<Any> = emptyList(),
+    ) : AppRouteText
+
+    data class Raw(val value: String) : AppRouteText
+}
 
 enum class AppRouteKind {
     INHERIT,
@@ -60,8 +78,8 @@ enum class AppRouteKind {
 
 data class AppRouteOption(
     val key: String,
-    val title: String,
-    val description: String,
+    val title: AppRouteText,
+    val description: AppRouteText,
     val kind: AppRouteKind,
     val serverId: Long? = null,
 )
@@ -102,7 +120,7 @@ class AppsViewModel @Inject constructor(
     val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepository.routingPolicyControl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
 
-    val automaticRoutingProviderName: StateFlow<String> = combine(
+    val automaticRoutingProviderName: StateFlow<String?> = combine(
         settingsRepository.lastServerId,
         serverRepository.observeAll(),
         subscriptionDao.observeAll(),
@@ -110,11 +128,10 @@ class AppsViewModel @Inject constructor(
         val subscriptionId = servers.firstOrNull { it.id == selectedServerId }?.subscriptionId
         subscriptions.firstOrNull { it.id == subscriptionId }?.name?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?: "the selected subscription"
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
-        "the selected subscription",
+        null,
     )
 
     private val bypassedApps = appBypassDao.observeAll()
@@ -187,7 +204,9 @@ class AppsViewModel @Inject constructor(
                 filters.searchQuery.isEmpty() ||
                     it.name.contains(filters.searchQuery, ignoreCase = true) ||
                     it.packageName.contains(filters.searchQuery, ignoreCase = true) ||
-                    it.profileLabel.contains(filters.searchQuery, ignoreCase = true)
+                    context.getString(
+                        if (it.workProfile) R.string.apps_work_profile_label else R.string.apps_personal_profile_label,
+                    ).contains(filters.searchQuery, ignoreCase = true)
             }
             .sortedWith(
                 compareBy<AppItem> { !it.customRouted }
@@ -232,7 +251,6 @@ class AppsViewModel @Inject constructor(
                         icon = app.icon,
                         systemApp = app.systemApp,
                         profileId = app.profileId,
-                        profileLabel = app.profileLabel,
                         workProfile = app.workProfile,
                         routeKey = DEFAULT_ROUTE_OPTION.key,
                         routeKind = DEFAULT_ROUTE_OPTION.kind,
@@ -341,8 +359,8 @@ class AppsViewModel @Inject constructor(
                 val serverId = routeAssignment.serverId ?: return DEFAULT_ROUTE_OPTION
                 serverOptionsById[serverId] ?: AppRouteOption(
                     key = serverRouteKey(serverId),
-                    title = "Missing server",
-                    description = "This app is assigned to a deleted configuration.",
+                    title = AppRouteText.Resource(R.string.apps_route_missing_server_title),
+                    description = AppRouteText.Resource(R.string.apps_route_missing_server_description),
                     kind = AppRouteKind.SERVER,
                     serverId = serverId,
                 )
@@ -352,10 +370,22 @@ class AppsViewModel @Inject constructor(
 
     private fun ServerEntity.toRouteOption(): AppRouteOption {
         val config = runCatching { serverRepository.parseConfig(this) }.getOrNull()
-        val description = config?.endpointSummary() ?: "${protocol.lowercase()} • unknown"
+        val outboundCount = config?.proxyOutboundCount()
+        val description = when {
+            outboundCount != null -> AppRouteText.PluralResource(
+                resourceId = R.plurals.apps_server_multiconnect_summary,
+                quantity = outboundCount,
+                arguments = listOf(outboundCount),
+            )
+            config != null -> AppRouteText.Raw(config.endpointSummary())
+            else -> AppRouteText.Resource(
+                R.string.apps_server_endpoint_unknown,
+                listOf(protocol.lowercase(java.util.Locale.ROOT)),
+            )
+        }
         return AppRouteOption(
             key = serverRouteKey(id),
-            title = name,
+            title = AppRouteText.Raw(name),
             description = description,
             kind = AppRouteKind.SERVER,
             serverId = id,
@@ -370,26 +400,26 @@ class AppsViewModel @Inject constructor(
 
         val INHERIT_ROUTE_OPTION = AppRouteOption(
             key = INHERIT_ROUTE_KEY,
-            title = "Default outbound",
-            description = "Use the default outbound selected on Settings page.",
+            title = AppRouteText.Resource(R.string.apps_route_default_outbound_title),
+            description = AppRouteText.Resource(R.string.apps_route_default_outbound_description),
             kind = AppRouteKind.INHERIT,
         )
         val DEFAULT_ROUTE_OPTION = AppRouteOption(
             key = DEFAULT_ROUTE_KEY,
-            title = "Default selected server",
-            description = "Use the server selected on Home page.",
+            title = AppRouteText.Resource(R.string.apps_route_default_server_title),
+            description = AppRouteText.Resource(R.string.apps_route_default_server_description),
             kind = AppRouteKind.DEFAULT,
         )
         val DIRECT_ROUTE_OPTION = AppRouteOption(
             key = DIRECT_ROUTE_KEY,
-            title = "Not proxied",
-            description = "Use the device network.",
+            title = AppRouteText.Resource(R.string.apps_route_not_proxied_title),
+            description = AppRouteText.Resource(R.string.apps_route_not_proxied_description),
             kind = AppRouteKind.DIRECT,
         )
         val BYPASS_ROUTE_OPTION = AppRouteOption(
             key = BYPASS_ROUTE_KEY,
-            title = "Bypass TUN",
-            description = "Bypass the TUN interface entirely.",
+            title = AppRouteText.Resource(R.string.apps_route_bypass_tun_title),
+            description = AppRouteText.Resource(R.string.apps_route_bypass_tun_description),
             kind = AppRouteKind.BYPASS,
         )
 

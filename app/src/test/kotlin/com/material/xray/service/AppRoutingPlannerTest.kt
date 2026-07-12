@@ -258,7 +258,6 @@ class AppRoutingPlannerTest {
             icon = null,
             systemApp = false,
             profileId = 0,
-            profileLabel = "Personal",
             workProfile = false,
         )
 

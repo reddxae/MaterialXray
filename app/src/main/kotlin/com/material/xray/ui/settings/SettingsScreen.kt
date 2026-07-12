@@ -66,12 +66,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.material.xray.R
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
@@ -80,6 +84,8 @@ import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.components.ScrolledTopAppBar
+import com.material.xray.ui.text.descriptionResource
+import com.material.xray.ui.text.labelResource
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collect
 
@@ -109,6 +115,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
     val xrayCoreVersion by viewModel.xrayCoreVersion.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scrollState = rememberScrollState()
     var defaultOutboundExpanded by remember { mutableStateOf(false) }
     var logLevelExpanded by remember { mutableStateOf(false) }
@@ -123,8 +130,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val appVersion = remember(context) {
         runCatching {
             @Suppress("DEPRECATION")
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
-        }.getOrDefault("unknown")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull()
     }
 
     var editingTunName by remember(tunName) { mutableStateOf(tunName) }
@@ -162,9 +169,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { viewModel.importBackup(it) } }
 
-    LaunchedEffect(viewModel, context) {
+    LaunchedEffect(viewModel, context, resources) {
         viewModel.assetUpdateEvents.collect { message ->
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            val text = message.detail?.let { detail ->
+                resources.getString(message.messageResId, detail)
+            } ?: resources.getString(message.messageResId)
+            Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -187,7 +197,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             ScrolledTopAppBar(
-                title = "Settings",
+                title = stringResource(R.string.settings_title),
                 scrollBehavior = topAppBarScrollBehavior,
             )
         },
@@ -211,10 +221,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
 
             HorizontalDivider()
-            Text("Routing", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_section_routing), style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SettingsNestedSection(title = "Connectivity") {
+                SettingsNestedSection(title = stringResource(R.string.settings_connectivity_title)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -230,9 +240,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Bypass LAN", style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(R.string.settings_bypass_lan_title), style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                "Route private IPs and LAN domains directly",
+                                stringResource(R.string.settings_bypass_lan_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -255,13 +265,16 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Allow IPv6 connections", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                stringResource(R.string.settings_allow_ipv6_connections),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
                         }
                         Switch(checked = allowIpv6, onCheckedChange = null)
                     }
                 }
 
-                SettingsNestedSection(title = "Routing policy") {
+                SettingsNestedSection(title = stringResource(R.string.settings_routing_policy_title)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         RoutingPolicyControl.entries.forEach { policy ->
                             Row(
@@ -279,9 +292,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(policy.label, style = MaterialTheme.typography.bodyLarge)
+                                    Text(stringResource(policy.labelResource), style = MaterialTheme.typography.bodyLarge)
                                     Text(
-                                        policy.description,
+                                        stringResource(policy.descriptionResource),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -297,7 +310,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             HorizontalDivider()
-            Text("Network", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_section_network), style = MaterialTheme.typography.titleMedium)
 
             RootTunNameSetting(
                 visible = rootServiceActive,
@@ -313,11 +326,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     onExpandedChange = { defaultOutboundExpanded = it },
                 ) {
                     OutlinedTextField(
-                        value = defaultOutbound.label,
+                        value = stringResource(defaultOutbound.labelResource),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Default Outbound") },
-                        supportingText = { Text(defaultOutbound.description) },
+                        label = { Text(stringResource(R.string.settings_default_outbound_label)) },
+                        supportingText = { Text(stringResource(defaultOutbound.descriptionResource)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = defaultOutboundExpanded) },
                         modifier = Modifier
                             .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
@@ -331,9 +344,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                             DropdownMenuItem(
                                 text = {
                                     Column {
-                                        Text(outbound.label)
+                                        Text(stringResource(outbound.labelResource))
                                         Text(
-                                            outbound.description,
+                                            stringResource(outbound.descriptionResource),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -352,40 +365,46 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             OutlinedTextField(
                 value = editingDns,
                 onValueChange = { editingDns = it },
-                label = { Text("DNS Servers") },
-                placeholder = { Text("Leave empty to use system DNS") },
+                label = { Text(stringResource(R.string.settings_dns_servers_label)) },
+                placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Comma-separated, e.g. 1.1.1.1,1.0.0.1") },
+                supportingText = { Text(stringResource(R.string.settings_dns_servers_supporting_text)) },
             )
             if (hasDnsChanges) {
-                Button(onClick = { viewModel.setDnsServers(editingDns) }) { Text("Save") }
+                Button(onClick = { viewModel.setDnsServers(editingDns) }) {
+                    Text(stringResource(R.string.settings_save))
+                }
             }
 
             OutlinedTextField(
                 value = editingDomesticDns,
                 onValueChange = { editingDomesticDns = it },
-                label = { Text("Domestic DNS") },
-                placeholder = { Text("Leave empty to use system DNS") },
+                label = { Text(stringResource(R.string.settings_domestic_dns_label)) },
+                placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Used for direct domestic domains, e.g. 77.88.8.8,77.88.8.1") },
+                supportingText = { Text(stringResource(R.string.settings_domestic_dns_supporting_text)) },
             )
             if (hasDomesticDnsChanges) {
-                Button(onClick = { viewModel.setDomesticDnsServers(editingDomesticDns) }) { Text("Save") }
+                Button(onClick = { viewModel.setDomesticDnsServers(editingDomesticDns) }) {
+                    Text(stringResource(R.string.settings_save))
+                }
             }
 
             OutlinedTextField(
                 value = editingLatencyDns,
                 onValueChange = { editingLatencyDns = it },
-                label = { Text("Latency DNS Servers") },
-                placeholder = { Text("Leave empty to use system DNS") },
+                label = { Text(stringResource(R.string.settings_latency_dns_servers_label)) },
+                placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Used only for node latency checks, e.g. 77.88.8.8,77.88.8.1") },
+                supportingText = { Text(stringResource(R.string.settings_latency_dns_servers_supporting_text)) },
             )
             if (hasLatencyDnsChanges) {
-                Button(onClick = { viewModel.setLatencyDnsServers(editingLatencyDns) }) { Text("Save") }
+                Button(onClick = { viewModel.setLatencyDnsServers(editingLatencyDns) }) {
+                    Text(stringResource(R.string.settings_save))
+                }
             }
 
             if (showAdvancedOptions) {
@@ -394,11 +413,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     onExpandedChange = { logLevelExpanded = it },
                 ) {
                     OutlinedTextField(
-                        value = xrayLogLevel.label,
+                        value = stringResource(xrayLogLevel.labelResource),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Xray Log Level") },
-                        supportingText = { Text("Default: error") },
+                        label = { Text(stringResource(R.string.settings_xray_log_level_label)) },
+                        supportingText = {
+                            Text(
+                                stringResource(
+                                    R.string.settings_default_value,
+                                    stringResource(XrayLogLevel.default.labelResource),
+                                ),
+                            )
+                        },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = logLevelExpanded) },
                         modifier = Modifier
                             .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
@@ -410,7 +436,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     ) {
                         XrayLogLevel.entries.forEach { level ->
                             DropdownMenuItem(
-                                text = { Text(level.label) },
+                                text = { Text(stringResource(level.labelResource)) },
                                 onClick = {
                                     logLevelExpanded = false
                                     viewModel.setXrayLogLevel(level)
@@ -424,64 +450,78 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             OutlinedTextField(
                 value = editingGeoipUrl,
                 onValueChange = { editingGeoipUrl = it },
-                label = { Text("GeoIP URL") },
+                label = { Text(stringResource(R.string.settings_geoip_url_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = {
-                    Text("Direct URL for the geoip.dat download")
+                    Text(stringResource(R.string.settings_geoip_url_supporting_text))
                 },
             )
             if (hasGeoipUrlChanges) {
-                Button(onClick = { viewModel.setGeoipUrl(editingGeoipUrl) }) { Text("Save") }
+                Button(onClick = { viewModel.setGeoipUrl(editingGeoipUrl) }) {
+                    Text(stringResource(R.string.settings_save))
+                }
             }
             OutlinedButton(
                 onClick = { viewModel.updateGeoipAsset(editingGeoipUrl) },
                 enabled = !geoipUpdating,
             ) {
-                Text(if (geoipUpdating) "Updating..." else "Update")
+                Text(
+                    stringResource(
+                        if (geoipUpdating) R.string.settings_updating else R.string.settings_update,
+                    ),
+                )
             }
 
             OutlinedTextField(
                 value = editingGeositeUrl,
                 onValueChange = { editingGeositeUrl = it },
-                label = { Text("GeoSite URL") },
+                label = { Text(stringResource(R.string.settings_geosite_url_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 supportingText = {
-                    Text("Direct URL for the geosite.dat download")
+                    Text(stringResource(R.string.settings_geosite_url_supporting_text))
                 },
             )
             if (hasGeositeUrlChanges) {
-                Button(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) { Text("Save") }
+                Button(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) {
+                    Text(stringResource(R.string.settings_save))
+                }
             }
             OutlinedButton(
                 onClick = { viewModel.updateGeositeAsset(editingGeositeUrl) },
                 enabled = !geositeUpdating,
             ) {
-                Text(if (geositeUpdating) "Updating..." else "Update")
+                Text(
+                    stringResource(
+                        if (geositeUpdating) R.string.settings_updating else R.string.settings_update,
+                    ),
+                )
             }
 
             if (showAdvancedOptions) {
                 OutlinedTextField(
                     value = editingLatencyCheckUrl,
                     onValueChange = { editingLatencyCheckUrl = it },
-                    label = { Text("Latency Check URL") },
+                    label = { Text(stringResource(R.string.settings_latency_check_url_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = {
-                        Text("HTTP endpoint used for node latency checks")
+                        Text(stringResource(R.string.settings_latency_check_url_supporting_text))
                     },
                 )
                 if (hasLatencyCheckUrlChanges) {
-                    Button(onClick = { viewModel.setLatencyCheckUrl(editingLatencyCheckUrl) }) { Text("Save") }
+                    Button(onClick = { viewModel.setLatencyCheckUrl(editingLatencyCheckUrl) }) {
+                        Text(stringResource(R.string.settings_save))
+                    }
                 }
             }
 
             HorizontalDivider()
-            Text("Appearance", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SettingsNestedSection(title = "Notification") {
+                SettingsNestedSection(title = stringResource(R.string.settings_notification_title)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -497,7 +537,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Customize service notification", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                stringResource(R.string.settings_customize_service_notification),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
                         }
                         Switch(
                             checked = notificationSettings.enabled,
@@ -507,24 +550,28 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
                     if (notificationSettings.enabled) {
                         SettingsActionRow(
-                            title = "Configure fields",
+                            title = stringResource(R.string.settings_configure_notification_fields),
                             subtitle = notificationFieldSummary(notificationSettings),
                             onClick = { showNotificationFieldsDialog = true },
                         )
                         SettingsActionRow(
-                            title = "Field style",
-                            subtitle = notificationSettings.style.label,
+                            title = stringResource(R.string.settings_notification_field_style),
+                            subtitle = stringResource(notificationSettings.style.labelResource),
                             onClick = { showFieldStyleDialog = true },
                         )
                         SettingsActionRow(
-                            title = "Update frequency",
-                            subtitle = "Every ${notificationSettings.updateIntervalMs} ms",
+                            title = stringResource(R.string.settings_notification_update_frequency),
+                            subtitle = pluralStringResource(
+                                R.plurals.settings_notification_update_frequency_summary,
+                                notificationSettings.updateIntervalMs,
+                                notificationSettings.updateIntervalMs,
+                            ),
                             onClick = { showUpdateFrequencyDialog = true },
                         )
                     }
                 }
 
-                SettingsNestedSection(title = "App icon") {
+                SettingsNestedSection(title = stringResource(R.string.settings_app_icon_title)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         LauncherIcon.entries.forEach { icon ->
                             Row(
@@ -542,7 +589,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(icon.label, style = MaterialTheme.typography.bodyLarge)
+                                    Text(stringResource(icon.labelResource), style = MaterialTheme.typography.bodyLarge)
                                 }
                                 RadioButton(
                                     selected = icon == launcherIcon,
@@ -555,7 +602,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             HorizontalDivider()
-            Text("Settings", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
@@ -573,9 +620,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Send hardware ID (HWID)", style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.settings_send_hardware_id_title), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Include a stable x-hwid header so providers can recognise this device",
+                            stringResource(R.string.settings_send_hardware_id_description),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -613,7 +660,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Show advanced options", style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.settings_show_advanced_options), style = MaterialTheme.typography.bodyLarge)
                     }
                     Switch(
                         checked = showAdvancedOptions,
@@ -623,16 +670,27 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             HorizontalDivider()
-            Text("Data", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.settings_section_data), style = MaterialTheme.typography.titleMedium)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { exportLauncher.launch("material-xray-backup.json") }) { Text("Export") }
-                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) { Text("Import") }
+                OutlinedButton(onClick = { exportLauncher.launch("material-xray-backup.json") }) {
+                    Text(stringResource(R.string.settings_export))
+                }
+                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) {
+                    Text(stringResource(R.string.settings_import))
+                }
             }
 
             HorizontalDivider()
-            Text("About", style = MaterialTheme.typography.titleMedium)
-            Text("Material Xray v$appVersion", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.settings_section_about), style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = if (appVersion == null) {
+                    stringResource(R.string.settings_app_version_unknown, stringResource(R.string.app_name))
+                } else {
+                    stringResource(R.string.settings_app_version, stringResource(R.string.app_name), appVersion)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Text(xrayCoreVersionText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -692,7 +750,7 @@ private fun SettingsServiceSection(
     onUseRootServiceChange: (Boolean) -> Unit,
     onAutoConnectChange: (Boolean) -> Unit,
 ) {
-    Text("Service", style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.settings_section_service), style = MaterialTheme.typography.titleMedium)
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
@@ -712,7 +770,7 @@ private fun SettingsServiceSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Use root service",
+                    stringResource(R.string.settings_use_root_service),
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (rootAvailable == false) {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -722,7 +780,7 @@ private fun SettingsServiceSection(
                 )
                 if (rootAvailable == false) {
                     Text(
-                        "Unavailable",
+                        stringResource(R.string.settings_unavailable),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -752,7 +810,7 @@ private fun SettingsServiceSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Auto-connect on boot",
+                    stringResource(R.string.settings_auto_connect_on_boot),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
@@ -809,10 +867,10 @@ private fun SettingsDialogs(
     if (showRootAccessDeniedDialog) {
         AlertDialog(
             onDismissRequest = onDismissRootAccessDenied,
-            text = { Text("Unable to access root on device") },
+            text = { Text(stringResource(R.string.settings_root_access_denied)) },
             confirmButton = {
                 Button(onClick = onDismissRootAccessDenied) {
-                    Text("OK")
+                    Text(stringResource(R.string.settings_ok))
                 }
             },
         )
@@ -847,10 +905,11 @@ private fun SettingsDialogs(
     }
 }
 
+@Composable
 private fun xrayCoreVersionText(xrayCoreVersion: String?): String = when (xrayCoreVersion) {
-    null -> "xray-core version detecting..."
-    "unknown" -> "xray-core version unknown"
-    else -> "xray-core v$xrayCoreVersion"
+    null -> stringResource(R.string.settings_xray_core_version_detecting)
+    "unknown" -> stringResource(R.string.settings_xray_core_version_unknown)
+    else -> stringResource(R.string.settings_xray_core_version, xrayCoreVersion)
 }
 
 @Composable
@@ -866,13 +925,13 @@ private fun RootTunNameSetting(
     OutlinedTextField(
         value = editingTunName,
         onValueChange = onEditingTunNameChange,
-        label = { Text("TUN Interface Name") },
+        label = { Text(stringResource(R.string.settings_tun_interface_name_label)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
-        supportingText = { Text("Default: xray0") },
+        supportingText = { Text(stringResource(R.string.settings_tun_interface_name_default, "xray0")) },
     )
     if (hasTunNameChanges) {
-        Button(onClick = onSave) { Text("Save") }
+        Button(onClick = onSave) { Text(stringResource(R.string.settings_save)) }
     }
 }
 
@@ -926,7 +985,7 @@ private fun FieldStyleDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Field style") },
+        title = { Text(stringResource(R.string.settings_notification_field_style)) },
         text = {
             Column {
                 NotificationStyle.entries.forEach { style ->
@@ -950,9 +1009,9 @@ private fun FieldStyleDialog(
                             },
                         )
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(style.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(style.labelResource), style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                style.description,
+                                stringResource(style.descriptionResource),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -962,7 +1021,7 @@ private fun FieldStyleDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_done)) }
         },
     )
 }
@@ -980,20 +1039,24 @@ private fun UpdateFrequencyDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Update frequency") },
+        title = { Text(stringResource(R.string.settings_notification_update_frequency)) },
         text = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { value -> text = value.filter(Char::isDigit).take(4) },
                 singleLine = true,
                 isError = text.isNotEmpty() && !isValid,
-                suffix = { Text("ms") },
+                suffix = { Text(stringResource(R.string.settings_milliseconds_abbreviation)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 supportingText = {
                     Text(
-                        "Range: ${NotificationSettings.MIN_UPDATE_INTERVAL_MS}-" +
-                            "${NotificationSettings.MAX_UPDATE_INTERVAL_MS} ms · Default: " +
-                            "${NotificationSettings.DEFAULT_UPDATE_INTERVAL_MS} ms",
+                        stringResource(
+                            R.string.settings_update_frequency_range,
+                            NotificationSettings.MIN_UPDATE_INTERVAL_MS,
+                            NotificationSettings.MAX_UPDATE_INTERVAL_MS,
+                            NotificationSettings.DEFAULT_UPDATE_INTERVAL_MS,
+                            stringResource(R.string.settings_milliseconds_abbreviation),
+                        ),
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -1003,10 +1066,10 @@ private fun UpdateFrequencyDialog(
             TextButton(
                 onClick = { parsed?.let(onConfirm) },
                 enabled = isValid,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.settings_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
         },
     )
 }
@@ -1022,11 +1085,11 @@ private fun NotificationFieldsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Notification fields") },
+        title = { Text(stringResource(R.string.settings_notification_fields_title)) },
         text = {
             Column {
                 Text(
-                    "Drag the handle to reorder how fields appear in the notification.",
+                    stringResource(R.string.settings_notification_fields_reorder_instructions),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp),
@@ -1040,7 +1103,7 @@ private fun NotificationFieldsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_done)) }
         },
     )
 }
@@ -1087,7 +1150,7 @@ private fun ReorderableFieldList(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.DragIndicator,
-                        contentDescription = "Drag to reorder",
+                        contentDescription = stringResource(R.string.settings_drag_to_reorder),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .padding(end = 4.dp)
@@ -1130,9 +1193,9 @@ private fun ReorderableFieldList(
                             },
                     )
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(field.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(field.labelResource), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            field.description,
+                            stringResource(field.descriptionResource),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1147,9 +1210,14 @@ private fun ReorderableFieldList(
     }
 }
 
+@Composable
 private fun notificationFieldSummary(settings: NotificationSettings): String {
     val enabledFields = settings.normalizedFieldOrder()
         .filter(settings::isFieldEnabled)
-        .map(NotificationField::label)
-    return if (enabledFields.isEmpty()) "No custom fields selected" else enabledFields.joinToString(" • ")
+        .map { stringResource(it.labelResource) }
+    return if (enabledFields.isEmpty()) {
+        stringResource(R.string.settings_no_custom_notification_fields)
+    } else {
+        enabledFields.joinToString(stringResource(R.string.settings_notification_field_separator))
+    }
 }

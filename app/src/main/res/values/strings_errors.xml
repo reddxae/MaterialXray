@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_unknown">Unknown error</string>
+    <string name="connection_error_missing_process_id">Could not determine Xray process ID after launch</string>
+    <string name="connection_error_root_access_denied">Root access denied</string>
+    <string name="connection_error_vpn_permission_required">VPN permission is required</string>
+    <string name="connection_error_vpn_interface">Could not establish VPN interface</string>
+    <string name="connection_error_xray_binary_not_found">Xray binary not found</string>
+    <string name="connection_error_physical_route_not_found">Could not detect physical network route for Xray bypass</string>
+    <string name="connection_error_server_address_unresolved">Could not resolve %1$s before starting Xray</string>
+    <string name="connection_error_xray_crashed">Xray crashed: %1$s</string>
+    <string name="connection_error_tun_timeout">TUN interface %1$s did not come up within the time limit</string>
+    <string name="connection_error_apply_ip_routing">Failed to apply IP routing: %1$s</string>
+</resources>

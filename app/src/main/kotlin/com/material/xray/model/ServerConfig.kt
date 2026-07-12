@@ -41,9 +41,8 @@ data class ServerConfig(
 }
 
 fun ServerConfig.endpointSummary(): String {
-    val proxyOutboundCount = extra[SERVER_EXTRA_PROXY_OUTBOUND_COUNT]?.toIntOrNull()
-        ?: rawConfigJson.proxyOutboundCountOrNull()
-    if (proxyOutboundCount != null && proxyOutboundCount > 1) {
+    val proxyOutboundCount = proxyOutboundCount()
+    if (proxyOutboundCount != null) {
         return "multiconnect${PROXY_CONFIG_SEPARATOR}$proxyOutboundCount outbounds"
     }
 
@@ -57,6 +56,11 @@ fun ServerConfig.endpointSummary(): String {
         ),
     )
 }
+
+fun ServerConfig.proxyOutboundCount(): Int? = (
+    extra[SERVER_EXTRA_PROXY_OUTBOUND_COUNT]?.toIntOrNull()
+        ?: rawConfigJson.proxyOutboundCountOrNull()
+    )?.takeIf { it > 1 }
 
 internal data class ProxyConfigDisplay(
     val protocol: String,

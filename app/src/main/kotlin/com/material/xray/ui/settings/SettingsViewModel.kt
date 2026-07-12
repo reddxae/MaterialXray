@@ -2,8 +2,10 @@ package com.material.xray.ui.settings
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.material.xray.R
 import com.material.xray.core.app.appKey
 import com.material.xray.core.app.parseAppKey
 import com.material.xray.core.launcher.LauncherIconManager
@@ -55,6 +57,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+data class AssetUpdateMessage(
+    @param:StringRes val messageResId: Int,
+    val detail: String? = null,
+)
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -77,7 +84,7 @@ class SettingsViewModel @Inject constructor(
     }
     private val _geoipUpdating = MutableStateFlow(false)
     private val _geositeUpdating = MutableStateFlow(false)
-    private val _assetUpdateEvents = MutableSharedFlow<String>()
+    private val _assetUpdateEvents = MutableSharedFlow<AssetUpdateMessage>()
     private val _rootAccessDeniedEvents = MutableSharedFlow<Unit>()
     private val _rootAvailable = MutableStateFlow<Boolean?>(null)
     private val _xrayCoreVersion = MutableStateFlow<String?>(null)
@@ -157,7 +164,7 @@ class SettingsViewModel @Inject constructor(
     )
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
-    val assetUpdateEvents: SharedFlow<String> = _assetUpdateEvents.asSharedFlow()
+    val assetUpdateEvents: SharedFlow<AssetUpdateMessage> = _assetUpdateEvents.asSharedFlow()
     val rootAccessDeniedEvents: SharedFlow<Unit> = _rootAccessDeniedEvents.asSharedFlow()
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
     val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
@@ -283,7 +290,7 @@ class SettingsViewModel @Inject constructor(
             url = url,
             setUrl = settingsRepo::setGeoipUrl,
             updating = _geoipUpdating,
-            successMessage = "GeoIP updated",
+            successMessageResId = R.string.settings_geoip_updated,
         )
     }
 
@@ -293,7 +300,7 @@ class SettingsViewModel @Inject constructor(
             url = url,
             setUrl = settingsRepo::setGeositeUrl,
             updating = _geositeUpdating,
-            successMessage = "GeoSite updated",
+            successMessageResId = R.string.settings_geosite_updated,
         )
     }
 
@@ -384,7 +391,7 @@ class SettingsViewModel @Inject constructor(
         url: String,
         setUrl: suspend (String) -> Unit,
         updating: MutableStateFlow<Boolean>,
-        successMessage: String,
+        @StringRes successMessageResId: Int,
     ) {
         if (updating.value) return
         viewModelScope.launch {
@@ -393,10 +400,14 @@ class SettingsViewModel @Inject constructor(
                 setUrl(url)
                 geoDataManager.refresh(asset)
             }.onSuccess {
-                _assetUpdateEvents.emit(successMessage)
+                _assetUpdateEvents.emit(AssetUpdateMessage(successMessageResId))
                 reloadActiveConnectionIfConnected()
             }.onFailure { error ->
-                _assetUpdateEvents.emit(error.message ?: "Update failed")
+                _assetUpdateEvents.emit(
+                    error.message?.let { detail ->
+                        AssetUpdateMessage(R.string.settings_asset_update_failed_with_detail, detail)
+                    } ?: AssetUpdateMessage(R.string.settings_asset_update_failed),
+                )
             }
             updating.value = false
         }

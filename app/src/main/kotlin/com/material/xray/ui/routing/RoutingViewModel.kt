@@ -29,7 +29,7 @@ class RoutingViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepository.routingPolicyControl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
-    val automaticRoutingProviderName: StateFlow<String> = combine(
+    val automaticRoutingProviderName: StateFlow<String?> = combine(
         settingsRepository.lastServerId,
         serverRepository.observeAll(),
         subscriptionDao.observeAll(),
@@ -37,11 +37,10 @@ class RoutingViewModel @Inject constructor(
         val subscriptionId = servers.firstOrNull { it.id == selectedServerId }?.subscriptionId
         subscriptions.firstOrNull { it.id == subscriptionId }?.name?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?: "the selected subscription"
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
-        "the selected subscription",
+        null,
     )
 
     fun updateRule(rule: RoutingRule) {

@@ -1,5 +1,6 @@
 package com.material.xray.ui.apps
 
+import android.content.Context
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -55,10 +56,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.material.xray.R
 import com.material.xray.model.RoutingPolicyControl
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +80,7 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     val appSpecificServerNoteShown by viewModel.appSpecificServerNoteShown.collectAsStateWithLifecycle()
     val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
     val automaticRoutingProviderName by viewModel.automaticRoutingProviderName.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val density = LocalDensity.current
     val iconSize = 40.dp
     val iconPixelSize = remember(density) { with(density) { iconSize.roundToPx() } }
@@ -129,7 +132,7 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.setSearchQuery(it) },
-                label = { Text("Search apps") },
+                label = { Text(stringResource(R.string.apps_search)) },
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -149,7 +152,11 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                             supportingContent = {
                                 Text(
                                     text = if (app.workProfile) {
-                                        "${app.packageName} • ${app.profileLabel}"
+                                        stringResource(
+                                            R.string.apps_package_with_profile,
+                                            app.packageName,
+                                            stringResource(R.string.apps_work_profile_label),
+                                        )
                                     } else {
                                         app.packageName
                                     },
@@ -175,7 +182,7 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
                                     modifier = Modifier.width(176.dp),
                                 ) {
                                     Text(
-                                        text = app.routeTitle,
+                                        text = app.routeTitle.resolve(context),
                                         style = MaterialTheme.typography.labelLarge,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis,
@@ -265,7 +272,7 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun SubscriptionRoutingBanner(providerName: String) {
+private fun SubscriptionRoutingBanner(providerName: String?) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -285,7 +292,9 @@ private fun SubscriptionRoutingBanner(providerName: String) {
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                text = "App routing is managed by $providerName",
+                text = providerName?.let {
+                    stringResource(R.string.apps_routing_managed_by_provider, it)
+                } ?: stringResource(R.string.apps_routing_managed_by_selected_subscription),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -326,25 +335,25 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
             onClick = { viewModel.refreshApps() },
             enabled = !isLoadingApps,
         ) {
-            Icon(Icons.Default.Refresh, contentDescription = "Refresh apps")
+            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.apps_refresh))
         }
         Box {
             IconButton(onClick = { appRoutingMenuExpanded = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "App routing menu")
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.apps_routing_menu))
             }
             DropdownMenu(
                 expanded = appRoutingMenuExpanded,
                 onDismissRequest = { appRoutingMenuExpanded = false },
             ) {
                 DropdownMenuItem(
-                    text = { Text("Reset to defaults") },
+                    text = { Text(stringResource(R.string.apps_reset_to_defaults)) },
                     onClick = {
                         appRoutingMenuExpanded = false
                         requestBulkAction(BulkAppRouteAction.ResetToDefaults)
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("Bypass all apps") },
+                    text = { Text(stringResource(R.string.apps_bypass_all)) },
                     onClick = {
                         appRoutingMenuExpanded = false
                         requestBulkAction(BulkAppRouteAction.BypassAllApps)
@@ -352,7 +361,7 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
                 )
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { Text("Show system apps") },
+                    text = { Text(stringResource(R.string.apps_show_system)) },
                     trailingIcon = {
                         Checkbox(
                             checked = showSystemApps,
@@ -365,7 +374,7 @@ fun AppRoutingMenuActions(viewModel: AppsViewModel = hiltViewModel()) {
                 )
                 if (hasWorkProfileApps) {
                     DropdownMenuItem(
-                        text = { Text("Show work profile apps") },
+                        text = { Text(stringResource(R.string.apps_show_work_profile)) },
                         trailingIcon = {
                             Checkbox(
                                 checked = showWorkProfileApps,
@@ -418,7 +427,7 @@ private data class AppRouteSelection(
 
 @Composable
 private fun AutomaticRoutingDialog(
-    providerName: String,
+    providerName: String?,
     onDismiss: () -> Unit,
     onSwitchToManual: () -> Unit,
 ) {
@@ -426,20 +435,16 @@ private fun AutomaticRoutingDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "App routing is automatic",
+                text = stringResource(R.string.apps_routing_automatic_title),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
         },
         text = {
             Text(
-                buildAnnotatedString {
-                    append("Your current app routing rules are provided by ")
-                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                    append(providerName)
-                    pop()
-                    append(" and are updated automatically. Editing them will disable automatic updates.")
-                },
+                providerName?.let {
+                    stringResource(R.string.apps_routing_automatic_provider_description, it)
+                } ?: stringResource(R.string.apps_routing_automatic_selected_subscription_description),
             )
         },
         confirmButton = {
@@ -452,14 +457,14 @@ private fun AutomaticRoutingDialog(
                     shape = CircleShape,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Switch to manual mode")
+                    Text(stringResource(R.string.apps_switch_to_manual_mode))
                 }
                 OutlinedButton(
                     onClick = onDismiss,
                     shape = CircleShape,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Leave as is")
+                    Text(stringResource(R.string.apps_leave_as_is))
                 }
             }
         },
@@ -473,21 +478,18 @@ private fun SpecificServerRouteNoteDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Specific server routing") },
+        title = { Text(stringResource(R.string.apps_specific_server_routing_title)) },
         text = {
-            Text(
-                "Custom routing rules are not applied when an app is routed to a specific server. " +
-                    "Use Default outbound or Default selected server to keep Routing rules active.",
-            )
+            Text(stringResource(R.string.apps_specific_server_routing_description))
         },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("OK")
+                Text(stringResource(R.string.apps_ok))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.apps_cancel))
             }
         },
     )
@@ -500,18 +502,12 @@ private fun BulkAppRouteConfirmationDialog(
     onConfirm: () -> Unit,
 ) {
     val title = when (action) {
-        BulkAppRouteAction.ResetToDefaults -> "Reset to defaults?"
-        BulkAppRouteAction.BypassAllApps -> "Bypass all apps?"
+        BulkAppRouteAction.ResetToDefaults -> stringResource(R.string.apps_reset_to_defaults_title)
+        BulkAppRouteAction.BypassAllApps -> stringResource(R.string.apps_bypass_all_title)
     }
     val description = when (action) {
-        BulkAppRouteAction.ResetToDefaults -> buildBulkActionDescription(
-            prefix = "All apps routing settings will be ",
-            emphasized = "reset to the default selected config.",
-        )
-        BulkAppRouteAction.BypassAllApps -> buildBulkActionDescription(
-            prefix = "All apps routing settings will be ",
-            emphasized = "set to \"Not proxied\".",
-        )
+        BulkAppRouteAction.ResetToDefaults -> stringResource(R.string.apps_reset_to_defaults_description)
+        BulkAppRouteAction.BypassAllApps -> stringResource(R.string.apps_bypass_all_description)
     }
 
     AlertDialog(
@@ -520,25 +516,15 @@ private fun BulkAppRouteConfirmationDialog(
         text = { Text(description) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("OK")
+                Text(stringResource(R.string.apps_ok))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.apps_cancel))
             }
         },
     )
-}
-
-private fun buildBulkActionDescription(
-    prefix: String,
-    emphasized: String,
-) = buildAnnotatedString {
-    append(prefix)
-    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-    append(emphasized)
-    pop()
 }
 
 @Composable
@@ -549,6 +535,7 @@ private fun AppRoutePickerDialog(
     onDismiss: () -> Unit,
     onSelected: (AppRouteOption) -> Unit,
 ) {
+    val context = LocalContext.current
     var query by remember(app.appKey) { mutableStateOf("") }
     val filteredOptions by remember(routeOptions, query) {
         derivedStateOf {
@@ -557,8 +544,8 @@ private fun AppRoutePickerDialog(
                 routeOptions
             } else {
                 routeOptions.filter { option ->
-                    option.title.contains(trimmed, ignoreCase = true) ||
-                        option.description.contains(trimmed, ignoreCase = true)
+                    option.title.resolve(context).contains(trimmed, ignoreCase = true) ||
+                        option.description.resolve(context).contains(trimmed, ignoreCase = true)
                 }
             }
         }
@@ -574,17 +561,17 @@ private fun AppRoutePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.apps_close))
             }
         },
-        title = { Text("Route ${app.name}") },
+        title = { Text(stringResource(R.string.apps_route_title, app.name)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (routeOptions.size > 8) {
                     OutlinedTextField(
                         value = query,
                         onValueChange = { query = it },
-                        label = { Text("Search configurations") },
+                        label = { Text(stringResource(R.string.apps_search_configurations)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -635,6 +622,7 @@ private fun RouteOptionRow(
     selected: Boolean,
     onSelected: () -> Unit,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -654,11 +642,11 @@ private fun RouteOptionRow(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = option.title,
+                text = option.title.resolve(context),
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             )
             Text(
-                text = option.description,
+                text = option.description.resolve(context),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -685,4 +673,14 @@ private fun RouteOptionIndicator(selected: Boolean) {
             )
         }
     }
+}
+
+private fun AppRouteText.resolve(context: Context): String = when (this) {
+    is AppRouteText.Resource -> context.getString(resourceId, *arguments.toTypedArray())
+    is AppRouteText.PluralResource -> context.resources.getQuantityString(
+        resourceId,
+        quantity,
+        *arguments.toTypedArray(),
+    )
+    is AppRouteText.Raw -> value
 }

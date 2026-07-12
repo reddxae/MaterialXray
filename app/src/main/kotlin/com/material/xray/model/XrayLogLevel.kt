@@ -2,13 +2,12 @@ package com.material.xray.model
 
 enum class XrayLogLevel(
     val value: String,
-    val label: String,
 ) {
-    Debug("debug", "debug"),
-    Info("info", "info"),
-    Warning("warning", "warning"),
-    Error("error", "error"),
-    None("none", "none"),
+    Debug("debug"),
+    Info("info"),
+    Warning("warning"),
+    Error("error"),
+    None("none"),
     ;
 
     companion object {

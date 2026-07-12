@@ -21,7 +21,6 @@ data class InstalledApp(
     val icon: Drawable?,
     val systemApp: Boolean,
     val profileId: Int,
-    val profileLabel: String,
     val workProfile: Boolean,
 )
 
@@ -126,7 +125,6 @@ class AppInventory @Inject constructor(
             icon = badgedIcon,
             systemApp = flags and ApplicationInfo.FLAG_SYSTEM != 0,
             profileId = profileId,
-            profileLabel = if (workProfile) "Work profile" else "Personal",
             workProfile = workProfile,
         )
     }

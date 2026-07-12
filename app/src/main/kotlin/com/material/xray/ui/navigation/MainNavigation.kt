@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -94,19 +95,20 @@ fun MainNavigation() {
                 }
                 NavigationBar {
                     navigationScreens.forEach { screen ->
+                        val label = stringResource(screen.labelRes)
                         NavigationBarItem(
                             icon = {
                                 val icon = screen.icon
                                 if (icon != null) {
-                                    Icon(icon, contentDescription = screen.label)
+                                    Icon(icon, contentDescription = label)
                                 } else {
                                     Icon(
                                         painter = painterResource(requireNotNull(screen.iconRes)),
-                                        contentDescription = screen.label,
+                                        contentDescription = label,
                                     )
                                 }
                             },
-                            label = { Text(screen.label) },
+                            label = { Text(label) },
                             selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                             onClick = {
                                 navController.navigate(screen.route) {

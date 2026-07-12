@@ -84,8 +84,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -118,8 +121,11 @@ import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
+import com.material.xray.model.proxyOutboundCount
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
+import com.material.xray.ui.text.descriptionResource
+import com.material.xray.ui.text.labelResource
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -135,6 +141,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     var removeSubscriptionRequest by remember { mutableStateOf<Pair<SubscriptionEntity, Int>?>(null) }
     var showRootFallbackDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val unableToFetchLinkText = stringResource(R.string.home_unable_to_fetch_link)
+    val clipboardConfigLabel = stringResource(R.string.home_clipboard_xray_config_label)
     val lifecycleOwner = LocalLifecycleOwner.current
     val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
@@ -150,7 +158,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         if (granted) {
             showQrScanner = true
         } else {
-            Toast.makeText(context, "Unable to fetch link", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, unableToFetchLinkText, Toast.LENGTH_SHORT).show()
         }
     }
     val startRootlessConnection = {
@@ -164,7 +172,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val pasteFromClipboard = {
         val link = context.clipboardText()
         if (link == null) {
-            Toast.makeText(context, "Unable to fetch link", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, unableToFetchLinkText, Toast.LENGTH_SHORT).show()
         } else {
             viewModel.addLink(link)
         }
@@ -192,7 +200,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     LaunchedEffect(viewModel) {
         viewModel.uiEvents.collect { event ->
             when (event) {
-                is HomeUiEvent.Toast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                is HomeUiEvent.Toast -> Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -223,7 +231,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             ScrolledTopAppBar(
-                title = "Material Xray",
+                title = stringResource(R.string.app_name),
                 scrollBehavior = topAppBarScrollBehavior,
             )
         },
@@ -339,7 +347,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         onLinkScanned = { link ->
             val trimmed = link.trim()
             if (trimmed.isEmpty()) {
-                Toast.makeText(context, "Unable to fetch link", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, unableToFetchLinkText, Toast.LENGTH_SHORT).show()
             } else {
                 viewModel.addLink(trimmed)
             }
@@ -388,7 +396,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         onDismiss = viewModel::dismissRunningConfig,
         onCopy = {
             val clipboard = context.getSystemService(ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(ClipData.newPlainText("Xray config", uiState.runningConfig.orEmpty()))
+            clipboard?.setPrimaryClip(ClipData.newPlainText(clipboardConfigLabel, uiState.runningConfig.orEmpty()))
         },
     )
 }
@@ -463,15 +471,15 @@ private fun RootFallbackDialogHost(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        text = { Text("Unable to access root on device, falling back to rootless mode") },
+        text = { Text(stringResource(R.string.home_root_fallback_message)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text("Continue")
+                Text(stringResource(R.string.home_action_continue))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.home_action_cancel))
             }
         },
     )
@@ -565,7 +573,7 @@ private fun buildConnectionUiState(
         connectionState is ConnectionState.ApplyingRoutingChanges ||
         connectionState is ConnectionState.UpdatingRoutingData ||
         connectionState is ConnectionState.Disconnecting
-    val selectedServerName = selectedServer?.name ?: "No server selected"
+    val selectedServerName = selectedServer?.name ?: stringResource(R.string.home_no_server_selected)
 
     return ConnectionUiState(
         isConnected = isConnected,
@@ -578,8 +586,19 @@ private fun buildConnectionUiState(
             else -> MaterialTheme.colorScheme.primary
         },
         displayServerName = (connectionState as? ConnectionState.Connected)?.serverName ?: selectedServerName,
-        selectedServerDetail = selectedServer?.endpointSummary() ?: "Select a server below",
+        selectedServerDetail = selectedServer?.localizedEndpointSummary()
+            ?: stringResource(R.string.home_select_server_below),
     )
+}
+
+@Composable
+private fun ServerConfig.localizedEndpointSummary(): String {
+    val outboundCount = proxyOutboundCount()
+    return if (outboundCount == null) {
+        endpointSummary()
+    } else {
+        pluralStringResource(R.plurals.home_server_multiconnect_summary, outboundCount, outboundCount)
+    }
 }
 
 private data class HomeUiState(
@@ -638,15 +657,15 @@ private fun ConnectionPanel(
     ) {
         Text(
             text = when (connectionState) {
-                is ConnectionState.Connected -> "Connected"
-                is ConnectionState.Connecting -> "Connecting..."
-                ConnectionState.ApplyingRoutingChanges -> "Applying routing changes..."
-                ConnectionState.UpdatingRoutingData -> "Updating routing data..."
-                is ConnectionState.RestartRequired -> "Restart required"
-                is ConnectionState.InterfaceBusy -> "Interface busy"
-                is ConnectionState.Disconnecting -> "Disconnecting..."
-                is ConnectionState.Error -> "Error"
-                ConnectionState.Disconnected -> "Disconnected"
+                is ConnectionState.Connected -> stringResource(R.string.home_connection_connected)
+                is ConnectionState.Connecting -> stringResource(R.string.home_connection_connecting)
+                ConnectionState.ApplyingRoutingChanges -> stringResource(R.string.home_connection_applying_routing)
+                ConnectionState.UpdatingRoutingData -> stringResource(R.string.home_connection_updating_routing)
+                is ConnectionState.RestartRequired -> stringResource(R.string.home_connection_restart_required)
+                is ConnectionState.InterfaceBusy -> stringResource(R.string.home_connection_interface_busy)
+                is ConnectionState.Disconnecting -> stringResource(R.string.home_connection_disconnecting)
+                is ConnectionState.Error -> stringResource(R.string.home_connection_error)
+                ConnectionState.Disconnected -> stringResource(R.string.home_connection_disconnected)
             },
             style = MaterialTheme.typography.titleLarge,
             color = when {
@@ -661,8 +680,8 @@ private fun ConnectionPanel(
 
         Text(
             text = when {
-                isInterfaceBusy -> "The selected interface is currently in use by another client.\nClick the \"Restart\" button to shut it down and connect to the selected server."
-                isRestartRequired -> "The client has been relaunched; to regain control, click the Restart button."
+                isInterfaceBusy -> stringResource(R.string.home_connection_interface_busy_detail)
+                isRestartRequired -> stringResource(R.string.home_connection_restart_required_detail)
                 else -> selectedServerName
             },
             style = MaterialTheme.typography.titleMedium,
@@ -710,9 +729,9 @@ private fun ConnectionPanel(
                 } else {
                     Text(
                         text = when {
-                            isConnected -> "Stop"
-                            isRestartRequired || isInterfaceBusy -> "Restart"
-                            else -> "Start"
+                            isConnected -> stringResource(R.string.home_action_stop)
+                            isRestartRequired || isInterfaceBusy -> stringResource(R.string.home_action_restart)
+                            else -> stringResource(R.string.home_action_start)
                         },
                         style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
@@ -738,15 +757,15 @@ private fun RawConfigDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = onCopy) {
-                Text("Copy")
+                Text(stringResource(R.string.home_action_copy))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.home_action_close))
             }
         },
-        title = { Text("Active Xray Config") },
+        title = { Text(stringResource(R.string.home_active_xray_config_title)) },
         text = {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -793,9 +812,12 @@ private fun EmptySubscriptionsCard(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("No subscriptions yet", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Add a subscription to show servers here.",
+                stringResource(R.string.home_no_subscriptions_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                stringResource(R.string.home_no_subscriptions_message),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -822,14 +844,14 @@ private fun AddSubscriptionActionButton(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Add new server or subscription")
+            Text(stringResource(R.string.home_add_server_or_subscription))
         }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
             DropdownMenuItem(
-                text = { Text("Paste from clipboard") },
+                text = { Text(stringResource(R.string.home_paste_from_clipboard)) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(R.drawable.ic_content_paste_24),
@@ -842,7 +864,7 @@ private fun AddSubscriptionActionButton(
                 },
             )
             DropdownMenuItem(
-                text = { Text("Scan QR code") },
+                text = { Text(stringResource(R.string.home_scan_qr_code)) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(R.drawable.ic_qr_code_scanner_24),
@@ -855,7 +877,7 @@ private fun AddSubscriptionActionButton(
                 },
             )
             DropdownMenuItem(
-                text = { Text("Add manually") },
+                text = { Text(stringResource(R.string.home_add_manually)) },
                 leadingIcon = {
                     Icon(
                         painter = painterResource(R.drawable.ic_add_24),
@@ -888,14 +910,18 @@ private fun SubscriptionCard(
     onServerSelected: (Long) -> Unit,
     onTestLatency: (ServerEntity) -> Unit,
 ) {
+    val resources = LocalResources.current
+    val locale = resources.configuration.locales[0]
     val metadata = remember(
         subscription.announce,
         subscription.subscriptionUploadBytes,
         subscription.subscriptionDownloadBytes,
         subscription.subscriptionTotalBytes,
         subscription.subscriptionExpireAt,
+        subscription.autoUpdateIntervalHours,
+        locale,
     ) {
-        buildSubscriptionMetadataUiState(subscription)
+        buildSubscriptionMetadataUiState(subscription, resources)
     }
 
     ElevatedCard(
@@ -926,7 +952,7 @@ private fun SubscriptionCard(
 
             if (servers.isEmpty()) {
                 Text(
-                    "No servers in this subscription.",
+                    stringResource(R.string.home_no_servers_in_subscription),
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
@@ -959,6 +985,7 @@ private fun SubscriptionMetadataSection(
     subscription: SubscriptionEntity,
     metadata: SubscriptionMetadataUiState,
 ) {
+    val resources = LocalResources.current
     val limitedTraffic = metadata.traffic?.takeUnless { it.quotaText == null }
 
     val hasVisibleMetadata = metadata.announcement.isNotEmpty() ||
@@ -1002,7 +1029,7 @@ private fun SubscriptionMetadataSection(
                         SubscriptionTrafficProgress(state = trafficState)
                     }
 
-                    val detailText = limitedTraffic?.detailText(metadata.expiry)
+                    val detailText = limitedTraffic?.detailText(metadata.expiry, resources)
                     if (!detailText.isNullOrBlank()) {
                         SubscriptionTrafficText(
                             text = detailText,
@@ -1033,8 +1060,9 @@ private fun SubscriptionTrafficText(
     modifier: Modifier = Modifier,
     textAlign: TextAlign? = null,
 ) {
+    val expiredStatusText = stringResource(R.string.home_subscription_expired_inline)
     Text(
-        text = remember(text) { text.withMetadataEmphasis() },
+        text = remember(text, expiredStatusText) { text.withMetadataEmphasis(expiredStatusText) },
         modifier = modifier,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1052,7 +1080,7 @@ private fun SubscriptionTrafficProgress(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "0 GB",
+            text = stringResource(R.string.home_zero_gigabytes),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1091,6 +1119,7 @@ private fun SubscriptionHeader(
     val consumedTrafficText = metadata.traffic
         ?.takeIf { it.quotaText == null }
         ?.downloadText
+    val expiredStatusText = stringResource(R.string.home_subscription_expired_inline)
 
     Row(
         modifier = Modifier
@@ -1121,7 +1150,9 @@ private fun SubscriptionHeader(
             )
             if (!consumedTrafficText.isNullOrBlank()) {
                 Text(
-                    text = remember(consumedTrafficText) { consumedTrafficText.withMetadataEmphasis() },
+                    text = remember(consumedTrafficText, expiredStatusText) {
+                        consumedTrafficText.withMetadataEmphasis(expiredStatusText)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1130,7 +1161,13 @@ private fun SubscriptionHeader(
             }
         }
         IconButton(onClick = onRefresh) {
-            Icon(Icons.Default.Refresh, contentDescription = "Refresh ${subscription.name}")
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = stringResource(
+                    R.string.home_subscription_refresh_content_description,
+                    subscription.name,
+                ),
+            )
         }
         Box(
             modifier = Modifier
@@ -1145,16 +1182,23 @@ private fun SubscriptionHeader(
         ) {
             Icon(
                 Icons.Default.Speed,
-                contentDescription = "Test ${subscription.name} with ${defaultPingMethod.value}",
+                contentDescription = stringResource(
+                    R.string.home_subscription_test_content_description,
+                    subscription.name,
+                    defaultPingMethod.value,
+                ),
             )
         }
         Box {
             IconButton(onClick = { showMenu = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Subscription menu")
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = stringResource(R.string.home_subscription_menu_content_description),
+                )
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                 DropdownMenuItem(
-                    text = { Text("Edit") },
+                    text = { Text(stringResource(R.string.home_action_edit)) },
                     leadingIcon = {
                         Icon(painterResource(R.drawable.edit_24px), contentDescription = null)
                     },
@@ -1165,7 +1209,7 @@ private fun SubscriptionHeader(
                 )
                 if (supportUrl.isNotEmpty()) {
                     DropdownMenuItem(
-                        text = { Text("Support") },
+                        text = { Text(stringResource(R.string.home_action_support)) },
                         leadingIcon = {
                             Icon(painterResource(R.drawable.support_24px), contentDescription = null)
                         },
@@ -1178,7 +1222,15 @@ private fun SubscriptionHeader(
                 if (hasDescription) {
                     DropdownMenuItem(
                         text = {
-                            Text(if (subscription.descriptionHidden) "Show description" else "Hide description")
+                            Text(
+                                stringResource(
+                                    if (subscription.descriptionHidden) {
+                                        R.string.home_subscription_show_description
+                                    } else {
+                                        R.string.home_subscription_hide_description
+                                    },
+                                ),
+                            )
                         },
                         leadingIcon = {
                             Icon(
@@ -1200,7 +1252,7 @@ private fun SubscriptionHeader(
                 }
                 if (canApplyRouting) {
                     DropdownMenuItem(
-                        text = { Text("Apply routing") },
+                        text = { Text(stringResource(R.string.home_subscription_apply_routing)) },
                         leadingIcon = {
                             Icon(painterResource(R.drawable.cloud_download_24px), contentDescription = null)
                         },
@@ -1211,7 +1263,7 @@ private fun SubscriptionHeader(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("Remove") },
+                    text = { Text(stringResource(R.string.home_action_remove)) },
                     leadingIcon = {
                         Icon(painterResource(R.drawable.delete_forever_24px), contentDescription = null)
                     },
@@ -1246,10 +1298,10 @@ private fun PingMethodDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close")
+                Text(stringResource(R.string.home_action_close))
             }
         },
-        title = { Text("Choose method") },
+        title = { Text(stringResource(R.string.home_choose_ping_method_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PingMethod.entries.forEach { method ->
@@ -1289,11 +1341,11 @@ private fun PingMethodRow(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = method.label,
+                text = stringResource(method.labelResource),
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             )
             Text(
-                text = method.description,
+                text = stringResource(method.descriptionResource),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1324,7 +1376,7 @@ private fun SubscriptionDescriptionText(description: String) {
     pendingUrl?.let { url ->
         AlertDialog(
             onDismissRequest = { pendingUrl = null },
-            title = { Text("Open link?") },
+            title = { Text(stringResource(R.string.home_open_link_title)) },
             text = {
                 SelectionContainer {
                     Text(
@@ -1340,12 +1392,12 @@ private fun SubscriptionDescriptionText(description: String) {
                         uriHandler.openUri(url)
                     },
                 ) {
-                    Text("Open")
+                    Text(stringResource(R.string.home_action_open))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingUrl = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.home_action_cancel))
                 }
             },
         )
@@ -1365,9 +1417,9 @@ private fun ServerRow(
     val latencyMs = latency?.latencyMs
     val latencyText = latency?.let {
         when {
-            it.latencyMs == LATENCY_TESTING -> "Testing..."
-            it.latencyMs < 0 -> "N/A"
-            else -> "${it.latencyMs}ms"
+            it.latencyMs == LATENCY_TESTING -> stringResource(R.string.home_latency_testing)
+            it.latencyMs < 0 -> stringResource(R.string.home_latency_not_available)
+            else -> stringResource(R.string.home_latency_milliseconds, it.latencyMs)
         }
     }
     val latencyColor = when {
@@ -1461,8 +1513,8 @@ private fun CompactSelectionDot(isSelected: Boolean) {
     }
 }
 
-private fun String.withMetadataEmphasis() = buildAnnotatedString {
-    metadataTextSegments(this@withMetadataEmphasis).forEach { segment ->
+private fun String.withMetadataEmphasis(expiredStatusText: String) = buildAnnotatedString {
+    metadataTextSegments(this@withMetadataEmphasis, expiredStatusText).forEach { segment ->
         if (segment.emphasized) {
             withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
                 append(segment.value)
@@ -1549,18 +1601,27 @@ private fun Context.clipboardText(): String? {
 }
 
 private data class AutoUpdateIntervalOption(
-    val label: String,
     val intervalHours: Int,
 )
 
 private val autoUpdateIntervalOptions = listOf(
-    AutoUpdateIntervalOption("1 hour", 1),
-    AutoUpdateIntervalOption("3 hours", 3),
-    AutoUpdateIntervalOption("6 hours", 6),
-    AutoUpdateIntervalOption("1 day", 24),
-    AutoUpdateIntervalOption("3 days", 72),
-    AutoUpdateIntervalOption("Manual only", 0),
+    AutoUpdateIntervalOption(1),
+    AutoUpdateIntervalOption(3),
+    AutoUpdateIntervalOption(6),
+    AutoUpdateIntervalOption(24),
+    AutoUpdateIntervalOption(72),
+    AutoUpdateIntervalOption(0),
 )
+
+@Composable
+private fun autoUpdateIntervalLabel(intervalHours: Int): String = when (intervalHours) {
+    0 -> stringResource(R.string.home_duration_manual)
+    24, 72 -> {
+        val days = intervalHours / 24
+        pluralStringResource(R.plurals.home_duration_days, days, days)
+    }
+    else -> pluralStringResource(R.plurals.home_duration_hours, intervalHours, intervalHours)
+}
 
 @Composable
 private fun AutoUpdateIntervalIndicator(selected: Boolean) {
@@ -1613,13 +1674,9 @@ private fun EditSubscriptionDialog(
         userAgentMode != SubscriptionUserAgentMode.fromValue(subscription.userAgentMode) ||
         customUserAgent.trim().ifBlank { null } != subscription.customUserAgent ||
         customHeaders.trim().ifBlank { null } != subscription.customHeaders
-    val selectedAutoUpdateOption = autoUpdateIntervalOptions.firstOrNull {
-        it.intervalHours == autoUpdateIntervalHours
-    }
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit subscription") },
+        title = { Text(stringResource(R.string.home_edit_subscription_title)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1627,16 +1684,16 @@ private fun EditSubscriptionDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.home_field_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Leave empty to get name from subscription provider") },
+                    supportingText = { Text(stringResource(R.string.home_name_from_provider_hint)) },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
-                    label = { Text("URL") },
+                    label = { Text(stringResource(R.string.home_field_url)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -1651,10 +1708,10 @@ private fun EditSubscriptionDialog(
                     onExpandedChange = { autoUpdateExpanded = it },
                 ) {
                     OutlinedTextField(
-                        value = selectedAutoUpdateOption?.label ?: formatAutoUpdateInterval(autoUpdateIntervalHours),
+                        value = autoUpdateIntervalLabel(autoUpdateIntervalHours),
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Auto update") },
+                        label = { Text(stringResource(R.string.home_auto_update_label)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = autoUpdateExpanded) },
                         modifier = Modifier
                             .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
@@ -1666,7 +1723,7 @@ private fun EditSubscriptionDialog(
                     ) {
                         autoUpdateIntervalOptions.forEach { option ->
                             DropdownMenuItem(
-                                text = { Text(option.label) },
+                                text = { Text(autoUpdateIntervalLabel(option.intervalHours)) },
                                 onClick = {
                                     autoUpdateIntervalHours = option.intervalHours
                                     autoUpdateExpanded = false
@@ -1693,10 +1750,14 @@ private fun EditSubscriptionDialog(
                 },
                 enabled = url.isNotBlank() && hasChanges,
             ) {
-                Text("Save")
+                Text(stringResource(R.string.home_action_save))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_action_cancel))
+            }
+        },
     )
 }
 
@@ -1707,16 +1768,16 @@ private fun ApplySubscriptionRoutingDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Apply subscription routing?") },
-        text = { Text("This action will override existing routing setup.") },
+        title = { Text(stringResource(R.string.home_apply_subscription_routing_title)) },
+        text = { Text(stringResource(R.string.home_apply_subscription_routing_message)) },
         confirmButton = {
             Button(onClick = onConfirm) {
-                Text("Yes, apply")
+                Text(stringResource(R.string.home_apply_subscription_routing_confirm))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("No, thanks")
+                Text(stringResource(R.string.home_apply_subscription_routing_dismiss))
             }
         },
     )
@@ -1730,38 +1791,24 @@ private fun RemoveSubscriptionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Remove subscription?") },
+        title = { Text(stringResource(R.string.home_remove_subscription_title)) },
         text = {
-            if (serverCount > 1) {
-                Text(
-                    buildAnnotatedString {
-                        append("All servers from this subscription ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append("will be removed")
-                        }
-                        append(".")
-                    },
-                )
-            } else {
-                Text(
-                    buildAnnotatedString {
-                        append("Server from this subscription ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append("will be removed")
-                        }
-                        append(".")
-                    },
-                )
-            }
+            Text(
+                pluralStringResource(
+                    R.plurals.home_remove_subscription_message,
+                    serverCount,
+                    serverCount,
+                ),
+            )
         },
         confirmButton = {
             Button(onClick = onConfirm) {
-                Text("Remove")
+                Text(stringResource(R.string.home_action_remove))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.home_action_cancel))
             }
         },
     )
@@ -1781,7 +1828,7 @@ private fun AddSubscriptionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add manually") },
+        title = { Text(stringResource(R.string.home_add_manually)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -1789,16 +1836,16 @@ private fun AddSubscriptionDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.home_field_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Leave empty to get name from subscription provider") },
+                    supportingText = { Text(stringResource(R.string.home_name_from_provider_hint)) },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
-                    label = { Text("URL") },
+                    label = { Text(stringResource(R.string.home_field_url)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -1823,10 +1870,14 @@ private fun AddSubscriptionDialog(
                 onClick = { onConfirm(name.trim(), url.trim(), preferJson, userAgentMode, customUserAgent, customHeaders) },
                 enabled = url.isNotBlank(),
             ) {
-                Text("Add")
+                Text(stringResource(R.string.home_action_add))
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_action_cancel))
+            }
+        },
     )
 }
 
@@ -1843,16 +1894,18 @@ private fun SubscriptionFetchTypeDropdown(
         onExpandedChange = { expanded = it },
     ) {
         OutlinedTextField(
-            value = if (preferJson) "JSON first" else "Compatibility mode",
+            value = stringResource(
+                if (preferJson) R.string.home_fetch_type_json_first else R.string.home_fetch_type_compatibility,
+            ),
             onValueChange = {},
             readOnly = true,
-            label = { Text("Fetch type") },
+            label = { Text(stringResource(R.string.home_fetch_type_label)) },
             supportingText = {
                 Text(
                     if (preferJson) {
-                        "Try the /json endpoint first, then fall back to the saved URL"
+                        stringResource(R.string.home_fetch_type_json_first_description)
                     } else {
-                        "Fetch directly from the saved URL"
+                        stringResource(R.string.home_fetch_type_compatibility_description)
                     },
                 )
             },
@@ -1865,9 +1918,19 @@ private fun SubscriptionFetchTypeDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            listOf(true to "JSON first", false to "Compatibility mode").forEach { (value, label) ->
+            listOf(true, false).forEach { value ->
                 DropdownMenuItem(
-                    text = { Text(label) },
+                    text = {
+                        Text(
+                            stringResource(
+                                if (value) {
+                                    R.string.home_fetch_type_json_first
+                                } else {
+                                    R.string.home_fetch_type_compatibility
+                                },
+                            ),
+                        )
+                    },
                     onClick = {
                         onPreferJsonChange(value)
                         expanded = false
@@ -1895,10 +1958,10 @@ private fun SubscriptionUserAgentSection(
         onExpandedChange = { expanded = it },
     ) {
         OutlinedTextField(
-            value = selectedMode.label,
+            value = stringResource(selectedMode.labelResource),
             onValueChange = {},
             readOnly = true,
-            label = { Text("User-Agent") },
+            label = { Text(stringResource(R.string.home_field_user_agent)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
@@ -1912,9 +1975,9 @@ private fun SubscriptionUserAgentSection(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(mode.label)
+                            Text(stringResource(mode.labelResource))
                             Text(
-                                mode.description,
+                                stringResource(mode.descriptionResource),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1933,8 +1996,15 @@ private fun SubscriptionUserAgentSection(
         OutlinedTextField(
             value = customUserAgent,
             onValueChange = onCustomUserAgentChange,
-            label = { Text("User-Agent") },
-            placeholder = { Text("e.g. Happ/3.23.0") },
+            label = { Text(stringResource(R.string.home_field_user_agent)) },
+            placeholder = {
+                Text(
+                    stringResource(
+                        R.string.home_user_agent_example,
+                        stringResource(R.string.home_user_agent_example_value),
+                    ),
+                )
+            },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -1942,10 +2012,10 @@ private fun SubscriptionUserAgentSection(
         OutlinedTextField(
             value = customHeaders,
             onValueChange = onCustomHeadersChange,
-            label = { Text("Headers") },
+            label = { Text(stringResource(R.string.home_field_headers)) },
             minLines = 3,
             modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("One per line, e.g. X-Hwid: 0123456789abcdef") },
+            supportingText = { Text(stringResource(R.string.home_headers_example)) },
         )
     }
 }

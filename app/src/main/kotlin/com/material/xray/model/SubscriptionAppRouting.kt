@@ -44,18 +44,12 @@ enum class SubscriptionAppRoutingMode(val persistedValue: String) {
 
 enum class RoutingPolicyControl(
     val value: String,
-    val label: String,
-    val description: String,
 ) {
     User(
         value = "user",
-        label = "User-controlled",
-        description = "Keep routing rules and app routing under manual control",
     ),
     SubscriptionProvider(
         value = "subscription_provider",
-        label = "Subscription provider",
-        description = "Apply routing rules and per-app routing from the selected subscription provider",
     ),
     ;
 

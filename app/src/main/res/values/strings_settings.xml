@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_routing">Routing</string>
+    <string name="settings_connectivity_title">Connectivity</string>
+    <string name="settings_bypass_lan_title">Bypass LAN</string>
+    <string name="settings_bypass_lan_description">Route private IPs and LAN domains directly</string>
+    <string name="settings_allow_ipv6_connections">Allow IPv6 connections</string>
+    <string name="settings_routing_policy_title">Routing policy</string>
+    <string name="settings_section_network">Network</string>
+    <string name="settings_default_outbound_label">Default Outbound</string>
+    <string name="settings_dns_servers_label">DNS Servers</string>
+    <string name="settings_dns_servers_placeholder">Leave empty to use system DNS</string>
+    <string name="settings_dns_servers_supporting_text">Comma-separated, e.g. 1.1.1.1,1.0.0.1</string>
+    <string name="settings_domestic_dns_label">Domestic DNS</string>
+    <string name="settings_domestic_dns_supporting_text">Used for direct domestic domains, e.g. 77.88.8.8,77.88.8.1</string>
+    <string name="settings_latency_dns_servers_label">Latency DNS Servers</string>
+    <string name="settings_latency_dns_servers_supporting_text">Used only for node latency checks, e.g. 77.88.8.8,77.88.8.1</string>
+    <string name="settings_xray_log_level_label">Xray Log Level</string>
+    <string name="settings_default_value">Default: %1$s</string>
+    <string name="settings_geoip_url_label">GeoIP URL</string>
+    <string name="settings_geoip_url_supporting_text">Direct URL for the geoip.dat download</string>
+    <string name="settings_geosite_url_label">GeoSite URL</string>
+    <string name="settings_geosite_url_supporting_text">Direct URL for the geosite.dat download</string>
+    <string name="settings_latency_check_url_label">Latency Check URL</string>
+    <string name="settings_latency_check_url_supporting_text">HTTP endpoint used for node latency checks</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_update">Update</string>
+    <string name="settings_updating">Updating&#8230;</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_notification_title">Notification</string>
+    <string name="settings_customize_service_notification">Customize service notification</string>
+    <string name="settings_configure_notification_fields">Configure fields</string>
+    <string name="settings_notification_field_style">Field style</string>
+    <string name="settings_notification_update_frequency">Update frequency</string>
+    <plurals name="settings_notification_update_frequency_summary">
+        <item quantity="one">Every %1$d millisecond</item>
+        <item quantity="other">Every %1$d milliseconds</item>
+    </plurals>
+    <string name="settings_app_icon_title">App icon</string>
+    <string name="settings_send_hardware_id_title">Send hardware ID (HWID)</string>
+    <string name="settings_send_hardware_id_description">Include a stable x-hwid header so providers can recognise this device</string>
+    <string name="settings_show_advanced_options">Show advanced options</string>
+    <string name="settings_section_data">Data</string>
+    <string name="settings_export">Export</string>
+    <string name="settings_import">Import</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_app_version">%1$s v%2$s</string>
+    <string name="settings_app_version_unknown">%1$s version unknown</string>
+    <string name="settings_section_service">Service</string>
+    <string name="settings_use_root_service">Use root service</string>
+    <string name="settings_unavailable">Unavailable</string>
+    <string name="settings_auto_connect_on_boot">Auto-connect on boot</string>
+    <string name="settings_root_access_denied">Unable to access root on device</string>
+    <string name="settings_ok">OK</string>
+    <string name="settings_xray_core_version_detecting">xray-core version detecting&#8230;</string>
+    <string name="settings_xray_core_version_unknown">xray-core version unknown</string>
+    <string name="settings_xray_core_version">xray-core v%1$s</string>
+    <string name="settings_tun_interface_name_label">TUN Interface Name</string>
+    <string name="settings_tun_interface_name_default">Default: %1$s</string>
+    <string name="settings_done">Done</string>
+    <string name="settings_milliseconds_abbreviation" translatable="false">ms</string>
+    <string name="settings_update_frequency_range">Range: %1$d-%2$d %4$s. Default: %3$d %4$s.</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_notification_fields_title">Notification fields</string>
+    <string name="settings_notification_fields_reorder_instructions">Drag the handle to reorder how fields appear in the notification.</string>
+    <string name="settings_drag_to_reorder">Drag to reorder</string>
+    <string name="settings_no_custom_notification_fields">No custom fields selected</string>
+    <string name="settings_notification_field_separator" translatable="false">" • "</string>
+    <string name="settings_geoip_updated">GeoIP updated</string>
+    <string name="settings_geosite_updated">GeoSite updated</string>
+    <string name="settings_asset_update_failed">Update failed</string>
+    <string name="settings_asset_update_failed_with_detail">Update failed: %1$s</string>
+</resources>

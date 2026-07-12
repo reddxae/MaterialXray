@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="routing_title">Routing</string>
+    <string name="routing_tab_rules">Rules</string>
+    <string name="routing_tab_apps">Apps</string>
+    <plurals name="routing_rules_selected">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <string name="routing_clear_selection">Clear selection</string>
+    <string name="routing_delete_selected_rules">Delete selected rules</string>
+    <string name="routing_add_rule">Add rule</string>
+    <string name="routing_rules_menu">Routing rules menu</string>
+    <string name="routing_enable_all">Enable all</string>
+    <string name="routing_disable_all">Disable all</string>
+    <string name="routing_reset_to_default">Reset to default</string>
+    <string name="routing_reset_to_default_title">Reset to default?</string>
+    <string name="routing_reset_to_default_description">All routing rules and matching behavior will be reset to the app defaults.</string>
+    <string name="routing_new_rule_name">New Rule</string>
+    <string name="routing_default_rule_ru_name">Bypass Russian domains and IPs</string>
+    <string name="routing_default_rule_block_ads_name">Block ads</string>
+    <string name="routing_rules_managed_by_provider">Routing rules are managed by %1$s</string>
+    <string name="routing_rules_managed_by_selected_subscription">Routing rules are managed by the selected subscription</string>
+    <string name="routing_rules_automatic_title">Routing rules are automatic</string>
+    <string name="routing_rules_automatic_provider_description">Your current routing rules are provided by %1$s and are updated automatically. Editing them will disable automatic updates.</string>
+    <string name="routing_rules_automatic_selected_subscription_description">Your current routing rules are provided by the selected subscription and are updated automatically. Editing them will disable automatic updates.</string>
+    <string name="routing_switch_to_manual_mode">Switch to manual mode</string>
+    <string name="routing_leave_as_is">Leave as is</string>
+    <string name="routing_edit_rule_title">Edit Rule</string>
+    <string name="routing_save">Save</string>
+    <string name="routing_cancel">Cancel</string>
+    <string name="routing_ok">OK</string>
+    <string name="routing_name_label">Name</string>
+    <string name="routing_outbound_tag_label">Outbound Tag</string>
+    <string name="routing_match_mode_label">Match Mode</string>
+    <string name="routing_match_all_label">All conditions (AND)</string>
+    <string name="routing_match_all_description">All filled fields stay in one Xray rule. Traffic must satisfy every filled field.</string>
+    <string name="routing_match_any_label">Any condition group (OR)</string>
+    <string name="routing_match_any_description">Each filled field group becomes its own Xray rule. Traffic can match any one of them.</string>
+    <string name="routing_domains_label">Domains</string>
+    <string name="routing_domains_supporting_text">Comma-separated. Example: domain:ru, geosite:category-ads-all</string>
+    <string name="routing_ips_label">IPs</string>
+    <string name="routing_ips_supporting_text">Comma-separated. Example: geoip:ru, 1.2.3.0/24</string>
+    <string name="routing_port_label">Port</string>
+    <string name="routing_port_supporting_text">Single port or range, e.g. 443 or 0-65535</string>
+    <string name="routing_protocols_label">Protocols</string>
+    <string name="routing_protocols_empty_description">If nothing is selected, all traffic is matched.</string>
+    <string name="routing_open_selector">Open %1$s</string>
+    <string name="routing_no_match_content">No match content</string>
+    <plurals name="routing_rule_domains">
+        <item quantity="one">Domain: %1$s</item>
+        <item quantity="other">Domains: %1$s</item>
+    </plurals>
+    <plurals name="routing_rule_ips">
+        <item quantity="one">IP: %1$s</item>
+        <item quantity="other">IPs: %1$s</item>
+    </plurals>
+    <string name="routing_rule_port">Port: %1$s</string>
+    <plurals name="routing_rule_protocols">
+        <item quantity="one">Protocol: %1$s</item>
+        <item quantity="other">Protocols: %1$s</item>
+    </plurals>
+
+    <string name="apps_search">Search apps</string>
+    <string name="apps_package_with_profile">%1$s &#8226; %2$s</string>
+    <string name="apps_work_profile_label">Work profile</string>
+    <string name="apps_personal_profile_label">Personal</string>
+    <string name="apps_routing_managed_by_provider">App routing is managed by %1$s</string>
+    <string name="apps_routing_managed_by_selected_subscription">App routing is managed by the selected subscription</string>
+    <string name="apps_refresh">Refresh apps</string>
+    <string name="apps_routing_menu">App routing menu</string>
+    <string name="apps_reset_to_defaults">Reset to defaults</string>
+    <string name="apps_bypass_all">Bypass all apps</string>
+    <string name="apps_show_system">Show system apps</string>
+    <string name="apps_show_work_profile">Show work profile apps</string>
+    <string name="apps_routing_automatic_title">App routing is automatic</string>
+    <string name="apps_routing_automatic_provider_description">Your current app routing rules are provided by %1$s and are updated automatically. Editing them will disable automatic updates.</string>
+    <string name="apps_routing_automatic_selected_subscription_description">Your current app routing rules are provided by the selected subscription and are updated automatically. Editing them will disable automatic updates.</string>
+    <string name="apps_switch_to_manual_mode">Switch to manual mode</string>
+    <string name="apps_leave_as_is">Leave as is</string>
+    <string name="apps_specific_server_routing_title">Specific server routing</string>
+    <string name="apps_specific_server_routing_description">Custom routing rules are not applied when an app is routed to a specific server. Use Default outbound or Default selected server to keep Routing rules active.</string>
+    <string name="apps_ok">OK</string>
+    <string name="apps_cancel">Cancel</string>
+    <string name="apps_reset_to_defaults_title">Reset to defaults?</string>
+    <string name="apps_bypass_all_title">Bypass all apps?</string>
+    <string name="apps_reset_to_defaults_description">All apps routing settings will be reset to the default selected config.</string>
+    <string name="apps_bypass_all_description">All apps routing settings will be set to &quot;Not proxied&quot;.</string>
+    <string name="apps_close">Close</string>
+    <string name="apps_route_title">Route %1$s</string>
+    <string name="apps_search_configurations">Search configurations</string>
+    <string name="apps_route_default_outbound_title">Default outbound</string>
+    <string name="apps_route_default_outbound_description">Use the default outbound selected on Settings page.</string>
+    <string name="apps_route_default_server_title">Default selected server</string>
+    <string name="apps_route_default_server_description">Use the server selected on Home page.</string>
+    <string name="apps_route_not_proxied_title">Not proxied</string>
+    <string name="apps_route_not_proxied_description">Use the device network.</string>
+    <string name="apps_route_bypass_tun_title">Bypass TUN</string>
+    <string name="apps_route_bypass_tun_description">Bypass the TUN interface entirely.</string>
+    <string name="apps_route_missing_server_title">Missing server</string>
+    <string name="apps_route_missing_server_description">This app is assigned to a deleted configuration.</string>
+    <string name="apps_server_endpoint_unknown">%1$s &#8226; unknown</string>
+    <plurals name="apps_server_multiconnect_summary">
+        <item quantity="one">multiconnect &#8226; %1$d outbound</item>
+        <item quantity="other">multiconnect &#8226; %1$d outbounds</item>
+    </plurals>
+</resources>

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.system.Os
+import com.material.xray.R
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.CleanupManager
@@ -126,7 +127,7 @@ class ConnectionManager(
             val pid = startXrayProcess(useRootService, vpnInterface)
 
             if (pid <= 0) {
-                fail("Could not determine xray process ID after launch")
+                fail(context.getString(R.string.connection_error_missing_process_id))
                 return
             }
 
@@ -160,15 +161,15 @@ class ConnectionManager(
                 connectStartedAt = connectStartedAt,
             )
         } catch (e: IOException) {
-            fail(e.message ?: "Unknown error")
+            fail(e.message ?: context.getString(R.string.error_unknown))
         } catch (e: SecurityException) {
-            fail(e.message ?: "Unknown error")
+            fail(e.message ?: context.getString(R.string.error_unknown))
         } catch (e: IllegalArgumentException) {
-            fail(e.message ?: "Unknown error")
+            fail(e.message ?: context.getString(R.string.error_unknown))
         } catch (e: IllegalStateException) {
-            fail(e.message ?: "Unknown error")
+            fail(e.message ?: context.getString(R.string.error_unknown))
         } catch (e: SerializationException) {
-            fail(e.message ?: "Unknown error")
+            fail(e.message ?: context.getString(R.string.error_unknown))
         }
     }
 
@@ -208,7 +209,7 @@ class ConnectionManager(
             shell.open()
         }
         if (!rootGranted) {
-            fail("Root access denied")
+            fail(context.getString(R.string.connection_error_root_access_denied))
             return false
         }
         log.append(
@@ -225,7 +226,10 @@ class ConnectionManager(
 
     private suspend fun prepareVpnServiceRuntime(vpnInterface: ParcelFileDescriptor?): Boolean {
         if (vpnInterface == null) {
-            fail("VPN permission is required")
+            fail(
+                context.getString(R.string.connection_error_vpn_permission_required),
+                retryable = false,
+            )
             return false
         }
         log.append(LogSource.APP, "Using Android VpnService")
@@ -246,7 +250,7 @@ class ConnectionManager(
                 }
             }
             if (!xrayReady) {
-                fail("xray binary not found")
+                fail(context.getString(R.string.connection_error_xray_binary_not_found))
                 return null
             }
         }
@@ -292,7 +296,7 @@ class ConnectionManager(
             tunManager.detectPhysicalRoute(tunName)
         }
         if (route == null) {
-            fail("Could not detect physical network route for Xray bypass")
+            fail(context.getString(R.string.connection_error_physical_route_not_found))
             return PhysicalRouteResult(success = false, route = null)
         }
         log.append(
@@ -319,7 +323,7 @@ class ConnectionManager(
             }
         }
         if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
-            fail("Could not resolve ${server.address} before starting xray")
+            fail(context.getString(R.string.connection_error_server_address_unresolved, server.address))
             return null
         }
         if (resolvedServer.selectedAddress != null) {
@@ -472,9 +476,12 @@ class ConnectionManager(
         val stage = if (tunSetup.processExited) "$diagnosticsStage-exit" else "$diagnosticsStage-failure"
         diagnostics.logNamespaceDiagnostics(stage = stage, tunName = tunName, xrayPid = pid)
         if (tunSetup.processExited) {
-            fail("xray crashed: ${processSupervisor.readCrashReason()}")
+            fail(context.getString(R.string.connection_error_xray_crashed, processSupervisor.readCrashReason()))
         } else {
-            fail(tunSetup.error ?: "TUN interface $tunName did not come up within timeout")
+            fail(
+                tunSetup.error
+                    ?: context.getString(R.string.connection_error_tun_timeout, tunName),
+            )
         }
     }
 
@@ -507,7 +514,12 @@ class ConnectionManager(
             )
         }
         if (!routingResult.success) {
-            fail("Failed to apply IP routing: ${routingResult.error ?: "unknown error"}")
+            fail(
+                context.getString(
+                    R.string.connection_error_apply_ip_routing,
+                    routingResult.error ?: context.getString(R.string.error_unknown),
+                ),
+            )
             return false
         }
         log.append(LogSource.APP, "IP routing applied")
@@ -620,7 +632,11 @@ class ConnectionManager(
         }
     }
 
-    private suspend fun fail(message: String, cleanState: Boolean = true) {
+    private suspend fun fail(
+        message: String,
+        cleanState: Boolean = true,
+        retryable: Boolean = true,
+    ) {
         log.append(LogSource.APP, "ERROR: $message")
         if (cleanState) {
             userProcessSupervisor.stop()
@@ -631,7 +647,7 @@ class ConnectionManager(
             }
             runningViaVpnService = false
         }
-        stateHolder.update(ConnectionState.Error(message))
+        stateHolder.update(ConnectionState.Error(message, retryable = retryable))
     }
 
     suspend fun isProcessAlive(pid: Int): Boolean = if (runningViaVpnService) {

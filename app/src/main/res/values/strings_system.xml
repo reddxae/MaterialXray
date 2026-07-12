@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Navigation and log screen chrome -->
+    <string name="navigation_home">Home</string>
+    <string name="navigation_routing">Routing</string>
+    <string name="navigation_logs">Logs</string>
+    <string name="navigation_settings">Settings</string>
+
+    <string name="logs_filter_all">All</string>
+    <string name="logs_filter_app">App</string>
+    <string name="logs_filter_xray" translatable="false">Xray</string>
+    <string name="logs_copy_all">Copy all</string>
+    <string name="logs_clear">Clear logs</string>
+    <string name="logs_copied">Logs copied</string>
+    <string name="log_entry_copied">Copied</string>
+    <string name="clipboard_label_logs">%1$s logs</string>
+    <string name="clipboard_label_log_entry">Log</string>
+
+    <!-- Foreground service and notification chrome -->
+    <string name="notification_status_starting">Starting&#8230;</string>
+    <string name="notification_status_switching_server">Switching server&#8230;</string>
+    <string name="notification_status_retrying_connection">Retrying connection (%1$d/%2$d)&#8230;</string>
+    <string name="notification_status_recovering_core">Recovering native core&#8230;</string>
+    <string name="notification_status_waiting_for_physical_route">Waiting for physical route</string>
+    <string name="notification_status_waiting_for_physical_network">Waiting for physical network</string>
+    <string name="notification_status_refreshing_physical_route">Refreshing physical route</string>
+    <string name="notification_status_pinning_interface">Pinning %1$s to %2$s</string>
+    <string name="notification_status_connecting">Connecting&#8230;</string>
+    <string name="notification_status_applying_routing_changes">Applying routing changes&#8230;</string>
+    <string name="notification_status_updating_routing_data">Updating routing data&#8230;</string>
+    <string name="notification_status_restart_required">Restart required</string>
+    <string name="notification_status_interface_busy">Interface busy</string>
+    <string name="notification_status_disconnecting">Disconnecting&#8230;</string>
+    <string name="notification_status_error">Error: %1$s</string>
+    <string name="notification_unknown_connection_error">Unknown connection error</string>
+    <string name="notification_selected_server">Selected server</string>
+    <string name="notification_connection_failed">Connection failed</string>
+    <string name="notification_vpn_service_active">VPN service active</string>
+    <string name="notification_root_service_active">Root service active (pinned %1$s to %2$s)</string>
+    <string name="notification_disconnect">Disconnect</string>
+    <string name="notification_channel_service">Xray Service</string>
+    <string name="notification_channel_connection_failures">Connection failures</string>
+
+    <!-- Dynamic notification fields -->
+    <string name="notification_traffic_compact">P %1$s / D %2$s</string>
+    <string name="notification_traffic_expanded">Proxy: %1$s | Direct: %2$s</string>
+    <string name="notification_ram_compact">RAM %1$s</string>
+    <string name="notification_ram_expanded">Core RAM: %1$s</string>
+    <string name="notification_connections_compact">Conn %1$s</string>
+    <string name="notification_connections_expanded_unavailable">Connections: %1$s</string>
+    <plurals name="notification_connections_expanded">
+        <item quantity="one">Connection: %1$s</item>
+        <item quantity="other">Connections: %1$s</item>
+    </plurals>
+    <string name="notification_value_with_unit">%1$s %2$s</string>
+    <string name="notification_metric_unavailable" translatable="false">--</string>
+    <string name="notification_separator_compact" translatable="false">\u0020&#8226;\u0020</string>
+    <string name="notification_separator_expanded" translatable="false">\n</string>
+    <string name="notification_unit_bytes_per_second" translatable="false">B/s</string>
+    <string name="notification_unit_kibibytes_per_second" translatable="false">KiB/s</string>
+    <string name="notification_unit_mebibytes_per_second" translatable="false">MiB/s</string>
+    <string name="notification_unit_gibibytes_per_second" translatable="false">GiB/s</string>
+    <string name="notification_unit_mebibytes" translatable="false">MiB</string>
+
+    <!-- Quick Settings tile state descriptions -->
+    <string name="tile_state_connected">Connected</string>
+    <string name="tile_state_no_server_selected">No server selected</string>
+    <string name="tile_state_connecting">Connecting</string>
+    <string name="tile_state_applying_routing_changes">Applying routing changes</string>
+    <string name="tile_state_updating_routing_data">Updating routing data</string>
+    <string name="tile_state_restart_required">Restart required</string>
+    <string name="tile_state_interface_busy">Interface busy</string>
+    <string name="tile_state_disconnecting">Disconnecting</string>
+    <string name="tile_state_connection_error">Connection error</string>
+    <string name="tile_state_disconnected">Disconnected</string>
+</resources>

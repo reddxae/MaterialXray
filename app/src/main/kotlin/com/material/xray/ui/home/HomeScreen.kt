@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateBounds
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -83,6 +84,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
@@ -984,21 +986,27 @@ private fun SubscriptionCard(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             } else {
-                servers.forEachIndexed { index, server ->
-                    if (index > 0) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                        )
-                    }
-                    key(server.entity.id) {
-                        ServerRow(
-                            server = server,
-                            isSelected = server.entity.id == selectedServerId,
-                            onClick = { onServerSelected(server.entity.id) },
-                            onTestLatency = { onTestLatency(server.entity) },
-                            contentPadding = ServerRowDefaults.contentPadding,
-                        )
+                LookaheadScope {
+                    Column {
+                        servers.forEachIndexed { index, server ->
+                            key(server.entity.id) {
+                                Column(modifier = Modifier.animateBounds(this@LookaheadScope)) {
+                                    if (index > 0) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(start = 16.dp, end = 16.dp),
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                                        )
+                                    }
+                                    ServerRow(
+                                        server = server,
+                                        isSelected = server.entity.id == selectedServerId,
+                                        onClick = { onServerSelected(server.entity.id) },
+                                        onTestLatency = { onTestLatency(server.entity) },
+                                        contentPadding = ServerRowDefaults.contentPadding,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

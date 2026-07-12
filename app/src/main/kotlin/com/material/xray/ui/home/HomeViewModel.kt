@@ -43,6 +43,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -55,6 +57,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
@@ -453,14 +457,17 @@ class HomeViewModel @Inject constructor(
     }
 
     fun testSubscriptionLatencies(sub: SubscriptionEntity) {
-        restartLatencyTests(allServers.value.filter { it.subscriptionId == sub.id })
+        restartLatencyTests(
+            servers = allServers.value.filter { it.subscriptionId == sub.id },
+            sortDuringTest = true,
+        )
     }
 
     fun testAllLatencies() {
         restartLatencyTests(allServers.value)
     }
 
-    private fun restartLatencyTests(servers: List<ServerEntity>) {
+    private fun restartLatencyTests(servers: List<ServerEntity>, sortDuringTest: Boolean = false) {
         latencyJob?.cancel()
 
         val runId = ++latencyRunId
@@ -482,14 +489,45 @@ class HomeViewModel @Inject constructor(
         }
 
         latencyJob = viewModelScope.launch {
-            supervisorScope {
-                targetServers.forEach { server ->
-                    launch {
-                        runLatencyProbe(runId, server, pingMethod)
-                    }
+            runLatencyProbes(
+                runId = runId,
+                servers = targetServers,
+                method = pingMethod,
+                sortDuringTest = sortDuringTest && settingsRepo.sortOutboundsByLatency.first(),
+            )
+        }
+    }
+
+    private suspend fun runLatencyProbes(
+        runId: Long,
+        servers: List<ServerEntity>,
+        method: PingMethod,
+        sortDuringTest: Boolean,
+    ) = supervisorScope {
+        val probeJobs = servers.map { server ->
+            launch { runLatencyProbe(runId, server, method) }
+        }
+        val sortingJob = if (sortDuringTest) {
+            launch {
+                while (isActive) {
+                    delay(LATENCY_SORT_INTERVAL_MILLIS)
+                    updateServerSortOrder(runId, servers)
                 }
             }
+        } else {
+            null
         }
+
+        probeJobs.joinAll()
+        sortingJob?.cancelAndJoin()
+        if (sortDuringTest) updateServerSortOrder(runId, servers)
+    }
+
+    private suspend fun updateServerSortOrder(runId: Long, servers: List<ServerEntity>) {
+        if (latencyRunId != runId) return
+        serverRepo.updateSortOrders(
+            sortedServerIdsByLatency(servers.map { it.id }, latencyByServerId.value),
+        )
     }
 
     private suspend fun runLatencyProbe(runId: Long, server: ServerEntity, method: PingMethod) {
@@ -565,5 +603,16 @@ class HomeViewModel @Inject constructor(
         const val DEFAULT_TUN_NAME = "xray0"
         const val AMBIGUOUS_TUN_NAME = "tun0"
         const val MAX_CONCURRENT_LATENCY_TESTS = 10
+        const val LATENCY_SORT_INTERVAL_MILLIS = 500L
     }
 }
+
+internal fun sortedServerIdsByLatency(
+    serverIds: List<Long>,
+    latencyByServerId: Map<Long, ServerLatencyState>,
+): List<Long> = serverIds.sortedWith(
+    compareBy<Long>(
+        { serverId -> latencyByServerId[serverId]?.latencyMs?.let { it < 0 } ?: true },
+        { serverId -> latencyByServerId[serverId]?.latencyMs?.takeIf { it >= 0 } ?: 0 },
+    ),
+)

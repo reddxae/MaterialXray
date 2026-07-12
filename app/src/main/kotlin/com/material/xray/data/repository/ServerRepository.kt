@@ -25,4 +25,8 @@ class ServerRepository @Inject constructor(
     suspend fun updateLatency(id: Long, latencyMs: Int) {
         serverDao.updateLatency(id, latencyMs)
     }
+
+    suspend fun updateSortOrders(serverIds: List<Long>) {
+        serverDao.updateSortOrders(serverIds)
+    }
 }

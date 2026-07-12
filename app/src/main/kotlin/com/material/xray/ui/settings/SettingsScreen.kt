@@ -117,6 +117,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
     val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
     val latencyCheckUrl by viewModel.latencyCheckUrl.collectAsStateWithLifecycle()
+    val sortOutboundsByLatency by viewModel.sortOutboundsByLatency.collectAsStateWithLifecycle()
     val geoipUpdating by viewModel.geoipUpdating.collectAsStateWithLifecycle()
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
     val xrayCoreVersion by viewModel.xrayCoreVersion.collectAsStateWithLifecycle()
@@ -628,6 +629,34 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .toggleable(
+                            value = sortOutboundsByLatency,
+                            role = Role.Switch,
+                            onValueChange = viewModel::setSortOutboundsByLatency,
+                        )
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.settings_sort_outbounds_by_latency_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            stringResource(R.string.settings_sort_outbounds_by_latency_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = sortOutboundsByLatency, onCheckedChange = null)
+                }
+
                 SettingsNestedSection(title = stringResource(R.string.settings_notification_title)) {
                     Row(
                         modifier = Modifier

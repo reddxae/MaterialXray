@@ -58,6 +58,7 @@ class SettingsRepository @Inject constructor(
         val GEOSITE_URL = stringPreferencesKey("geosite_url")
         val LATENCY_CHECK_URL = stringPreferencesKey("latency_check_url")
         val DEFAULT_PING_METHOD = stringPreferencesKey("default_ping_method")
+        val SORT_OUTBOUNDS_BY_LATENCY = booleanPreferencesKey("sort_outbounds_by_latency")
         val XRAY_LOG_LEVEL = stringPreferencesKey("xray_log_level")
         val LAST_XRAY_LOG_LEVEL = stringPreferencesKey("last_xray_log_level")
         val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
@@ -155,6 +156,9 @@ class SettingsRepository @Inject constructor(
     }
     val defaultPingMethod: Flow<PingMethod> = store.data.map { prefs ->
         PingMethod.fromValue(prefs[DEFAULT_PING_METHOD])
+    }
+    val sortOutboundsByLatency: Flow<Boolean> = store.data.map { prefs ->
+        prefs[SORT_OUTBOUNDS_BY_LATENCY] ?: false
     }
     val routingRules: Flow<List<RoutingRule>> = store.data.map { prefs ->
         decodeRoutingRules(
@@ -303,6 +307,9 @@ class SettingsRepository @Inject constructor(
     suspend fun setDefaultPingMethod(method: PingMethod) = store.edit { prefs ->
         prefs[DEFAULT_PING_METHOD] = method.value
     }
+    suspend fun setSortOutboundsByLatency(enabled: Boolean) = store.edit { prefs ->
+        prefs[SORT_OUTBOUNDS_BY_LATENCY] = enabled
+    }
     suspend fun setRoutingRule(rule: RoutingRule) = store.edit { prefs ->
         val updatedRules = decodeRoutingRules(
             rulesEncoded = prefs[ROUTING_RULES],
@@ -393,6 +400,7 @@ class SettingsRepository @Inject constructor(
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }
             prefs[DEFAULT_PING_METHOD] = PingMethod.fromValue(map["default_ping_method"]).value
+            prefs[SORT_OUTBOUNDS_BY_LATENCY] = map["sort_outbounds_by_latency"].toBoolean()
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }
             map["routing_rules_version"]?.let { prefs[ROUTING_RULES_VERSION] = it.toIntOrNull() ?: CURRENT_ROUTING_RULES_VERSION }
             map["routing_rule_states"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULE_STATES] = it }

@@ -175,6 +175,11 @@ class ConfigGeneratorTest {
         assertNotNull("Should have DNS port 53 routing rule", dnsRule)
         val inboundTags = dnsRule!!.jsonObject["inboundTag"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("tun-in"), inboundTags)
+        val dnsOverTlsRule = rules.firstOrNull {
+            it.jsonObject["port"]?.jsonPrimitive?.content == "853"
+        }
+        assertNotNull("DNS-over-TLS should bypass the proxy balancer", dnsOverTlsRule)
+        assertEquals("direct", dnsOverTlsRule!!.jsonObject["outboundTag"]!!.jsonPrimitive.content)
         val upstreamRule = rules.firstOrNull {
             it.jsonObject["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
         }

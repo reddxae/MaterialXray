@@ -69,6 +69,7 @@ internal fun buildRouting(
         "rules",
         buildJsonArray {
             add(dnsRoutingRule(appProxyRoutes))
+            add(dnsOverTlsRoutingRule(appProxyRoutes))
             if (dnsServers.commaSeparatedValues().isNotEmpty()) {
                 add(defaultDnsRoutingRule())
             }
@@ -118,6 +119,20 @@ private fun dnsRoutingRule(appProxyRoutes: List<AppProxyRoute>) = buildJsonObjec
     )
     put("port", "53")
     put("outboundTag", "dns-out")
+}
+
+private fun dnsOverTlsRoutingRule(appProxyRoutes: List<AppProxyRoute>) = buildJsonObject {
+    put("type", "field")
+    put(
+        "inboundTag",
+        buildJsonArray {
+            add("tun-in")
+            appProxyRoutes.forEach { add(it.inboundTag) }
+        },
+    )
+    put("network", "tcp")
+    put("port", "853")
+    put("outboundTag", "direct")
 }
 
 private fun defaultDnsRoutingRule() = buildJsonObject {

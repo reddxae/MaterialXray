@@ -22,6 +22,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appBypassDao(): AppBypassDao
 
     companion object {
+        const val DATABASE_NAME = "material-xray.db"
+
+        val VALUE_VALIDATION_CALLBACK = object : RoomDatabase.Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                DatabaseValueValidator.validate(db)
+            }
+        }
+
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE subscriptions ADD COLUMN contentDisposition TEXT")

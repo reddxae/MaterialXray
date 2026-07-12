@@ -19,7 +19,11 @@ object DatabaseModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): AppDatabase = Room.databaseBuilder(context, AppDatabase::class.java, "material-xray.db")
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase = Room.databaseBuilder(
+        context,
+        AppDatabase::class.java,
+        AppDatabase.DATABASE_NAME,
+    )
         .addMigrations(AppDatabase.MIGRATION_1_2)
         .addMigrations(AppDatabase.MIGRATION_2_3)
         .addMigrations(AppDatabase.MIGRATION_3_4)
@@ -32,6 +36,7 @@ object DatabaseModule {
         .addMigrations(AppDatabase.MIGRATION_10_11)
         .addMigrations(AppDatabase.MIGRATION_11_12)
         .addMigrations(AppDatabase.MIGRATION_12_13)
+        .addCallback(AppDatabase.VALUE_VALIDATION_CALLBACK)
         .fallbackToDestructiveMigration(dropAllTables = true)
         .build()
 

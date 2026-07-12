@@ -1,5 +1,7 @@
 package com.material.xray.ui.settings
 
+import android.app.Activity
+import android.os.Process
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -114,6 +116,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val geoipUpdating by viewModel.geoipUpdating.collectAsStateWithLifecycle()
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
     val xrayCoreVersion by viewModel.xrayCoreVersion.collectAsStateWithLifecycle()
+    val databaseResetting by viewModel.databaseResetting.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val resources = LocalResources.current
     val scrollState = rememberScrollState()
@@ -123,6 +126,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var showNotificationFieldsDialog by remember { mutableStateOf(false) }
     var showFieldStyleDialog by remember { mutableStateOf(false) }
     var showUpdateFrequencyDialog by remember { mutableStateOf(false) }
+    var showResetDatabaseDialog by remember { mutableStateOf(false) }
     var showAdvancedOptionsRowTop by remember { mutableStateOf<Int?>(null) }
     var pendingAdvancedOptionsScrollAnchor by remember { mutableStateOf<AdvancedOptionsScrollAnchor?>(null) }
     val rootServiceAvailable = rootAvailable == true
@@ -181,6 +185,21 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     LaunchedEffect(viewModel) {
         viewModel.rootAccessDeniedEvents.collect {
             showRootAccessDeniedDialog = true
+        }
+    }
+
+    LaunchedEffect(viewModel, context, resources) {
+        viewModel.databaseResetEvents.collect { success ->
+            if (success) {
+                (context as? Activity)?.finishAndRemoveTask()
+                    ?: Process.killProcess(Process.myPid())
+            } else {
+                Toast.makeText(
+                    context,
+                    resources.getString(R.string.settings_internal_database_reset_failed),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
     }
 
@@ -680,6 +699,20 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     Text(stringResource(R.string.settings_import))
                 }
             }
+            if (showAdvancedOptions) {
+                SettingsActionRow(
+                    title = stringResource(R.string.settings_reset_internal_database),
+                    subtitle = stringResource(
+                        if (databaseResetting) {
+                            R.string.settings_resetting_internal_database
+                        } else {
+                            R.string.settings_reset_internal_database_description
+                        },
+                    ),
+                    enabled = !databaseResetting,
+                    onClick = { showResetDatabaseDialog = true },
+                )
+            }
 
             HorizontalDivider()
             Text(stringResource(R.string.settings_section_about), style = MaterialTheme.typography.titleMedium)
@@ -700,11 +733,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         showNotificationFieldsDialog = showNotificationFieldsDialog,
         showUpdateFrequencyDialog = showUpdateFrequencyDialog,
         showFieldStyleDialog = showFieldStyleDialog,
+        showResetDatabaseDialog = showResetDatabaseDialog,
         notificationSettings = notificationSettings,
         onDismissRootAccessDenied = { showRootAccessDeniedDialog = false },
         onDismissNotificationFields = { showNotificationFieldsDialog = false },
         onDismissUpdateFrequency = { showUpdateFrequencyDialog = false },
         onDismissFieldStyle = { showFieldStyleDialog = false },
+        onDismissResetDatabase = { showResetDatabaseDialog = false },
+        onResetDatabase = {
+            showResetDatabaseDialog = false
+            viewModel.resetInternalDatabase()
+        },
         onFieldEnabledChange = viewModel::setNotificationFieldEnabled,
         onReorderFields = viewModel::setNotificationFieldOrder,
         onUpdateFrequency = viewModel::setNotificationUpdateIntervalMs,
@@ -854,11 +893,14 @@ private fun SettingsDialogs(
     showNotificationFieldsDialog: Boolean,
     showUpdateFrequencyDialog: Boolean,
     showFieldStyleDialog: Boolean,
+    showResetDatabaseDialog: Boolean,
     notificationSettings: NotificationSettings,
     onDismissRootAccessDenied: () -> Unit,
     onDismissNotificationFields: () -> Unit,
     onDismissUpdateFrequency: () -> Unit,
     onDismissFieldStyle: () -> Unit,
+    onDismissResetDatabase: () -> Unit,
+    onResetDatabase: () -> Unit,
     onFieldEnabledChange: (NotificationField, Boolean) -> Unit,
     onReorderFields: (List<NotificationField>) -> Unit,
     onUpdateFrequency: (Int) -> Unit,
@@ -901,6 +943,27 @@ private fun SettingsDialogs(
             selected = notificationSettings.style,
             onDismiss = onDismissFieldStyle,
             onSelect = onSelectFieldStyle,
+        )
+    }
+
+    if (showResetDatabaseDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissResetDatabase,
+            title = { Text(stringResource(R.string.settings_reset_internal_database_title)) },
+            text = { Text(stringResource(R.string.settings_reset_internal_database_confirmation)) },
+            confirmButton = {
+                TextButton(onClick = onResetDatabase) {
+                    Text(
+                        text = stringResource(R.string.settings_reset),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissResetDatabase) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            },
         )
     }
 }

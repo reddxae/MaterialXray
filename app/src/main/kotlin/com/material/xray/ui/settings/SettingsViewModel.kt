@@ -2,6 +2,7 @@ package com.material.xray.ui.settings
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,6 +14,7 @@ import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.GeoDataAsset
 import com.material.xray.core.xray.GeoDataManager
 import com.material.xray.core.xray.XrayBinary
+import com.material.xray.data.db.AppDatabase
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.dao.ServerDao
 import com.material.xray.data.db.dao.SubscriptionDao
@@ -42,6 +44,7 @@ import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +57,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -69,6 +73,7 @@ class SettingsViewModel @Inject constructor(
     private val subscriptionDao: SubscriptionDao,
     private val serverDao: ServerDao,
     private val appBypassDao: AppBypassDao,
+    private val database: AppDatabase,
     private val connectionStateHolder: ConnectionStateHolder,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
@@ -86,6 +91,8 @@ class SettingsViewModel @Inject constructor(
     private val _geositeUpdating = MutableStateFlow(false)
     private val _assetUpdateEvents = MutableSharedFlow<AssetUpdateMessage>()
     private val _rootAccessDeniedEvents = MutableSharedFlow<Unit>()
+    private val _databaseResetEvents = MutableSharedFlow<Boolean>()
+    private val _databaseResetting = MutableStateFlow(false)
     private val _rootAvailable = MutableStateFlow<Boolean?>(null)
     private val _xrayCoreVersion = MutableStateFlow<String?>(null)
 
@@ -166,6 +173,8 @@ class SettingsViewModel @Inject constructor(
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
     val assetUpdateEvents: SharedFlow<AssetUpdateMessage> = _assetUpdateEvents.asSharedFlow()
     val rootAccessDeniedEvents: SharedFlow<Unit> = _rootAccessDeniedEvents.asSharedFlow()
+    val databaseResetEvents: SharedFlow<Boolean> = _databaseResetEvents.asSharedFlow()
+    val databaseResetting: StateFlow<Boolean> = _databaseResetting.asStateFlow()
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
     val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
 
@@ -283,6 +292,37 @@ class SettingsViewModel @Inject constructor(
     fun setGeoipUrl(url: String) = viewModelScope.launch { settingsRepo.setGeoipUrl(url) }
     fun setGeositeUrl(url: String) = viewModelScope.launch { settingsRepo.setGeositeUrl(url) }
     fun setLatencyCheckUrl(url: String) = viewModelScope.launch { settingsRepo.setLatencyCheckUrl(url) }
+
+    fun resetInternalDatabase() {
+        if (_databaseResetting.value) return
+        viewModelScope.launch {
+            _databaseResetting.value = true
+            try {
+                val result = runCatching {
+                    if (connectionStateHolder.state.value.requiresDisconnectForDatabaseReset()) {
+                        XrayService.disconnect(context)
+                        check(
+                            withTimeoutOrNull(DATABASE_RESET_DISCONNECT_TIMEOUT_MILLIS) {
+                                connectionStateHolder.state.first { !it.requiresDisconnectForDatabaseReset() }
+                            } != null,
+                        ) { "Timed out waiting for the active connection to stop" }
+                    }
+                    settingsRepo.setLastServerId(-1)
+                    routingChangeManager.clearPendingChanges()
+                    withContext(Dispatchers.IO) {
+                        database.clearAllTables()
+                    }
+                }
+                result.exceptionOrNull()?.let { error ->
+                    if (error is CancellationException) throw error
+                    Log.e(LOG_TAG, "Unable to reset internal database", error)
+                }
+                _databaseResetEvents.emit(result.isSuccess)
+            } finally {
+                _databaseResetting.value = false
+            }
+        }
+    }
 
     fun updateGeoipAsset(url: String) {
         updateGeoDataAsset(
@@ -451,3 +491,21 @@ class SettingsViewModel @Inject constructor(
         }
     }
 }
+
+private fun ConnectionState.requiresDisconnectForDatabaseReset(): Boolean = when (this) {
+    ConnectionState.Connecting,
+    ConnectionState.ApplyingRoutingChanges,
+    ConnectionState.UpdatingRoutingData,
+    is ConnectionState.Connected,
+    ConnectionState.Disconnecting,
+    -> true
+
+    ConnectionState.Disconnected,
+    is ConnectionState.Error,
+    is ConnectionState.InterfaceBusy,
+    is ConnectionState.RestartRequired,
+    -> false
+}
+
+private const val DATABASE_RESET_DISCONNECT_TIMEOUT_MILLIS = 10_000L
+private const val LOG_TAG = "SettingsViewModel"

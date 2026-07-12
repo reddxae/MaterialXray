@@ -44,6 +44,13 @@
     <string name="settings_section_data">Data</string>
     <string name="settings_export">Export</string>
     <string name="settings_import">Import</string>
+    <string name="settings_reset_internal_database">Reset internal database</string>
+    <string name="settings_reset_internal_database_description">Delete subscriptions, servers, and app routing data while keeping app settings</string>
+    <string name="settings_resetting_internal_database">Resetting internal database&#8230;</string>
+    <string name="settings_reset_internal_database_title">Reset internal database?</string>
+    <string name="settings_reset_internal_database_confirmation">This permanently deletes all subscriptions, servers, and app routing data. App settings are kept, and any active connection will be stopped.</string>
+    <string name="settings_reset">Reset</string>
+    <string name="settings_internal_database_reset_failed">Unable to reset internal database</string>
     <string name="settings_section_about">About</string>
     <string name="settings_app_version">%1$s v%2$s</string>
     <string name="settings_app_version_unknown">%1$s version unknown</string>

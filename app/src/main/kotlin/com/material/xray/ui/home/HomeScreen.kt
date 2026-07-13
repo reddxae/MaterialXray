@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.VpnService
 import android.provider.Settings
 import android.widget.Toast
@@ -113,6 +114,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -169,15 +171,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             viewModel.connect()
         }
     }
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            showQrScanner = true
-        } else {
-            Toast.makeText(context, unableToFetchLinkText, Toast.LENGTH_SHORT).show()
-        }
-    }
+    val openQrScanner = QrScannerPermissionGate { showQrScanner = true }
     val startRootlessConnection = {
         val vpnPermissionIntent = VpnService.prepare(context)
         if (vpnPermissionIntent != null) {
@@ -194,14 +188,6 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             viewModel.addLink(link)
         }
     }
-    val openQrScanner = {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            showQrScanner = true
-        } else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-    }
-
     LaunchedEffect(viewModel) {
         viewModel.refreshTunnelInterfaceState()
         viewModel.checkForAppUpdateIfDue()
@@ -483,6 +469,122 @@ private fun QrScannerDialogHost(
             )
         }
     }
+}
+
+@Composable
+private fun QrScannerPermissionGate(onGranted: () -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var permissionRevision by remember { mutableStateOf(0) }
+    var promptAccess by remember { mutableStateOf<CameraPermissionAccess?>(null) }
+    val access = remember(context, permissionRevision) { cameraPermissionAccess(context) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        context.recordCameraPermissionRequest()
+        permissionRevision++
+        if (granted) {
+            promptAccess = null
+            onGranted()
+        } else {
+            promptAccess = cameraPermissionAccess(context)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permissionRevision++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    promptAccess?.let { requestedAccess ->
+        AlertDialog(
+            onDismissRequest = { promptAccess = null },
+            title = { Text(stringResource(R.string.home_camera_permission_title)) },
+            text = { Text(stringResource(R.string.home_camera_permission_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        promptAccess = null
+                        if (requestedAccess == CameraPermissionAccess.SystemSettings) {
+                            context.openAppSettings()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                ) {
+                    Text(
+                        stringResource(
+                            if (requestedAccess == CameraPermissionAccess.SystemSettings) {
+                                R.string.home_open_app_settings
+                            } else {
+                                R.string.home_allow_camera
+                            },
+                        ),
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { promptAccess = null }) {
+                    Text(stringResource(R.string.home_action_cancel))
+                }
+            },
+        )
+    }
+
+    return {
+        when (access) {
+            CameraPermissionAccess.Granted -> onGranted()
+            else -> promptAccess = access
+        }
+    }
+}
+
+private fun cameraPermissionAccess(context: Context): CameraPermissionAccess {
+    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    val activity = context as? android.app.Activity
+    return resolveCameraPermissionAccess(
+        granted = granted,
+        shouldShowRationale = activity != null &&
+            ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA),
+        permissionRequested = context.wasCameraPermissionRequested(),
+    )
+}
+
+internal fun resolveCameraPermissionAccess(
+    granted: Boolean,
+    shouldShowRationale: Boolean,
+    permissionRequested: Boolean,
+): CameraPermissionAccess = when {
+    granted -> CameraPermissionAccess.Granted
+    shouldShowRationale -> CameraPermissionAccess.Rationale
+    permissionRequested -> CameraPermissionAccess.SystemSettings
+    else -> CameraPermissionAccess.Requestable
+}
+
+private fun Context.openAppSettings() {
+    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+}
+
+private fun Context.recordCameraPermissionRequest() {
+    getSharedPreferences(CAMERA_PERMISSION_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(CAMERA_PERMISSION_REQUESTED, true)
+        .apply()
+}
+
+private fun Context.wasCameraPermissionRequested(): Boolean = getSharedPreferences(
+    CAMERA_PERMISSION_PREFS,
+    Context.MODE_PRIVATE,
+).getBoolean(CAMERA_PERMISSION_REQUESTED, false)
+
+internal enum class CameraPermissionAccess {
+    Granted,
+    Requestable,
+    Rationale,
+    SystemSettings,
 }
 
 @Composable
@@ -1802,6 +1904,8 @@ private val subscriptionUrlRegex = Regex(
 private val trailingUrlPunctuation = setOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
 private val SubscriptionBlockGap = 6.dp
 private const val QR_SCANNER_TRANSITION_MS = 180
+private const val CAMERA_PERMISSION_PREFS = "camera_permission"
+private const val CAMERA_PERMISSION_REQUESTED = "requested"
 
 private fun Context.clipboardText(): String? {
     val clipboard = getSystemService(ClipboardManager::class.java) ?: return null

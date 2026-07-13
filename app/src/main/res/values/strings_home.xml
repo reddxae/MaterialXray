@@ -75,6 +75,10 @@
     <string name="home_add_server_or_subscription">Add new server or subscription</string>
     <string name="home_paste_from_clipboard">Paste from clipboard</string>
     <string name="home_scan_qr_code">Scan QR code</string>
+    <string name="home_camera_permission_title">Allow camera access?</string>
+    <string name="home_camera_permission_message">Camera access is used only to scan QR codes. You can still paste or enter a link manually without granting it.</string>
+    <string name="home_allow_camera">Allow camera</string>
+    <string name="home_open_app_settings">Open app settings</string>
     <string name="home_add_manually">Add manually</string>
     <string name="home_no_servers_in_subscription">No servers in this subscription.</string>
 

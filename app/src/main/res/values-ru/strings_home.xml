@@ -77,6 +77,10 @@
     <string name="home_add_server_or_subscription">Добавить сервер или подписку</string>
     <string name="home_paste_from_clipboard">Вставить из буфера обмена</string>
     <string name="home_scan_qr_code">Сканировать QR-код</string>
+    <string name="home_camera_permission_title">Разрешить доступ к камере?</string>
+    <string name="home_camera_permission_message">Доступ к камере используется только для сканирования QR-кодов. Ссылку можно вставить или ввести вручную, не предоставляя разрешение.</string>
+    <string name="home_allow_camera">Разрешить камеру</string>
+    <string name="home_open_app_settings">Открыть настройки приложения</string>
     <string name="home_add_manually">Добавить вручную</string>
     <string name="home_no_servers_in_subscription">В этой подписке нет серверов.</string>
 

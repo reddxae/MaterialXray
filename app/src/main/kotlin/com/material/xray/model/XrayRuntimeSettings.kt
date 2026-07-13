@@ -19,7 +19,7 @@ data class XrayRuntimeSettings(
     val routingFallbackOutbound: XrayOutbound? = null,
 ) {
     companion object {
-        const val DEFAULT_XRAY_BUFFER_SIZE_KIB = 512
+        const val DEFAULT_XRAY_BUFFER_SIZE_KIB = 64
         const val MIN_XRAY_BUFFER_SIZE_KIB = 1
         const val MAX_XRAY_BUFFER_SIZE_KIB = 10_240
         const val DEFAULT_TUN_MTU = 1500

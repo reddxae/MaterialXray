@@ -1,5 +1,7 @@
 package com.material.xray.data.repository
 
+import androidx.room.withTransaction
+import com.material.xray.data.db.AppDatabase
 import com.material.xray.data.db.dao.ServerDao
 import com.material.xray.data.db.dao.SubscriptionDao
 import com.material.xray.data.db.entity.ServerEntity
@@ -20,11 +22,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 @Singleton
 class SubscriptionRepository @Inject constructor(
+    private val database: AppDatabase,
     private val subscriptionDao: SubscriptionDao,
     private val serverDao: ServerDao,
     private val fetcher: SubscriptionFetcher,
@@ -32,6 +37,7 @@ class SubscriptionRepository @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val shareLinkParser = ShareLinkParser()
+    private val refreshLocks = List(REFRESH_LOCK_COUNT) { Mutex() }
 
     fun observeAll(): Flow<List<SubscriptionEntity>> = combine(
         subscriptionDao.observeAll(),
@@ -128,9 +134,12 @@ class SubscriptionRepository @Inject constructor(
         return id
     }
 
-    suspend fun refresh(subId: Long, url: String): RefreshResult? {
+    suspend fun refresh(subId: Long, url: String): RefreshResult? = refreshLock(subId).withLock {
+        refreshLocked(subId, url)
+    }
+
+    private suspend fun refreshLocked(subId: Long, url: String): RefreshResult? {
         val existing = subscriptionDao.getById(subId) ?: return null
-        val existingServers = serverDao.getBySubscription(subId)
         val identity = existing.requestIdentity(settingsRepository.subscriptionSendHardwareId.first())
         val fetched = fetcher.fetchWithMetadata(
             url = url,
@@ -149,19 +158,22 @@ class SubscriptionRepository @Inject constructor(
             )
         }
 
-        serverDao.deleteBySubscription(subId)
-        val insertedIds = serverDao.insertAll(servers)
-
-        subscriptionDao.update(existing.applyFetchedData(fetched))
-        val insertedServers = servers.zip(insertedIds).map { (server, id) -> server.copy(id = id) }
-        return RefreshResult(
-            subscriptionId = subId,
-            serverIdByConfigJson = insertedServers
-                .associate { server -> server.configJson to server.id },
-            serverIdReplacements = buildServerIdReplacements(existingServers, insertedServers),
-            appRouting = fetched.appRouting,
-            routing = fetched.routing,
-        )
+        return database.withTransaction {
+            val current = subscriptionDao.getById(subId) ?: return@withTransaction null
+            val existingServers = serverDao.getBySubscription(subId)
+            serverDao.deleteBySubscription(subId)
+            val insertedIds = if (servers.isEmpty()) emptyList() else serverDao.insertAll(servers)
+            subscriptionDao.update(current.applyFetchedData(fetched))
+            val insertedServers = servers.zip(insertedIds).map { (server, id) -> server.copy(id = id) }
+            RefreshResult(
+                subscriptionId = subId,
+                serverIdByConfigJson = insertedServers
+                    .associate { server -> server.configJson to server.id },
+                serverIdReplacements = buildServerIdReplacements(existingServers, insertedServers),
+                appRouting = fetched.appRouting,
+                routing = fetched.routing,
+            )
+        }
     }
 
     suspend fun refreshAll(): RefreshBatchResult = refreshSubscriptions(subscriptionDao.getAll())
@@ -182,13 +194,13 @@ class SubscriptionRepository @Inject constructor(
         subscriptionDao.updateDescriptionHidden(subId, hidden)
     }
 
-    suspend fun update(sub: SubscriptionEntity, name: String, url: String): RefreshResult? {
+    suspend fun update(sub: SubscriptionEntity, name: String, url: String): RefreshResult? = refreshLock(sub.id).withLock {
         val updated = sub.copy(
             name = name.trim().ifEmpty { nextFallbackName(excludingId = sub.id) },
             url = url.trim(),
         )
         subscriptionDao.update(updated)
-        return refresh(updated.id, updated.url)
+        refreshLocked(updated.id, updated.url)
     }
 
     private suspend fun refreshSubscriptions(subscriptions: List<SubscriptionEntity>): RefreshBatchResult {
@@ -294,7 +306,12 @@ class SubscriptionRepository @Inject constructor(
         .filterValues { it == 1 }
         .keys
 
+    private fun refreshLock(subscriptionId: Long): Mutex = refreshLocks[
+        Math.floorMod(subscriptionId.hashCode(), refreshLocks.size),
+    ]
+
     private companion object {
+        const val REFRESH_LOCK_COUNT = 32
         val FALLBACK_NAME_PATTERN = Regex("""Subscription \d+""")
     }
 }

@@ -52,7 +52,6 @@ import androidx.core.content.ContextCompat
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
-import com.google.zxing.LuminanceSource
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
@@ -151,6 +150,7 @@ private class Camera2QrScanner(
 ) {
     private val cameraManager = context.getSystemService(CameraManager::class.java)
     private val decoding = AtomicBoolean(false)
+    private val luminanceBuffers = QrLuminanceBuffers()
     private val qrReader = MultiFormatReader().apply {
         setHints(
             mapOf(
@@ -305,7 +305,13 @@ private class Camera2QrScanner(
             return
         }
 
-        backgroundHandler?.post {
+        val handler = backgroundHandler
+        if (handler == null) {
+            image.close()
+            decoding.set(false)
+            return
+        }
+        val accepted = handler.post {
             try {
                 decodeQr(image)?.let { result ->
                     if (!resultDelivered) {
@@ -318,61 +324,44 @@ private class Camera2QrScanner(
                 decoding.set(false)
             }
         }
+        if (!accepted) {
+            image.close()
+            decoding.set(false)
+        }
     }
 
     private fun decodeQr(image: Image): String? {
-        val bytes = image.luminanceBytes()
-        val source = PlanarYUVLuminanceSource(
-            bytes,
-            image.width,
-            image.height,
-            0,
-            0,
-            image.width,
-            image.height,
-            false,
+        val plane = image.planes[0]
+        val luminance = luminanceBuffers.copyLuminance(
+            source = plane.buffer,
+            width = image.width,
+            height = image.height,
+            rowStride = plane.rowStride,
+            pixelStride = plane.pixelStride,
         )
-        return decodeAllOrientations(source)
-            ?: decodeAllOrientations(source.invert())
+        decode(luminanceSource(luminance, image.width, image.height))?.let { return it }
+
+        val inverted = luminanceBuffers.invert(luminance)
+        return decode(luminanceSource(inverted, image.width, image.height))
     }
 
-    private fun decodeAllOrientations(source: LuminanceSource): String? = decode(source) ?: if (source.isRotateSupported) {
-        decode(source.rotateCounterClockwise())
-    } else {
-        null
-    }
+    private fun luminanceSource(bytes: ByteArray, width: Int, height: Int) = PlanarYUVLuminanceSource(
+        bytes,
+        width,
+        height,
+        0,
+        0,
+        width,
+        height,
+        false,
+    )
 
-    private fun decode(source: LuminanceSource): String? = try {
+    private fun decode(source: PlanarYUVLuminanceSource): String? = try {
         qrReader.decodeWithState(BinaryBitmap(HybridBinarizer(source))).text
     } catch (_: NotFoundException) {
         null
     } finally {
         qrReader.reset()
-    }
-
-    private fun Image.luminanceBytes(): ByteArray {
-        val plane = planes[0]
-        val buffer = plane.buffer
-        val rowStride = plane.rowStride
-        val pixelStride = plane.pixelStride
-        val output = ByteArray(width * height)
-        val row = ByteArray(rowStride.coerceAtLeast(width * pixelStride))
-        var outputOffset = 0
-
-        for (rowIndex in 0 until height) {
-            buffer.position(rowIndex * rowStride)
-            if (pixelStride == 1) {
-                buffer.get(output, outputOffset, width)
-                outputOffset += width
-            } else {
-                val rowLength = buffer.remaining().coerceAtMost(rowStride)
-                buffer.get(row, 0, rowLength)
-                for (column in 0 until width) {
-                    output[outputOffset++] = row[column * pixelStride]
-                }
-            }
-        }
-        return output
     }
 
     private fun selectBackCamera(): CameraSelection? {

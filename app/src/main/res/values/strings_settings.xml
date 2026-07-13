@@ -60,6 +60,9 @@
     <string name="settings_reset">Reset</string>
     <string name="settings_internal_database_reset_failed">Unable to reset internal database</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_app_update_checks_title">Automatically check for updates</string>
+    <string name="settings_app_update_checks_description">Check GitHub for new releases every 8 hours</string>
+    <string name="settings_check_for_updates">Check for updates</string>
     <string name="settings_app_version">%1$s v%2$s</string>
     <string name="settings_app_version_unknown">%1$s version unknown</string>
     <string name="settings_section_service">Service</string>

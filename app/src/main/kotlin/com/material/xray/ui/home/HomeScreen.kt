@@ -19,6 +19,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -117,6 +119,7 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.data.repository.toSubscriptionRouting
+import com.material.xray.model.AppUpdate
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
@@ -124,10 +127,13 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.endpointSummary
 import com.material.xray.model.proxyOutboundCount
+import com.material.xray.service.AppUpdateInstallProgress
+import com.material.xray.service.AppUpdateInstallStage
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -189,6 +195,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     LaunchedEffect(viewModel) {
         viewModel.refreshTunnelInterfaceState()
+        viewModel.checkForAppUpdateIfDue()
     }
 
     LaunchedEffect(viewModel) {
@@ -220,6 +227,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshTunnelInterfaceState()
+                viewModel.resumePendingAppUpdateInstall()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -267,6 +275,16 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     },
                     onViewConfig = { viewModel.showRunningConfig() },
                 )
+            }
+
+            uiState.availableUpdate?.let { update ->
+                item(contentType = "appUpdate") {
+                    AppUpdateBanner(
+                        update = update,
+                        installProgress = uiState.appUpdateInstallProgress,
+                        onInstall = { viewModel.installAppUpdate(update) },
+                    )
+                }
             }
 
             if (uiState.isRefreshing) {
@@ -402,6 +420,11 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             clipboard?.setPrimaryClip(ClipData.newPlainText(clipboardConfigLabel, uiState.runningConfig.orEmpty()))
         },
     )
+    InstallPermissionRationaleDialogHost(
+        visible = uiState.showInstallPermissionRationale,
+        onDismiss = viewModel::dismissInstallPermissionRationale,
+        onConfirm = viewModel::confirmInstallPermissionRationale,
+    )
 }
 
 @Composable
@@ -536,6 +559,31 @@ private fun RawConfigDialogHost(
 }
 
 @Composable
+private fun InstallPermissionRationaleDialogHost(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!visible) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_app_update_permission_title)) },
+        text = { Text(stringResource(R.string.home_app_update_permission_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.home_app_update_permission_continue))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_app_update_permission_not_now))
+            }
+        },
+    )
+}
+
+@Composable
 private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
@@ -549,6 +597,9 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
     val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
     val pendingSubscriptionRouting by viewModel.pendingSubscriptionRouting.collectAsStateWithLifecycle()
+    val availableUpdate by viewModel.availableUpdate.collectAsStateWithLifecycle()
+    val appUpdateInstallProgress by viewModel.appUpdateInstallProgress.collectAsStateWithLifecycle()
+    val showInstallPermissionRationale by viewModel.showInstallPermissionRationale.collectAsStateWithLifecycle()
 
     return HomeUiState(
         connectionState = connectionState,
@@ -563,6 +614,9 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         defaultPingMethod = defaultPingMethod,
         routingPolicyControl = routingPolicyControl,
         pendingSubscriptionRouting = pendingSubscriptionRouting,
+        availableUpdate = availableUpdate,
+        appUpdateInstallProgress = appUpdateInstallProgress,
+        showInstallPermissionRationale = showInstallPermissionRationale,
     )
 }
 
@@ -619,6 +673,9 @@ private data class HomeUiState(
     val defaultPingMethod: PingMethod,
     val routingPolicyControl: RoutingPolicyControl,
     val pendingSubscriptionRouting: SubscriptionRoutingData?,
+    val availableUpdate: AppUpdate?,
+    val appUpdateInstallProgress: AppUpdateInstallProgress?,
+    val showInstallPermissionRationale: Boolean,
 )
 
 private data class ConnectionUiState(
@@ -827,6 +884,72 @@ private fun ErrorCard(message: String) {
             color = MaterialTheme.colorScheme.onErrorContainer,
         )
     }
+}
+
+@Composable
+private fun AppUpdateBanner(
+    update: AppUpdate,
+    installProgress: AppUpdateInstallProgress?,
+    onInstall: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = installProgress == null, onClick = onInstall),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(Icons.Default.SystemUpdate, contentDescription = null)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.home_app_update_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.home_app_update_message, update.tagName),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (installProgress != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = appUpdateInstallProgressText(installProgress),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val fraction = installProgress.fraction
+                    if (fraction == null) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else {
+                        LinearProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun appUpdateInstallProgressText(progress: AppUpdateInstallProgress): String = when (progress.stage) {
+    AppUpdateInstallStage.ResolvingRelease -> stringResource(R.string.home_app_update_progress_resolving)
+    AppUpdateInstallStage.Connecting -> stringResource(R.string.home_app_update_progress_connecting)
+    AppUpdateInstallStage.Downloading -> progress.fraction?.let { fraction ->
+        stringResource(R.string.home_app_update_progress_downloading_percent, (fraction * 100).roundToInt())
+    } ?: stringResource(R.string.home_app_update_progress_downloading)
+    AppUpdateInstallStage.Verifying -> stringResource(R.string.home_app_update_progress_verifying)
+    AppUpdateInstallStage.PreparingInstallation -> stringResource(R.string.home_app_update_progress_preparing)
+    AppUpdateInstallStage.OpeningInstaller -> stringResource(R.string.home_app_update_progress_opening_installer)
+    AppUpdateInstallStage.InstallingWithRoot -> stringResource(R.string.home_app_update_progress_installing_root)
 }
 
 @Composable

@@ -3,6 +3,7 @@ package com.material.xray
 import android.app.Application
 import com.material.xray.core.launcher.LauncherIconManager
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.service.AppUpdateScheduler
 import com.material.xray.service.SubscriptionUpdateScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -17,6 +18,8 @@ class MaterialXrayApp : Application() {
 
     @Inject lateinit var subscriptionUpdateScheduler: SubscriptionUpdateScheduler
 
+    @Inject lateinit var appUpdateScheduler: AppUpdateScheduler
+
     @Inject lateinit var settingsRepository: SettingsRepository
 
     @Inject lateinit var launcherIconManager: LauncherIconManager
@@ -27,6 +30,7 @@ class MaterialXrayApp : Application() {
         super.onCreate()
         appScope.launch {
             launcherIconManager.apply(settingsRepository.launcherIcon.first())
+            appUpdateScheduler.setEnabled(settingsRepository.appUpdateChecksEnabled.first())
         }
         subscriptionUpdateScheduler.schedulePeriodicUpdates()
         subscriptionUpdateScheduler.enqueueDueCheckNow()

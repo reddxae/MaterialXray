@@ -40,6 +40,9 @@
     <string name="notification_disconnect">Disconnect</string>
     <string name="notification_channel_service">Xray Service</string>
     <string name="notification_channel_connection_failures">Connection failures</string>
+    <string name="notification_channel_app_updates">App updates</string>
+    <string name="notification_app_update_title">Update available</string>
+    <string name="notification_app_update_text">%1$s is available. Tap to open Material Xray.</string>
 
     <!-- Dynamic notification fields -->
     <string name="notification_traffic_compact">P %1$s / D %2$s</string>

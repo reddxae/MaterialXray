@@ -122,6 +122,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
     val xrayCoreVersion by viewModel.xrayCoreVersion.collectAsStateWithLifecycle()
     val databaseResetting by viewModel.databaseResetting.collectAsStateWithLifecycle()
+    val appUpdateChecksEnabled by viewModel.appUpdateChecksEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val resources = LocalResources.current
     val scrollState = rememberScrollState()
@@ -833,6 +834,34 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
             HorizontalDivider()
             Text(stringResource(R.string.settings_section_about), style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .toggleable(
+                        value = appUpdateChecksEnabled,
+                        role = Role.Switch,
+                        onValueChange = viewModel::setAppUpdateChecksEnabled,
+                    )
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.settings_app_update_checks_title), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(R.string.settings_app_update_checks_description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = appUpdateChecksEnabled, onCheckedChange = null)
+            }
+            SettingsActionRow(
+                title = stringResource(R.string.settings_check_for_updates),
+                onClick = viewModel::checkForAppUpdate,
+            )
             Text(
                 text = if (appVersion == null) {
                     stringResource(R.string.settings_app_version_unknown, stringResource(R.string.app_name))
@@ -1147,7 +1176,7 @@ private fun AdvancedIntegerSetting(
 @Composable
 private fun SettingsActionRow(
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
@@ -1172,11 +1201,13 @@ private fun SettingsActionRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = titleColor)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = subtitleColor,
-            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = subtitleColor,
+                )
+            }
         }
         Icon(
             imageVector = Icons.Filled.ChevronRight,

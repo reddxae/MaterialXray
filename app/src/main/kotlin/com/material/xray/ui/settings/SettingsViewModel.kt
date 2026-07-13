@@ -38,6 +38,8 @@ import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
+import com.material.xray.service.AppUpdateChecker
+import com.material.xray.service.AppUpdateScheduler
 import com.material.xray.service.ConnectionStateHolder
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
@@ -68,9 +70,12 @@ data class AssetUpdateMessage(
 )
 
 @HiltViewModel
+@Suppress("TooManyFunctions")
 class SettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsRepo: SettingsRepository,
+    private val appUpdateChecker: AppUpdateChecker,
+    private val appUpdateScheduler: AppUpdateScheduler,
     private val subscriptionDao: SubscriptionDao,
     private val serverDao: ServerDao,
     private val appBypassDao: AppBypassDao,
@@ -189,6 +194,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         false,
+    )
+    val appUpdateChecksEnabled = settingsRepo.appUpdateChecksEnabled.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        true,
     )
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
@@ -314,6 +324,20 @@ class SettingsViewModel @Inject constructor(
 
     fun setSubscriptionSendHardwareId(enabled: Boolean) = viewModelScope.launch {
         settingsRepo.setSubscriptionSendHardwareId(enabled)
+    }
+    fun setAppUpdateChecksEnabled(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == appUpdateChecksEnabled.value) return@launch
+        settingsRepo.setAppUpdateChecksEnabled(enabled)
+        appUpdateScheduler.setEnabled(enabled)
+    }
+    fun checkForAppUpdate() = viewModelScope.launch {
+        try {
+            appUpdateChecker.check(manual = true)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Manual checks also fail silently; the user can try again later.
+        }
     }
     fun setRoutingPolicyControl(policy: RoutingPolicyControl) = viewModelScope.launch {
         if (policy == routingPolicyControl.value) return@launch
@@ -466,6 +490,7 @@ class SettingsViewModel @Inject constructor(
                 }
                 settingsRepo.restoreFromMap(backup.settings)
                 launcherIconManager.apply(settingsRepo.launcherIcon.first())
+                appUpdateScheduler.setEnabled(settingsRepo.appUpdateChecksEnabled.first())
                 reloadActiveConnectionIfConnected()
             }
         }

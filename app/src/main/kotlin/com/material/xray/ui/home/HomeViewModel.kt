@@ -11,6 +11,7 @@ import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
+import com.material.xray.data.repository.AppUpdateRepository
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
@@ -19,6 +20,7 @@ import com.material.xray.data.repository.SubscriptionRepository
 import com.material.xray.data.repository.SubscriptionRoutingRepository
 import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.data.repository.toSubscriptionRouting
+import com.material.xray.model.AppUpdate
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
@@ -30,6 +32,9 @@ import com.material.xray.model.endpointSummary
 import com.material.xray.model.maskedBalancerOutboundAddress
 import com.material.xray.model.matchesBalancerOutbound
 import com.material.xray.model.proxyOutboundCount
+import com.material.xray.service.AppUpdateChecker
+import com.material.xray.service.AppUpdateInstallProgress
+import com.material.xray.service.AppUpdateInstaller
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.service.ConnectionStateHolder
 import com.material.xray.service.PendingRoutingChange
@@ -97,6 +102,9 @@ const val LATENCY_TESTING = Int.MIN_VALUE
 class HomeViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsRepo: SettingsRepository,
+    private val appUpdateRepository: AppUpdateRepository,
+    private val appUpdateChecker: AppUpdateChecker,
+    private val appUpdateInstaller: AppUpdateInstaller,
     private val serverRepo: ServerRepository,
     private val subscriptionRepo: SubscriptionRepository,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
@@ -123,6 +131,10 @@ class HomeViewModel @Inject constructor(
 
     val subscriptions: StateFlow<List<SubscriptionEntity>> = subscriptionRepo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val availableUpdate: StateFlow<AppUpdate?> = appUpdateRepository.availableUpdate
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val appUpdateInstallProgress: StateFlow<AppUpdateInstallProgress?> = appUpdateInstaller.installProgress
 
     private val allServers: StateFlow<List<ServerEntity>> = serverRepo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -183,6 +195,7 @@ class HomeViewModel @Inject constructor(
     val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
     private val _pendingSubscriptionRouting = MutableStateFlow<SubscriptionRoutingData?>(null)
     val pendingSubscriptionRouting: StateFlow<SubscriptionRoutingData?> = _pendingSubscriptionRouting.asStateFlow()
+    val showInstallPermissionRationale: StateFlow<Boolean> = appUpdateInstaller.installPermissionRationaleRequired
 
     init {
         refreshTunnelInterfaceState()
@@ -222,6 +235,56 @@ class HomeViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun checkForAppUpdateIfDue() {
+        viewModelScope.launch {
+            try {
+                appUpdateChecker.check()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Update checks are best-effort and should not interrupt the Home screen.
+            }
+        }
+    }
+
+    fun installAppUpdate(update: AppUpdate) {
+        viewModelScope.launch {
+            try {
+                appUpdateInstaller.install(update)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                _uiEvents.emit(HomeUiEvent.Toast(R.string.home_app_update_install_failed))
+            }
+        }
+    }
+
+    fun resumePendingAppUpdateInstall() {
+        viewModelScope.launch {
+            try {
+                appUpdateInstaller.resumePendingInstall()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                _uiEvents.emit(HomeUiEvent.Toast(R.string.home_app_update_install_failed))
+            }
+        }
+    }
+
+    fun confirmInstallPermissionRationale() {
+        viewModelScope.launch {
+            try {
+                appUpdateInstaller.confirmInstallPermissionRationale()
+            } catch (_: Exception) {
+                _uiEvents.emit(HomeUiEvent.Toast(R.string.home_app_update_install_failed))
+            }
+        }
+    }
+
+    fun dismissInstallPermissionRationale() {
+        appUpdateInstaller.dismissInstallPermissionRationale()
     }
 
     private suspend fun detectTunnelInterfaceState(): ConnectionState? = withContext(Dispatchers.IO) {

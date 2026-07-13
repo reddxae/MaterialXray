@@ -82,6 +82,7 @@ class SettingsRepository @Inject constructor(
         val NOTIFICATION_FIELD_ORDER = stringPreferencesKey("notification_field_order")
         val SUBSCRIPTION_SEND_HWID = booleanPreferencesKey("subscription_send_hwid")
         val SUBSCRIPTION_PREFER_JSON = booleanPreferencesKey("subscription_prefer_json")
+        val APP_UPDATE_CHECKS_ENABLED = booleanPreferencesKey("app_update_checks_enabled")
         private val LEGACY_GEO_DATA_BASE_URL = stringPreferencesKey("geo_data_base_url")
         private const val CURRENT_ROUTING_RULES_VERSION = 2
 
@@ -193,6 +194,9 @@ class SettingsRepository @Inject constructor(
     val legacySubscriptionPreferJson: Flow<Boolean> = store.data.map { prefs ->
         prefs[SUBSCRIPTION_PREFER_JSON] ?: true
     }
+    val appUpdateChecksEnabled: Flow<Boolean> = store.data.map { prefs ->
+        prefs[APP_UPDATE_CHECKS_ENABLED] ?: true
+    }
 
     suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings = XrayRuntimeSettings(
         tunName = tunName.first(),
@@ -289,6 +293,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setSubscriptionSendHardwareId(enabled: Boolean) = store.edit { prefs ->
         prefs[SUBSCRIPTION_SEND_HWID] = enabled
+    }
+    suspend fun setAppUpdateChecksEnabled(enabled: Boolean) = store.edit { prefs ->
+        prefs[APP_UPDATE_CHECKS_ENABLED] = enabled
     }
     suspend fun setGeoipUrl(url: String) = store.edit { prefs ->
         prefs.remove(LEGACY_GEO_DATA_BASE_URL)
@@ -396,6 +403,7 @@ class SettingsRepository @Inject constructor(
             )
             prefs[SUBSCRIPTION_SEND_HWID] = map["subscription_send_hwid"]?.toBooleanStrictOrNull() ?: true
             prefs[SUBSCRIPTION_PREFER_JSON] = map["subscription_prefer_json"]?.toBooleanStrictOrNull() ?: true
+            prefs[APP_UPDATE_CHECKS_ENABLED] = map.booleanSetting("app_update_checks_enabled", default = true)
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }
@@ -423,6 +431,10 @@ class SettingsRepository @Inject constructor(
     }
 
     private fun appendLegacyFileName(baseUrl: String, fileName: String): String = "${baseUrl.trim().trimEnd('/')}/$fileName"
+
+    private fun Map<String, String>.booleanSetting(key: String, default: Boolean): Boolean = this[key]
+        ?.toBooleanStrictOrNull()
+        ?: default
 
     private fun decodeNotificationFieldOrder(encoded: String?): List<NotificationField> {
         val savedFields = encoded

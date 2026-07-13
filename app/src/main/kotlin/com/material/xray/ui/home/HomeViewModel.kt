@@ -9,8 +9,6 @@ import com.material.xray.core.locale.forAppLanguage
 import com.material.xray.core.locale.localizedString
 import com.material.xray.core.network.LatencyProbeResult
 import com.material.xray.core.network.ServerLatencyTester
-import com.material.xray.core.xray.StateFile
-import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.SubscriptionFetchException
@@ -40,6 +38,7 @@ import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.AppUpdateInstallProgress
 import com.material.xray.service.AppUpdateInstaller
 import com.material.xray.service.ConnectionEvent
+import com.material.xray.service.ConnectionRuntimeManager
 import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
@@ -55,7 +54,6 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,7 +73,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
 data class ServerListItem(
@@ -119,14 +116,13 @@ class HomeViewModel @Inject constructor(
     private val subscriptionRefreshCoordinator: SubscriptionRefreshCoordinator,
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
     private val connectionStateCoordinator: ConnectionStateCoordinator,
+    private val connectionRuntimeManager: ConnectionRuntimeManager,
     alwaysOnVpnState: AlwaysOnVpnState,
     private val routingChangeManager: RoutingChangeManager,
     private val serverLatencyTester: ServerLatencyTester,
 ) : ViewModel() {
     private val json = Json { ignoreUnknownKeys = true }
     private val endpointSummaryCache = mutableMapOf<String, String>()
-    private val activeConfigFile = context.filesDir.resolve("config.json")
-    private val stateFile = StateFile(context)
     private var latencyJob: Job? = null
     private var latencyRunId = 0L
     private var activeLatencyServerIds = emptySet<Long>()
@@ -224,11 +220,7 @@ class HomeViewModel @Inject constructor(
 
     fun refreshTunnelInterfaceState() {
         viewModelScope.launch {
-            val detectedState = detectTunnelInterfaceState()
-            val reconciledState = connectionStateCoordinator.reconcileDetectedState(detectedState)
-            if (reconciledState is ConnectionState.Connected && reconciledState.corePid > 0) {
-                XrayService.restoreStatus(context)
-            }
+            connectionRuntimeManager.reconcileState()
         }
     }
 
@@ -282,50 +274,10 @@ class HomeViewModel @Inject constructor(
         appUpdateInstaller.dismissInstallPermissionRationale()
     }
 
-    private suspend fun detectTunnelInterfaceState(): ConnectionState? = withContext(Dispatchers.IO) {
-        if (!settingsRepo.useRootService.first()) {
-            return@withContext null
-        }
-
-        val persistedState = stateFile.read()
-        val activeTunName = settingsRepo.tunName.first().trim().ifBlank { DEFAULT_TUN_NAME }
-
-        if (!TunInterfaceDetector.isInterfaceUp(activeTunName)) {
-            return@withContext null
-        }
-
-        if (activeTunName == AMBIGUOUS_TUN_NAME && TunInterfaceDetector.isVpnServiceActive(context)) {
-            return@withContext ConnectionState.InterfaceBusy(activeTunName)
-        }
-
-        val persistedServerName = persistedState
-            ?.serverName
-            ?.takeIf { it.isNotBlank() }
-        val selectedServerName = settingsRepo.lastServerId.first()
-            .takeIf { it > 0 }
-            ?.let { serverRepo.getById(it) }
-            ?.let { entity -> runCatching { serverRepo.parseConfig(entity).name }.getOrNull() }
-            ?.takeIf { it.isNotBlank() }
-
-        ConnectionState.Connected(
-            serverName = persistedServerName ?: selectedServerName ?: context.localizedString(R.string.home_selected_server),
-            corePid = persistedState?.xrayPid ?: -1,
-            tunName = activeTunName,
-            physicalInterface = persistedState?.physicalInterface ?: "unknown",
-            physicalGateway = persistedState?.physicalGateway,
-            physicalTable = persistedState?.physicalTable,
-            startTime = persistedState?.timestamp ?: System.currentTimeMillis(),
-        )
-    }
-
     fun showRunningConfig() {
         viewModelScope.launch {
-            _runningConfig.value = withContext(Dispatchers.IO) {
-                runCatching { activeConfigFile.takeIf { it.isFile }?.readText() }
-                    .getOrNull()
-                    ?.takeIf { it.isNotBlank() }
-                    ?: context.localizedString(R.string.home_no_active_xray_config)
-            }
+            _runningConfig.value = connectionRuntimeManager.readActiveConfig()
+                ?: context.localizedString(R.string.home_no_active_xray_config)
         }
     }
 
@@ -712,8 +664,6 @@ class HomeViewModel @Inject constructor(
     }
 
     private companion object {
-        const val DEFAULT_TUN_NAME = "xray0"
-        const val AMBIGUOUS_TUN_NAME = "tun0"
         const val MAX_CONCURRENT_LATENCY_TESTS = 10
     }
 }

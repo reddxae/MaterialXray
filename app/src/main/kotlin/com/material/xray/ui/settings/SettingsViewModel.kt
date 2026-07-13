@@ -2,17 +2,11 @@ package com.material.xray.ui.settings
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.R
-import com.material.xray.core.launcher.LauncherIconManager
-import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.GeoDataAsset
-import com.material.xray.core.xray.GeoDataManager
-import com.material.xray.core.xray.XrayBinary
-import com.material.xray.data.db.AppDatabase
 import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.BackupSummary
 import com.material.xray.data.repository.PreparedBackupImport
@@ -28,10 +22,11 @@ import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.service.AppUpdateChecker
-import com.material.xray.service.AppUpdateScheduler
 import com.material.xray.service.ConnectionStateCoordinator
+import com.material.xray.service.DatabaseResetManager
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
+import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -45,11 +40,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 data class AssetUpdateMessage(
     @param:StringRes val messageResId: Int,
@@ -67,16 +60,13 @@ class SettingsViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsRepo: SettingsRepository,
     private val appUpdateChecker: AppUpdateChecker,
-    private val appUpdateScheduler: AppUpdateScheduler,
     private val backupManager: BackupManager,
-    private val database: AppDatabase,
+    private val databaseResetManager: DatabaseResetManager,
     private val connectionStateCoordinator: ConnectionStateCoordinator,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val routingChangeManager: RoutingChangeManager,
-    private val geoDataManager: GeoDataManager,
-    private val launcherIconManager: LauncherIconManager,
-    private val rootShell: RootShell,
+    private val settingsRuntimeManager: SettingsRuntimeManager,
 ) : ViewModel() {
     private val _geoipUpdating = MutableStateFlow(false)
     private val _geositeUpdating = MutableStateFlow(false)
@@ -214,8 +204,7 @@ class SettingsViewModel @Inject constructor(
     fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
         if (enabled == useRootService.value) return@launch
         if (!enabled) {
-            settingsRepo.setUseRootService(false)
-            reloadActiveConnectionIfConnected()
+            settingsRuntimeManager.setUseRootService(false)
             return@launch
         }
 
@@ -224,7 +213,7 @@ class SettingsViewModel @Inject constructor(
             return@launch
         }
 
-        val rootAvailable = withContext(Dispatchers.IO) { rootShell.open() }
+        val rootAvailable = settingsRuntimeManager.setUseRootService(true)
         if (!rootAvailable) {
             _rootAvailable.value = false
             _rootAccessDeniedEvents.emit(Unit)
@@ -232,8 +221,6 @@ class SettingsViewModel @Inject constructor(
         }
 
         _rootAvailable.value = true
-        settingsRepo.setUseRootService(true)
-        reloadActiveConnectionIfConnected()
     }
     fun setBypassLan(enabled: Boolean) = viewModelScope.launch {
         if (enabled == bypassLan.value) return@launch
@@ -278,8 +265,7 @@ class SettingsViewModel @Inject constructor(
     }
     fun setLauncherIcon(icon: LauncherIcon) = viewModelScope.launch {
         if (icon == launcherIcon.value) return@launch
-        settingsRepo.setLauncherIcon(icon)
-        launcherIconManager.apply(icon)
+        settingsRuntimeManager.setLauncherIcon(icon)
     }
     fun setShowAdvancedOptions(enabled: Boolean) = viewModelScope.launch {
         if (enabled == showAdvancedOptions.value) return@launch
@@ -319,8 +305,7 @@ class SettingsViewModel @Inject constructor(
     }
     fun setAppUpdateChecksEnabled(enabled: Boolean) = viewModelScope.launch {
         if (enabled == appUpdateChecksEnabled.value) return@launch
-        settingsRepo.setAppUpdateChecksEnabled(enabled)
-        appUpdateScheduler.setEnabled(enabled)
+        settingsRuntimeManager.setAppUpdateChecksEnabled(enabled)
     }
     fun checkForAppUpdate() = viewModelScope.launch {
         try {
@@ -360,23 +345,10 @@ class SettingsViewModel @Inject constructor(
             _databaseResetting.value = true
             try {
                 val result = runCatching {
-                    if (connectionStateCoordinator.state.value.requiresDisconnectForDatabaseReset()) {
-                        XrayService.disconnect(context, force = true)
-                        check(
-                            withTimeoutOrNull(DATABASE_RESET_DISCONNECT_TIMEOUT_MILLIS) {
-                                connectionStateCoordinator.state.first { !it.requiresDisconnectForDatabaseReset() }
-                            } != null,
-                        ) { "Timed out waiting for the active connection to stop" }
-                    }
-                    settingsRepo.setLastServerId(-1)
-                    routingChangeManager.clearPendingChanges()
-                    withContext(Dispatchers.IO) {
-                        database.clearAllTables()
-                    }
+                    databaseResetManager.reset()
                 }
                 result.exceptionOrNull()?.let { error ->
                     if (error is CancellationException) throw error
-                    Log.e(LOG_TAG, "Unable to reset internal database", error)
                 }
                 _databaseResetEvents.emit(result.isSuccess)
             } finally {
@@ -389,7 +361,6 @@ class SettingsViewModel @Inject constructor(
         updateGeoDataAsset(
             asset = GeoDataAsset.GEOIP,
             url = url,
-            setUrl = settingsRepo::setGeoipUrl,
             updating = _geoipUpdating,
             successMessageResId = R.string.settings_geoip_updated,
         )
@@ -399,7 +370,6 @@ class SettingsViewModel @Inject constructor(
         updateGeoDataAsset(
             asset = GeoDataAsset.GEOSITE,
             url = url,
-            setUrl = settingsRepo::setGeositeUrl,
             updating = _geositeUpdating,
             successMessageResId = R.string.settings_geosite_updated,
         )
@@ -493,7 +463,6 @@ class SettingsViewModel @Inject constructor(
     private fun updateGeoDataAsset(
         asset: GeoDataAsset,
         url: String,
-        setUrl: suspend (String) -> Unit,
         updating: MutableStateFlow<Boolean>,
         @StringRes successMessageResId: Int,
     ) {
@@ -501,11 +470,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             updating.value = true
             runCatching {
-                setUrl(url)
-                geoDataManager.refresh(asset)
+                settingsRuntimeManager.updateGeoDataAsset(asset, url)
             }.onSuccess {
                 _assetUpdateEvents.emit(AssetUpdateMessage(successMessageResId))
-                reloadActiveConnectionIfConnected()
             }.onFailure { error ->
                 _assetUpdateEvents.emit(
                     error.message?.let { detail ->
@@ -538,38 +505,13 @@ class SettingsViewModel @Inject constructor(
 
     private fun checkRootAvailability() {
         viewModelScope.launch {
-            val available = withContext(Dispatchers.IO) { rootShell.open() }
-            _rootAvailable.value = available
-            if (!available && useRootService.value) {
-                settingsRepo.setUseRootService(false)
-                reloadActiveConnectionIfConnected()
-            }
+            _rootAvailable.value = settingsRuntimeManager.checkRootAvailability()
         }
     }
 
     private fun loadXrayCoreVersion() {
         viewModelScope.launch {
-            _xrayCoreVersion.value = withContext(Dispatchers.IO) {
-                XrayBinary(context).readVersion() ?: "unknown"
-            }
+            _xrayCoreVersion.value = settingsRuntimeManager.readXrayCoreVersion()
         }
     }
 }
-
-private fun ConnectionState.requiresDisconnectForDatabaseReset(): Boolean = when (this) {
-    ConnectionState.Connecting,
-    ConnectionState.ApplyingRoutingChanges,
-    ConnectionState.UpdatingRoutingData,
-    is ConnectionState.Connected,
-    ConnectionState.Disconnecting,
-    -> true
-
-    ConnectionState.Disconnected,
-    is ConnectionState.Error,
-    is ConnectionState.InterfaceBusy,
-    is ConnectionState.RestartRequired,
-    -> false
-}
-
-private const val DATABASE_RESET_DISCONNECT_TIMEOUT_MILLIS = 10_000L
-private const val LOG_TAG = "SettingsViewModel"

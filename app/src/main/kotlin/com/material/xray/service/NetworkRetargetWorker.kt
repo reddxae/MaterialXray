@@ -18,6 +18,12 @@ internal enum class NetworkRetargetResult {
     Retry,
 }
 
+internal enum class NetworkRetargetRetryOutcome {
+    Stabilized,
+    Exhausted,
+    Stopped,
+}
+
 internal class NetworkRetargetWorker(
     scope: CoroutineScope,
     private val settleDelayMs: Long,
@@ -59,15 +65,19 @@ internal class NetworkRetargetWorker(
 
 internal suspend fun retryNetworkRetarget(
     retryDelaysMs: List<Long>,
+    shouldContinue: () -> Boolean = { true },
     retarget: suspend (attempt: Int) -> NetworkRetargetResult,
-): Boolean {
+): NetworkRetargetRetryOutcome {
     var attempt = 1
     while (currentCoroutineContext().isActive) {
-        if (retarget(attempt) == NetworkRetargetResult.Done) return true
+        if (!shouldContinue()) return NetworkRetargetRetryOutcome.Stopped
+        if (retarget(attempt) == NetworkRetargetResult.Done) return NetworkRetargetRetryOutcome.Stabilized
+        if (!shouldContinue()) return NetworkRetargetRetryOutcome.Stopped
 
-        val retryDelayMs = retryDelaysMs.getOrNull(attempt - 1) ?: return false
+        val retryDelayMs = retryDelaysMs.getOrNull(attempt - 1)
+            ?: return NetworkRetargetRetryOutcome.Exhausted
         delay(retryDelayMs)
         attempt++
     }
-    return false
+    return NetworkRetargetRetryOutcome.Stopped
 }

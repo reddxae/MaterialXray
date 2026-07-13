@@ -7,7 +7,6 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -79,12 +78,12 @@ class NetworkRetargetWorkerTest {
     fun `retarget retries with configured backoff until stable`() = runTest {
         val attempts = mutableListOf<Int>()
 
-        val stabilized = retryNetworkRetarget(listOf(250L, 500L, 1_000L)) { attempt ->
+        val outcome = retryNetworkRetarget(listOf(250L, 500L, 1_000L)) { attempt ->
             attempts += attempt
             if (attempt == 3) NetworkRetargetResult.Done else NetworkRetargetResult.Retry
         }
 
-        assertTrue(stabilized)
+        assertEquals(NetworkRetargetRetryOutcome.Stabilized, outcome)
         assertEquals(listOf(1, 2, 3), attempts)
         assertEquals(750L, testScheduler.currentTime)
     }
@@ -93,14 +92,33 @@ class NetworkRetargetWorkerTest {
     fun `retarget reports exhaustion after final retry`() = runTest {
         val attempts = mutableListOf<Int>()
 
-        val stabilized = retryNetworkRetarget(listOf(250L, 500L)) { attempt ->
+        val outcome = retryNetworkRetarget(listOf(250L, 500L)) { attempt ->
             attempts += attempt
             NetworkRetargetResult.Retry
         }
 
-        assertFalse(stabilized)
+        assertEquals(NetworkRetargetRetryOutcome.Exhausted, outcome)
         assertEquals(listOf(1, 2, 3), attempts)
         assertEquals(750L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `retarget stops without another attempt when handling becomes inactive`() = runTest {
+        val attempts = mutableListOf<Int>()
+        var shouldContinue = true
+
+        val outcome = retryNetworkRetarget(
+            retryDelaysMs = listOf(250L, 500L),
+            shouldContinue = { shouldContinue },
+        ) { attempt ->
+            attempts += attempt
+            shouldContinue = false
+            NetworkRetargetResult.Retry
+        }
+
+        assertEquals(NetworkRetargetRetryOutcome.Stopped, outcome)
+        assertEquals(listOf(1), attempts)
+        assertEquals(0L, testScheduler.currentTime)
     }
 
     @Test

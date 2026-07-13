@@ -938,16 +938,24 @@ class XrayService : VpnService() {
     }
 
     private suspend fun retargetNetworkUntilStable(reason: String) {
-        val stabilized = retryNetworkRetarget(NETWORK_RETARGET_RETRY_DELAYS_MS) { attempt ->
+        val outcome = retryNetworkRetarget(
+            retryDelaysMs = NETWORK_RETARGET_RETRY_DELAYS_MS,
+            shouldContinue = { activeUseRootService && activeConfig != null },
+        ) { attempt ->
             retargetNetwork(reason, attempt)
         }
-        if (!stabilized) {
+        if (
+            outcome == NetworkRetargetRetryOutcome.Exhausted &&
+            activeUseRootService &&
+            activeConfig != null
+        ) {
             logBuffer.append(LogSource.APP, "Network changed ($reason), but no usable physical route appeared")
             updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
         }
     }
 
     private suspend fun retargetNetwork(reason: String, attempt: Int): NetworkRetargetResult = connectionCommandMutex.withLock {
+        if (!activeUseRootService) return@withLock NetworkRetargetResult.Done
         val latestConfig = activeConfig ?: return@withLock NetworkRetargetResult.Done
         val latestState = connectionStateHolder.state.value as? ConnectionState.Connected
             ?: return@withLock NetworkRetargetResult.Done

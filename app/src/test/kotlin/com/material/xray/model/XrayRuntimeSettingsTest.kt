@@ -9,8 +9,9 @@ class XrayRuntimeSettingsTest {
 
     @Test
     fun `normalizes xray buffer size`() {
-        assertEquals(512, XrayRuntimeSettings.normalizeXrayBufferSizeKiB(null))
-        assertEquals(512, XrayRuntimeSettings.normalizeXrayBufferSizeKiB(0))
+        assertEquals(64, XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB)
+        assertEquals(XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB, XrayRuntimeSettings.normalizeXrayBufferSizeKiB(null))
+        assertEquals(XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB, XrayRuntimeSettings.normalizeXrayBufferSizeKiB(0))
         assertEquals(1024, XrayRuntimeSettings.normalizeXrayBufferSizeKiB(1024))
         assertTrue(XrayRuntimeSettings.isValidXrayBufferSizeKiB(10_240))
         assertFalse(XrayRuntimeSettings.isValidXrayBufferSizeKiB(10_241))

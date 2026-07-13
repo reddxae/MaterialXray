@@ -1,7 +1,6 @@
 package com.material.xray.data.repository
 
 import com.material.xray.data.db.dao.SubscriptionDao
-import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.SubscriptionRouting
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -11,7 +10,6 @@ import kotlinx.coroutines.flow.first
 class SubscriptionRoutingRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val subscriptionDao: SubscriptionDao,
-    private val serverRepository: ServerRepository,
 ) {
     suspend fun apply(routing: SubscriptionRouting): Boolean = replaceActiveRouting(routing)
 
@@ -20,12 +18,6 @@ class SubscriptionRoutingRepository @Inject constructor(
         val routing = subscription.toSubscriptionRouting()
         if (subscription.providerRouting != null && routing == null) return false
         return replaceActiveRouting(routing)
-    }
-
-    suspend fun applyForSelectedServerIfProviderControlled(): Boolean {
-        if (settingsRepository.routingPolicyControl.first() != RoutingPolicyControl.SubscriptionProvider) return false
-        val server = serverRepository.getById(settingsRepository.lastServerId.first()) ?: return false
-        return applyForSubscription(server.subscriptionId)
     }
 
     private suspend fun replaceActiveRouting(routing: SubscriptionRouting?): Boolean {

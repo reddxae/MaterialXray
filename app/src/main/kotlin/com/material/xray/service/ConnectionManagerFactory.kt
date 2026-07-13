@@ -18,7 +18,6 @@ import com.material.xray.core.xray.XrayRoutingClient
 import com.material.xray.core.xray.XrayStatsClient
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.repository.ServerRepository
-import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ServerConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -199,7 +198,6 @@ class ConnectionManagerFactory @Inject constructor(
     private val shell: RootShell,
     private val geoDataManager: GeoDataManager,
     private val appBypassDao: AppBypassDao,
-    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val serverRepository: ServerRepository,
     private val appInventory: AppInventory,
     private val stateCoordinator: ConnectionStateCoordinator,
@@ -228,7 +226,6 @@ class ConnectionManagerFactory @Inject constructor(
             appInventory = appInventory,
             serverAddressResolver = serverAddressResolver,
             log = log,
-            providerRoutingSync = { subscriptionAppRoutingRepository.syncInstalledApps() },
         )
         val dependencies = ConnectionManagerDependencies(
             environment = environment,

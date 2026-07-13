@@ -36,6 +36,13 @@ class RoutingChangeManager @Inject constructor(
         _hasPendingChanges.value = false
     }
 
+    fun requestActiveConnectionUpdate(kind: PendingRoutingChange): Boolean {
+        if (connectionStateCoordinator.state.value !is ConnectionState.Connected) return false
+        markPendingChanges(kind)
+        maybeReloadActiveConnection()
+        return true
+    }
+
     fun maybeReloadActiveConnection() {
         val change = pendingChange.value ?: return
 

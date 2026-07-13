@@ -18,9 +18,9 @@ import com.material.xray.data.db.entity.AppRouteMode
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.routeAssignment
 import com.material.xray.data.db.entity.toAppBypassEntity
+import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
-import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.endpointSummary
 import com.material.xray.model.proxyOutboundCount
@@ -100,7 +100,7 @@ class AppsViewModel @Inject constructor(
     private val serverRepository: ServerRepository,
     private val settingsRepository: SettingsRepository,
     alwaysOnVpnState: AlwaysOnVpnState,
-    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
+    private val providerRoutingCoordinator: ProviderRoutingCoordinator,
     private val routingChangeManager: RoutingChangeManager,
     private val appInventory: AppInventory,
 ) : ViewModel() {
@@ -235,12 +235,7 @@ class AppsViewModel @Inject constructor(
     private fun loadApps() {
         viewModelScope.launch {
             _isLoadingApps.value = true
-            val subscriptionRoutingChanged = withContext(Dispatchers.IO) {
-                subscriptionAppRoutingRepository.syncInstalledApps()
-            }
-            if (subscriptionRoutingChanged) {
-                routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)
-            }
+            providerRoutingCoordinator.refreshSelectedServer()
             val snapshot = runCatching {
                 withContext(Dispatchers.IO) {
                     appInventory.loadSnapshot()

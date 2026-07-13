@@ -34,6 +34,8 @@ import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.AppRouteAssignment
 import com.material.xray.data.db.entity.AppRouteMode
 import com.material.xray.data.db.entity.routeAssignment
+import com.material.xray.data.repository.ProviderRoutingActiveUpdate
+import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.ConnectionState
@@ -83,6 +85,8 @@ class XrayService : VpnService() {
     @Inject lateinit var logBuffer: LogBuffer
 
     @Inject lateinit var connectionManagerFactory: ConnectionManagerFactory
+
+    @Inject lateinit var providerRoutingCoordinator: ProviderRoutingCoordinator
 
     private lateinit var connectionManager: ConnectionManager
     private lateinit var xrayLogStreamer: XrayLogStreamer
@@ -374,6 +378,7 @@ class XrayService : VpnService() {
         cleanStateFirst: Boolean = true,
         fastReconnect: Boolean = false,
     ): Boolean {
+        providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
         val runtimeSettings = settingsRepo.runtimeSettingsSnapshot()
         val forceVpnService = isRunningAlwaysOnVpn()
         val rootServiceAvailable = if (runtimeSettings.useRootService && !forceVpnService) {

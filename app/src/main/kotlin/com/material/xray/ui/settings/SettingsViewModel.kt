@@ -10,9 +10,8 @@ import com.material.xray.core.xray.GeoDataAsset
 import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.BackupSummary
 import com.material.xray.data.repository.PreparedBackupImport
+import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.SettingsRepository
-import com.material.xray.data.repository.SubscriptionAppRoutingRepository
-import com.material.xray.data.repository.SubscriptionRoutingRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
@@ -24,8 +23,6 @@ import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.DatabaseResetManager
-import com.material.xray.service.PendingRoutingChange
-import com.material.xray.service.RoutingChangeManager
 import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -63,9 +60,7 @@ class SettingsViewModel @Inject constructor(
     private val backupManager: BackupManager,
     private val databaseResetManager: DatabaseResetManager,
     private val connectionStateCoordinator: ConnectionStateCoordinator,
-    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
-    private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
-    private val routingChangeManager: RoutingChangeManager,
+    private val providerRoutingCoordinator: ProviderRoutingCoordinator,
     private val settingsRuntimeManager: SettingsRuntimeManager,
 ) : ViewModel() {
     private val _geoipUpdating = MutableStateFlow(false)
@@ -320,15 +315,7 @@ class SettingsViewModel @Inject constructor(
         if (policy == routingPolicyControl.value) return@launch
         settingsRepo.setRoutingPolicyControl(policy)
         if (policy == RoutingPolicyControl.SubscriptionProvider) {
-            val appRoutingChanged = subscriptionAppRoutingRepository.applyForSelectedServerIfProviderControlled()
-            val routingChanged = subscriptionRoutingRepository.applyForSelectedServerIfProviderControlled()
-            if (!appRoutingChanged && !routingChanged) return@launch
-            if (connectionStateCoordinator.state.value is ConnectionState.Connected) {
-                routingChangeManager.markPendingChanges(
-                    if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
-                )
-            }
-            reloadActiveConnectionIfConnected()
+            providerRoutingCoordinator.refreshSelectedServer()
         }
     }
 

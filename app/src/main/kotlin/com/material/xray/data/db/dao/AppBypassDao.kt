@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import com.material.xray.data.db.entity.AppBypassEntity
 import kotlinx.coroutines.flow.Flow
@@ -39,4 +40,10 @@ interface AppBypassDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<AppBypassEntity>)
+
+    @Transaction
+    suspend fun replaceAll(entities: List<AppBypassEntity>) {
+        deleteAll()
+        insertAll(entities)
+    }
 }

@@ -3,11 +3,6 @@ package com.material.xray.data.repository
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
-import com.material.xray.model.ConnectionState
-import com.material.xray.model.RoutingPolicyControl
-import com.material.xray.service.ConnectionStateCoordinator
-import com.material.xray.service.PendingRoutingChange
-import com.material.xray.service.RoutingChangeManager
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
@@ -18,16 +13,14 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     private val serverRepository: ServerRepository,
     private val settingsRepository: SettingsRepository,
     private val appBypassDao: AppBypassDao,
-    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
-    private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
-    private val routingChangeManager: RoutingChangeManager,
-    private val connectionStateCoordinator: ConnectionStateCoordinator,
+    private val providerRoutingCoordinator: ProviderRoutingCoordinator,
 ) {
     suspend fun refreshAll(): SubscriptionRepository.RefreshBatchResult {
         val selectedBeforeRefresh = selectedServerEntity()
         val result = subscriptionRepository.refreshAll()
         syncAppRoutesAfterRefreshResults(result.successes)
         syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, result.successes)
+        refreshProviderRoutingAfterRefreshResults(selectedBeforeRefresh, result.successes)
         return result
     }
 
@@ -38,6 +31,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         val result = subscriptionRepository.refreshDueSubscriptions(nowMillis)
         syncAppRoutesAfterRefreshResults(result.successes)
         syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, result.successes)
+        refreshProviderRoutingAfterRefreshResults(selectedBeforeRefresh, result.successes)
         return result
     }
 
@@ -49,6 +43,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         val result = subscriptionRepository.refresh(subId, url)
         syncAppRoutesAfterRefresh(result)
         syncSelectedServerAfterRefresh(selectedBeforeRefresh, subId, result)
+        refreshProviderRoutingAfterRefresh(selectedBeforeRefresh, subId, result)
         return result
     }
 
@@ -61,6 +56,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         val result = subscriptionRepository.update(sub, name, url)
         syncAppRoutesAfterRefresh(result)
         syncSelectedServerAfterRefresh(selectedBeforeRefresh, sub.id, result)
+        refreshProviderRoutingAfterRefresh(selectedBeforeRefresh, sub.id, result)
         return result
     }
 
@@ -101,26 +97,25 @@ class SubscriptionRefreshCoordinator @Inject constructor(
                 appBypassDao.updateServerId(oldServerId, newServerId)
             }
         }
+    }
 
-        val result = refreshResult ?: return
-        if (settingsRepository.routingPolicyControl.first() != RoutingPolicyControl.SubscriptionProvider) return
-
-        val selectedServerId = settingsRepository.lastServerId.first()
-        val selectedSubscriptionId = if (selectedServerId in result.serverIdReplacements) {
-            result.subscriptionId
-        } else {
-            selectedServerEntity()?.subscriptionId
+    private suspend fun refreshProviderRoutingAfterRefreshResults(
+        selectedBeforeRefresh: ServerEntity?,
+        refreshResults: Map<Long, SubscriptionRepository.RefreshResult>,
+    ) {
+        val selectedSubscriptionId = selectedBeforeRefresh?.subscriptionId ?: return
+        if (selectedSubscriptionId in refreshResults) {
+            providerRoutingCoordinator.refreshSelectedServer()
         }
-        if (selectedSubscriptionId != result.subscriptionId) return
+    }
 
-        val appRoutingChanged = subscriptionAppRoutingRepository.applyForSubscription(result.subscriptionId)
-        val routingChanged = subscriptionRoutingRepository.applyForSubscription(result.subscriptionId)
-        if (appRoutingChanged || routingChanged) {
-            if (connectionStateCoordinator.state.value is ConnectionState.Connected) {
-                routingChangeManager.markPendingChanges(
-                    if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
-                )
-            }
+    private suspend fun refreshProviderRoutingAfterRefresh(
+        selectedBeforeRefresh: ServerEntity?,
+        refreshedSubscriptionId: Long,
+        refreshResult: SubscriptionRepository.RefreshResult?,
+    ) {
+        if (refreshResult != null && selectedBeforeRefresh?.subscriptionId == refreshedSubscriptionId) {
+            providerRoutingCoordinator.refreshSelectedServer()
         }
     }
 

@@ -13,6 +13,8 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.SubscriptionFetchException
 import com.material.xray.data.repository.AppUpdateRepository
+import com.material.xray.data.repository.ProviderRoutingActiveUpdate
+import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
@@ -114,6 +116,7 @@ class HomeViewModel @Inject constructor(
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val subscriptionRefreshCoordinator: SubscriptionRefreshCoordinator,
+    private val providerRoutingCoordinator: ProviderRoutingCoordinator,
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
     private val connectionStateCoordinator: ConnectionStateCoordinator,
     private val connectionRuntimeManager: ConnectionRuntimeManager,
@@ -290,7 +293,7 @@ class HomeViewModel @Inject constructor(
             if (serverId == selectedServerId.value) return@launch
             settingsRepo.setLastServerId(serverId)
             val serverEntity = allServers.value.find { it.id == serverId }
-            applyProviderRoutingForServer(serverEntity)
+            providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
 
             val state = connectionState.value
             if (state is ConnectionState.Connected || state is ConnectionState.Error) {
@@ -445,19 +448,6 @@ class HomeViewModel @Inject constructor(
     private suspend fun applySubscriptionRouting(routing: SubscriptionRouting) {
         if (subscriptionRoutingRepository.apply(routing)) {
             routingChangeManager.markPendingChanges(PendingRoutingChange.XRAY_CONFIG)
-        }
-    }
-
-    private suspend fun applyProviderRoutingForServer(server: ServerEntity?) {
-        if (server == null || routingPolicyControl.value != RoutingPolicyControl.SubscriptionProvider) return
-        val appRoutingChanged = subscriptionAppRoutingRepository.applyForSubscription(server.subscriptionId)
-        val routingChanged = subscriptionRoutingRepository.applyForSubscription(server.subscriptionId)
-        if (appRoutingChanged || routingChanged) {
-            if (connectionState.value is ConnectionState.Connected) {
-                routingChangeManager.markPendingChanges(
-                    if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
-                )
-            }
         }
     }
 

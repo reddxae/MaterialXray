@@ -3,11 +3,20 @@ package com.material.xray.data.db
 import java.sql.Connection
 import java.sql.DriverManager
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DatabaseValueValidatorTest {
+    @Test
+    fun validationRunsOnlyForMissingOrOlderRevisions() {
+        assertTrue(DatabaseValueValidator.shouldValidate(null))
+        assertTrue(DatabaseValueValidator.shouldValidate(DatabaseValueValidator.CURRENT_REVISION - 1))
+        assertFalse(DatabaseValueValidator.shouldValidate(DatabaseValueValidator.CURRENT_REVISION))
+        assertFalse(DatabaseValueValidator.shouldValidate(DatabaseValueValidator.CURRENT_REVISION + 1))
+    }
+
     @Test
     fun validationSanitizesRowsWithoutDeletingThemAndIsIdempotent() {
         DriverManager.getConnection("jdbc:sqlite::memory:").use { connection ->

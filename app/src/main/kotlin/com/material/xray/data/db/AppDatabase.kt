@@ -8,12 +8,13 @@ import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.dao.ServerDao
 import com.material.xray.data.db.dao.SubscriptionDao
 import com.material.xray.data.db.entity.AppBypassEntity
+import com.material.xray.data.db.entity.DatabaseMetadataEntity
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 
 @Database(
-    entities = [ServerEntity::class, SubscriptionEntity::class, AppBypassEntity::class],
-    version = 13,
+    entities = [ServerEntity::class, SubscriptionEntity::class, AppBypassEntity::class, DatabaseMetadataEntity::class],
+    version = 14,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,7 +27,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val VALUE_VALIDATION_CALLBACK = object : RoomDatabase.Callback() {
             override fun onOpen(db: SupportSQLiteDatabase) {
-                DatabaseValueValidator.validate(db)
+                DatabaseValueValidator.validateIfNeeded(db)
             }
         }
 
@@ -145,6 +146,20 @@ abstract class AppDatabase : RoomDatabase() {
                     UPDATE subscriptions
                     SET subscriptionTotalBytes = NULL, lastUpdated = 0
                     WHERE subscriptionTotalBytes > 0
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS database_metadata (
+                        id INTEGER NOT NULL,
+                        valueValidationRevision INTEGER NOT NULL,
+                        PRIMARY KEY(id)
+                    )
                     """.trimIndent(),
                 )
             }

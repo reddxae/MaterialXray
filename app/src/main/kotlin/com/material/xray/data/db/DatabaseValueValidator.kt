@@ -1,16 +1,39 @@
 package com.material.xray.data.db
 
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.material.xray.data.db.entity.DatabaseMetadataEntity
 
 internal object DatabaseValueValidator {
-    fun validate(db: SupportSQLiteDatabase) {
+    internal const val CURRENT_REVISION = 1
+
+    fun validateIfNeeded(db: SupportSQLiteDatabase): Boolean {
+        if (!shouldValidate(readRevision(db))) return false
+        repair(db)
+        return true
+    }
+
+    fun repair(db: SupportSQLiteDatabase) {
         db.beginTransaction()
         try {
             statements.forEach(db::execSQL)
+            db.execSQL(
+                """
+                INSERT OR REPLACE INTO database_metadata (id, valueValidationRevision)
+                VALUES (${DatabaseMetadataEntity.SINGLETON_ID}, $CURRENT_REVISION)
+                """.trimIndent(),
+            )
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
+    }
+
+    internal fun shouldValidate(revision: Int?): Boolean = revision == null || revision < CURRENT_REVISION
+
+    private fun readRevision(db: SupportSQLiteDatabase): Int? = db.query(
+        "SELECT valueValidationRevision FROM database_metadata WHERE id = ${DatabaseMetadataEntity.SINGLETON_ID}",
+    ).use { cursor ->
+        if (cursor.moveToFirst()) cursor.getInt(0) else null
     }
 
     internal val statements = listOf(

@@ -246,11 +246,17 @@ internal class UserXrayProcessSupervisor(
 
     suspend fun stop() {
         val stoppedPid = pid.takeIf { it > 0 } ?: return
+        stopProcess(stoppedPid)
+        pid = -1
+    }
+
+    suspend fun stopOrphan(pid: Int) {
+        if (pid > 0 && this.pid != pid) stopProcess(pid)
+    }
+
+    fun requestStop() {
+        val stoppedPid = pid.takeIf { it > 0 } ?: return
         processLauncher.kill(stoppedPid, signal = 15)
-        if (!waitUntilStopped(stoppedPid, STOP_GRACE_TIMEOUT_MS)) {
-            processLauncher.kill(stoppedPid, signal = 9)
-            waitUntilStopped(stoppedPid, KILL_GRACE_TIMEOUT_MS)
-        }
         pid = -1
     }
 
@@ -287,6 +293,14 @@ internal class UserXrayProcessSupervisor(
             elapsedMs += STOP_POLL_INTERVAL_MS
         }
         return false
+    }
+
+    private suspend fun stopProcess(pid: Int) {
+        processLauncher.kill(pid, signal = 15)
+        if (!waitUntilStopped(pid, STOP_GRACE_TIMEOUT_MS)) {
+            processLauncher.kill(pid, signal = 9)
+            waitUntilStopped(pid, KILL_GRACE_TIMEOUT_MS)
+        }
     }
 }
 

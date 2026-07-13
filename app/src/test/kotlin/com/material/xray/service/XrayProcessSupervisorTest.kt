@@ -122,6 +122,29 @@ class XrayProcessSupervisorTest {
         assertEquals(listOf(15, 9), launcher.killedSignals)
     }
 
+    @Test
+    fun `user process destruction requests stop without waiting`() {
+        val launcher = FakeUserXrayProcessLauncher()
+        val supervisor = userSupervisor(processLauncher = launcher)
+        supervisor.start(binDir = "/tmp/xray bin", tunFd = 89)
+
+        supervisor.requestStop()
+
+        assertEquals(listOf(15), launcher.killedSignals)
+    }
+
+    @Test
+    fun `user process cleanup can stop an orphan from persisted state`() = runTest {
+        val launcher = FakeUserXrayProcessLauncher(
+            alive = { pid, killedSignals -> pid == 77 && 9 !in killedSignals },
+        )
+        val supervisor = userSupervisor(processLauncher = launcher)
+
+        supervisor.stopOrphan(77)
+
+        assertEquals(listOf(15, 9), launcher.killedSignals)
+    }
+
     private fun supervisor(
         environment: XrayRuntimeEnvironment = FakeRuntimeEnvironment(),
         commandRunner: FakeRootCommandRunner = FakeRootCommandRunner(),

@@ -237,8 +237,17 @@ class ConnectionManager(
             return false
         }
         log.append(LogSource.APP, "Using Android VpnService")
+        cleanOrphanedVpnServiceRuntime()
         userProcessSupervisor.stop()
         return true
+    }
+
+    private suspend fun cleanOrphanedVpnServiceRuntime() {
+        val staleState = stateFile.read()
+            ?.takeIf { it.physicalInterface == VPN_SERVICE_INTERFACE_LABEL }
+            ?: return
+        userProcessSupervisor.stopOrphan(staleState.xrayPid)
+        stateFile.delete()
     }
 
     private suspend fun prepareXrayBinary(useRootService: Boolean, fastReconnect: Boolean): String? {
@@ -419,7 +428,7 @@ class ConnectionManager(
                 routeTable = routeTable,
                 bypassTable = bypassTable,
                 appProxyServerIds = appRoutingPlan.proxyServerIds,
-                physicalInterface = physicalRoute?.dev ?: "VpnService",
+                physicalInterface = physicalRoute?.dev ?: VPN_SERVICE_INTERFACE_LABEL,
                 physicalGateway = physicalRoute?.gateway,
                 physicalTable = physicalRoute?.table,
             ),
@@ -569,7 +578,7 @@ class ConnectionManager(
                 serverName = server.name,
                 corePid = pid,
                 tunName = tunName,
-                physicalInterface = physicalRoute?.dev ?: "VpnService",
+                physicalInterface = physicalRoute?.dev ?: VPN_SERVICE_INTERFACE_LABEL,
                 physicalGateway = physicalRoute?.gateway,
                 physicalTable = physicalRoute?.table,
             ),
@@ -637,6 +646,10 @@ class ConnectionManager(
             log.append(LogSource.APP, "Disconnected")
             stateHolder.update(ConnectionState.Disconnected)
         }
+    }
+
+    fun prepareForServiceDestruction() {
+        if (runningViaVpnService) userProcessSupervisor.requestStop()
     }
 
     suspend fun ensureCleanRootRuntime() {
@@ -712,3 +725,5 @@ class ConnectionManager(
         }
     }
 }
+
+private const val VPN_SERVICE_INTERFACE_LABEL = "VpnService"

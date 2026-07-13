@@ -63,7 +63,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -308,10 +307,8 @@ class XrayService : VpnService() {
         stopBalancerSelectionTracker()
         stopProcessWatchdog()
         stopLogTail()
+        if (::connectionManager.isInitialized) connectionManager.prepareForServiceDestruction()
         scope.cancel()
-        runBlocking {
-            connectionManager.disconnect(updateState = false)
-        }
         closeVpnInterface()
         rootShell.close()
         super.onDestroy()

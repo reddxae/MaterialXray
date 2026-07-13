@@ -16,7 +16,7 @@ enum class PendingRoutingChange {
 @Singleton
 class RoutingChangeManager @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val connectionStateHolder: ConnectionStateHolder,
+    private val connectionStateCoordinator: ConnectionStateCoordinator,
 ) {
     private val pendingChange = MutableStateFlow<PendingRoutingChange?>(null)
     private val _hasPendingChanges = MutableStateFlow(false)
@@ -39,7 +39,7 @@ class RoutingChangeManager @Inject constructor(
     fun maybeReloadActiveConnection() {
         val change = pendingChange.value ?: return
 
-        when (connectionStateHolder.state.value) {
+        when (connectionStateCoordinator.state.value) {
             is ConnectionState.Connected -> {
                 clearPendingChanges()
                 when (change) {

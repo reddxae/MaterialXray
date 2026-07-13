@@ -40,7 +40,7 @@ class ConnectionManager(
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val serverRepository: ServerRepository,
     private val appInventory: AppInventory,
-    private val stateHolder: ConnectionStateHolder,
+    private val stateCoordinator: ConnectionStateCoordinator,
     private val log: LogBuffer,
     private val onXrayLogReady: () -> Unit = {},
 ) {
@@ -89,7 +89,7 @@ class ConnectionManager(
         cleanStateFirst: Boolean = true,
         fastReconnect: Boolean = false,
     ) {
-        stateHolder.update(transitionState)
+        stateCoordinator.startConnection(transitionState)
         val connectStartedAt = SystemClock.elapsedRealtime()
         val tunName = runtimeSettings.tunName
         val fwmark = runtimeSettings.fwmark
@@ -285,13 +285,13 @@ class ConnectionManager(
 
         log.append(LogSource.APP, "Checking routing data...")
         if (geoDataManager.needsRefresh()) {
-            stateHolder.update(ConnectionState.UpdatingRoutingData)
+            stateCoordinator.markUpdatingRoutingData()
             log.append(LogSource.APP, "Updating routing data...")
         }
         val geoDataStatus = timedStep("Routing data setup") {
             geoDataManager.ensureReady()
         }
-        stateHolder.update(transitionState)
+        stateCoordinator.startConnection(transitionState)
         if (geoDataStatus.downloaded) {
             log.append(
                 LogSource.APP,
@@ -573,7 +573,7 @@ class ConnectionManager(
             LogSource.APP,
             "Connection setup finished in ${SystemClock.elapsedRealtime() - connectStartedAt} ms",
         )
-        stateHolder.update(
+        stateCoordinator.markConnected(
             ConnectionState.Connected(
                 serverName = server.name,
                 corePid = pid,
@@ -623,7 +623,7 @@ class ConnectionManager(
 
     suspend fun disconnect(updateState: Boolean, fastRootCleanup: Boolean = false) {
         if (updateState) {
-            stateHolder.update(ConnectionState.Disconnecting)
+            stateCoordinator.markDisconnecting()
             log.append(LogSource.APP, "Disconnecting...")
         }
         val wasRunningViaVpnService = runningViaVpnService
@@ -644,7 +644,7 @@ class ConnectionManager(
         runningViaVpnService = false
         if (updateState) {
             log.append(LogSource.APP, "Disconnected")
-            stateHolder.update(ConnectionState.Disconnected)
+            stateCoordinator.markDisconnected()
         }
     }
 
@@ -672,7 +672,7 @@ class ConnectionManager(
             }
             runningViaVpnService = false
         }
-        stateHolder.update(ConnectionState.Error(message, retryable = retryable))
+        stateCoordinator.markError(message, retryable)
     }
 
     suspend fun isProcessAlive(pid: Int): Boolean = if (runningViaVpnService) {

@@ -40,7 +40,7 @@ import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.AppUpdateInstallProgress
 import com.material.xray.service.AppUpdateInstaller
 import com.material.xray.service.ConnectionEvent
-import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
 import com.material.xray.service.SubscriptionUpdateScheduler
@@ -121,7 +121,7 @@ class HomeViewModel @Inject constructor(
     private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val subscriptionRefreshCoordinator: SubscriptionRefreshCoordinator,
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
-    private val connectionStateHolder: ConnectionStateHolder,
+    private val connectionStateCoordinator: ConnectionStateCoordinator,
     alwaysOnVpnState: AlwaysOnVpnState,
     private val routingChangeManager: RoutingChangeManager,
     private val serverLatencyTester: ServerLatencyTester,
@@ -135,9 +135,9 @@ class HomeViewModel @Inject constructor(
     private var activeLatencyServerIds = emptySet<Long>()
     private val latencySemaphore = Semaphore(MAX_CONCURRENT_LATENCY_TESTS)
 
-    val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
+    val connectionState: StateFlow<ConnectionState> = connectionStateCoordinator.state
     val alwaysOnVpn: StateFlow<Boolean> = alwaysOnVpnState.active
-    val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateHolder.events
+    val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateCoordinator.events
     private val _uiEvents = MutableSharedFlow<HomeUiEvent>()
     val uiEvents: SharedFlow<HomeUiEvent> = _uiEvents.asSharedFlow()
 
@@ -180,7 +180,7 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val activeBalancerServer: StateFlow<ActiveBalancerServerState?> = combine(
-        connectionStateHolder.activeBalancerSelection,
+        connectionStateCoordinator.activeBalancerSelection,
         selectedServerId,
         selectedServer,
         allServers,
@@ -228,25 +228,9 @@ class HomeViewModel @Inject constructor(
     fun refreshTunnelInterfaceState() {
         viewModelScope.launch {
             val detectedState = detectTunnelInterfaceState()
-            val currentState = connectionStateHolder.state.value
-            when {
-                detectedState is ConnectionState.InterfaceBusy -> {
-                    connectionStateHolder.update(detectedState)
-                }
-                detectedState is ConnectionState.Connected && currentState is ConnectionState.Disconnected -> {
-                    connectionStateHolder.update(detectedState)
-                    if (detectedState.corePid > 0) {
-                        XrayService.restoreStatus(context)
-                    }
-                }
-                detectedState == null &&
-                    (
-                        currentState is ConnectionState.InterfaceBusy ||
-                            currentState is ConnectionState.RestartRequired ||
-                            (currentState is ConnectionState.Connected && currentState.corePid <= 0)
-                        ) -> {
-                    connectionStateHolder.update(ConnectionState.Disconnected)
-                }
+            val reconciledState = connectionStateCoordinator.reconcileDetectedState(detectedState)
+            if (reconciledState is ConnectionState.Connected && reconciledState.corePid > 0) {
+                XrayService.restoreStatus(context)
             }
         }
     }

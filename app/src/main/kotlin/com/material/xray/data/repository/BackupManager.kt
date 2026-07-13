@@ -18,7 +18,7 @@ import com.material.xray.model.BackupData
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import com.material.xray.service.AppUpdateScheduler
-import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.XrayService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayOutputStream
@@ -51,7 +51,7 @@ class BackupManager @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val launcherIconManager: LauncherIconManager,
     private val appUpdateScheduler: AppUpdateScheduler,
-    private val connectionStateHolder: ConnectionStateHolder,
+    private val connectionStateCoordinator: ConnectionStateCoordinator,
 ) {
     private val json = Json {
         encodeDefaults = true
@@ -226,11 +226,11 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun disconnectActiveConnection() {
-        if (!connectionStateHolder.state.value.isRunning()) return
+        if (!connectionStateCoordinator.state.value.isRunning()) return
         XrayService.disconnect(context, force = true)
         check(
             withTimeoutOrNull(DISCONNECT_TIMEOUT_MILLIS) {
-                connectionStateHolder.state.first { !it.isRunning() }
+                connectionStateCoordinator.state.first { !it.isRunning() }
             } != null,
         ) { "Timed out waiting for the active connection to stop" }
     }

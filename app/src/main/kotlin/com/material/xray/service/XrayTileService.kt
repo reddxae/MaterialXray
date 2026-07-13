@@ -30,7 +30,7 @@ class XrayTileService : TileService() {
 
     @Inject lateinit var serverRepository: ServerRepository
 
-    @Inject lateinit var connectionStateHolder: ConnectionStateHolder
+    @Inject lateinit var connectionStateCoordinator: ConnectionStateCoordinator
 
     @Inject lateinit var alwaysOnVpnState: AlwaysOnVpnState
 
@@ -49,7 +49,7 @@ class XrayTileService : TileService() {
         listeningJob?.cancel()
         listeningJob = scope.launch {
             combine(
-                connectionStateHolder.state,
+                connectionStateCoordinator.state,
                 settingsRepo.lastServerId,
                 alwaysOnVpnState.active,
             ) { state, selectedServerId, alwaysOnVpn ->
@@ -68,7 +68,7 @@ class XrayTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        when (connectionStateHolder.state.value) {
+        when (connectionStateCoordinator.state.value) {
             is ConnectionState.Connected if alwaysOnVpnState.active.value -> Unit
             is ConnectionState.Connected -> {
                 XrayService.disconnect(this)
@@ -99,7 +99,7 @@ class XrayTileService : TileService() {
         scope.launch {
             updateTile(
                 TileSnapshot(
-                    state = connectionStateHolder.state.value,
+                    state = connectionStateCoordinator.state.value,
                     hasSelectedServer = settingsRepo.lastServerId.first() >= 0,
                     alwaysOnVpn = alwaysOnVpnState.active.value,
                 ),
@@ -118,7 +118,7 @@ class XrayTileService : TileService() {
         if (serverConfig == null) {
             updateTile(
                 TileSnapshot(
-                    state = connectionStateHolder.state.value,
+                    state = connectionStateCoordinator.state.value,
                     hasSelectedServer = false,
                     alwaysOnVpn = alwaysOnVpnState.active.value,
                 ),

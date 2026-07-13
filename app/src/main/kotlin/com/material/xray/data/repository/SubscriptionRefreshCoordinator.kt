@@ -5,7 +5,7 @@ import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.RoutingPolicyControl
-import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
 import javax.inject.Inject
@@ -21,7 +21,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val routingChangeManager: RoutingChangeManager,
-    private val connectionStateHolder: ConnectionStateHolder,
+    private val connectionStateCoordinator: ConnectionStateCoordinator,
 ) {
     suspend fun refreshAll(): SubscriptionRepository.RefreshBatchResult {
         val selectedBeforeRefresh = selectedServerEntity()
@@ -116,7 +116,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         val appRoutingChanged = subscriptionAppRoutingRepository.applyForSubscription(result.subscriptionId)
         val routingChanged = subscriptionRoutingRepository.applyForSubscription(result.subscriptionId)
         if (appRoutingChanged || routingChanged) {
-            if (connectionStateHolder.state.value is ConnectionState.Connected) {
+            if (connectionStateCoordinator.state.value is ConnectionState.Connected) {
                 routingChangeManager.markPendingChanges(
                     if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
                 )

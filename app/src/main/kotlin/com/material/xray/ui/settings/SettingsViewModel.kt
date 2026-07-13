@@ -29,7 +29,7 @@ import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.AppUpdateScheduler
-import com.material.xray.service.ConnectionStateHolder
+import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
 import com.material.xray.service.XrayService
@@ -70,7 +70,7 @@ class SettingsViewModel @Inject constructor(
     private val appUpdateScheduler: AppUpdateScheduler,
     private val backupManager: BackupManager,
     private val database: AppDatabase,
-    private val connectionStateHolder: ConnectionStateHolder,
+    private val connectionStateCoordinator: ConnectionStateCoordinator,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val routingChangeManager: RoutingChangeManager,
@@ -338,7 +338,7 @@ class SettingsViewModel @Inject constructor(
             val appRoutingChanged = subscriptionAppRoutingRepository.applyForSelectedServerIfProviderControlled()
             val routingChanged = subscriptionRoutingRepository.applyForSelectedServerIfProviderControlled()
             if (!appRoutingChanged && !routingChanged) return@launch
-            if (connectionStateHolder.state.value is ConnectionState.Connected) {
+            if (connectionStateCoordinator.state.value is ConnectionState.Connected) {
                 routingChangeManager.markPendingChanges(
                     if (routingChanged) PendingRoutingChange.XRAY_CONFIG else PendingRoutingChange.APP_ROUTING,
                 )
@@ -360,11 +360,11 @@ class SettingsViewModel @Inject constructor(
             _databaseResetting.value = true
             try {
                 val result = runCatching {
-                    if (connectionStateHolder.state.value.requiresDisconnectForDatabaseReset()) {
+                    if (connectionStateCoordinator.state.value.requiresDisconnectForDatabaseReset()) {
                         XrayService.disconnect(context, force = true)
                         check(
                             withTimeoutOrNull(DATABASE_RESET_DISCONNECT_TIMEOUT_MILLIS) {
-                                connectionStateHolder.state.first { !it.requiresDisconnectForDatabaseReset() }
+                                connectionStateCoordinator.state.first { !it.requiresDisconnectForDatabaseReset() }
                             } != null,
                         ) { "Timed out waiting for the active connection to stop" }
                     }
@@ -531,7 +531,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun reloadActiveConnectionIfConnected() {
-        if (connectionStateHolder.state.value is ConnectionState.Connected) {
+        if (connectionStateCoordinator.state.value is ConnectionState.Connected) {
             XrayService.reload(context)
         }
     }

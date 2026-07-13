@@ -57,8 +57,6 @@ import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -72,7 +70,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -573,19 +570,8 @@ class HomeViewModel @Inject constructor(
         val probeJobs = servers.map { server ->
             launch { runLatencyProbe(runId, server, method) }
         }
-        val sortingJob = if (sortDuringTest) {
-            launch {
-                while (isActive) {
-                    delay(LATENCY_SORT_INTERVAL_MILLIS)
-                    updateServerSortOrder(runId, servers)
-                }
-            }
-        } else {
-            null
-        }
 
         probeJobs.joinAll()
-        sortingJob?.cancelAndJoin()
         if (sortDuringTest) updateServerSortOrder(runId, servers)
     }
 
@@ -729,7 +715,6 @@ class HomeViewModel @Inject constructor(
         const val DEFAULT_TUN_NAME = "xray0"
         const val AMBIGUOUS_TUN_NAME = "tun0"
         const val MAX_CONCURRENT_LATENCY_TESTS = 10
-        const val LATENCY_SORT_INTERVAL_MILLIS = 500L
     }
 }
 

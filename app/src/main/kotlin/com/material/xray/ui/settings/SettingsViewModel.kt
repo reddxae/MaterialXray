@@ -7,29 +7,18 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.R
-import com.material.xray.core.app.appKey
-import com.material.xray.core.app.parseAppKey
 import com.material.xray.core.launcher.LauncherIconManager
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.GeoDataAsset
 import com.material.xray.core.xray.GeoDataManager
 import com.material.xray.core.xray.XrayBinary
 import com.material.xray.data.db.AppDatabase
-import com.material.xray.data.db.dao.AppBypassDao
-import com.material.xray.data.db.dao.ServerDao
-import com.material.xray.data.db.dao.SubscriptionDao
-import com.material.xray.data.db.entity.AppBypassEntity
-import com.material.xray.data.db.entity.SubscriptionEntity
+import com.material.xray.data.repository.BackupManager
+import com.material.xray.data.repository.BackupSummary
+import com.material.xray.data.repository.PreparedBackupImport
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.data.repository.SubscriptionRoutingRepository
-import com.material.xray.data.repository.toSubscriptionAppRouting
-import com.material.xray.data.repository.toSubscriptionMetadata
-import com.material.xray.data.repository.toSubscriptionRouting
-import com.material.xray.data.repository.withSubscriptionAppRouting
-import com.material.xray.data.repository.withSubscriptionMetadata
-import com.material.xray.data.repository.withSubscriptionRouting
-import com.material.xray.model.BackupData
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
@@ -61,10 +50,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 data class AssetUpdateMessage(
+    @param:StringRes val messageResId: Int,
+    val detail: String? = null,
+)
+
+data class BackupOperationMessage(
     @param:StringRes val messageResId: Int,
     val detail: String? = null,
 )
@@ -76,9 +68,7 @@ class SettingsViewModel @Inject constructor(
     private val settingsRepo: SettingsRepository,
     private val appUpdateChecker: AppUpdateChecker,
     private val appUpdateScheduler: AppUpdateScheduler,
-    private val subscriptionDao: SubscriptionDao,
-    private val serverDao: ServerDao,
-    private val appBypassDao: AppBypassDao,
+    private val backupManager: BackupManager,
     private val database: AppDatabase,
     private val connectionStateHolder: ConnectionStateHolder,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
@@ -88,19 +78,18 @@ class SettingsViewModel @Inject constructor(
     private val launcherIconManager: LauncherIconManager,
     private val rootShell: RootShell,
 ) : ViewModel() {
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        prettyPrint = true
-    }
     private val _geoipUpdating = MutableStateFlow(false)
     private val _geositeUpdating = MutableStateFlow(false)
     private val _assetUpdateEvents = MutableSharedFlow<AssetUpdateMessage>()
     private val _rootAccessDeniedEvents = MutableSharedFlow<Unit>()
     private val _databaseResetEvents = MutableSharedFlow<Boolean>()
     private val _databaseResetting = MutableStateFlow(false)
+    private val _backupBusy = MutableStateFlow(false)
+    private val _backupImportSummary = MutableStateFlow<BackupSummary?>(null)
+    private val _backupEvents = MutableSharedFlow<BackupOperationMessage>()
     private val _rootAvailable = MutableStateFlow<Boolean?>(null)
     private val _xrayCoreVersion = MutableStateFlow<String?>(null)
+    private var preparedBackupImport: PreparedBackupImport? = null
 
     val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
     val dnsServers =
@@ -206,6 +195,9 @@ class SettingsViewModel @Inject constructor(
     val rootAccessDeniedEvents: SharedFlow<Unit> = _rootAccessDeniedEvents.asSharedFlow()
     val databaseResetEvents: SharedFlow<Boolean> = _databaseResetEvents.asSharedFlow()
     val databaseResetting: StateFlow<Boolean> = _databaseResetting.asStateFlow()
+    val backupBusy: StateFlow<Boolean> = _backupBusy.asStateFlow()
+    val backupImportSummary: StateFlow<BackupSummary?> = _backupImportSummary.asStateFlow()
+    val backupEvents: SharedFlow<BackupOperationMessage> = _backupEvents.asSharedFlow()
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
     val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
 
@@ -414,87 +406,89 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun exportBackup(uri: Uri) {
+        if (_backupBusy.value) return
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val subs = subscriptionDao.getAll()
-                val bypassed = appBypassDao.getExcluded().map {
-                    if (it.profileId == 0) it.packageName else appKey(it.profileId, it.packageName)
-                }
-                val settings = settingsRepo.getAllAsMap()
+            _backupBusy.value = true
+            val result = runCatching { withContext(Dispatchers.IO) { backupManager.export(uri) } }
+            result.exceptionOrNull()?.let { error ->
+                if (error is CancellationException) throw error
+            }
+            _backupEvents.emit(
+                if (result.isSuccess) {
+                    BackupOperationMessage(R.string.settings_backup_exported)
+                } else {
+                    backupFailureMessage(
+                        defaultMessageResId = R.string.settings_backup_export_failed,
+                        detailedMessageResId = R.string.settings_backup_export_failed_with_detail,
+                        error = requireNotNull(result.exceptionOrNull()),
+                    )
+                },
+            )
+            _backupBusy.value = false
+        }
+    }
 
-                val backup = BackupData(
-                    subscriptions = subs.map { sub ->
-                        BackupData.BackupSubscription(
-                            name = sub.name,
-                            url = sub.url,
-                            preferJson = sub.preferJson,
-                            autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
-                            descriptionHidden = sub.descriptionHidden,
-                            userAgentMode = sub.userAgentMode,
-                            customUserAgent = sub.customUserAgent,
-                            customHeaders = sub.customHeaders,
-                            metadata = sub.toSubscriptionMetadata(),
-                            appRouting = sub.toSubscriptionAppRouting(),
-                            routing = sub.toSubscriptionRouting(),
-                        )
-                    },
-                    bypassedApps = bypassed,
-                    settings = settings,
+    fun prepareBackupImport(uri: Uri) {
+        if (_backupBusy.value) return
+        viewModelScope.launch {
+            _backupBusy.value = true
+            val result = runCatching { withContext(Dispatchers.IO) { backupManager.prepareImport(uri) } }
+            result.onSuccess { prepared ->
+                preparedBackupImport = prepared
+                _backupImportSummary.value = prepared.summary
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                _backupEvents.emit(
+                    backupFailureMessage(
+                        defaultMessageResId = R.string.settings_backup_import_failed,
+                        detailedMessageResId = R.string.settings_backup_import_failed_with_detail,
+                        error = error,
+                    ),
                 )
-
-                context.contentResolver.openOutputStream(uri)?.use { stream ->
-                    stream.write(json.encodeToString(backup).toByteArray())
-                }
             }
+            _backupBusy.value = false
         }
     }
 
-    fun importBackup(uri: Uri) {
+    fun dismissBackupImport() {
+        if (_backupBusy.value) return
+        preparedBackupImport = null
+        _backupImportSummary.value = null
+    }
+
+    fun confirmBackupImport() {
+        val prepared = preparedBackupImport ?: return
+        if (_backupBusy.value) return
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val text = context.contentResolver.openInputStream(uri)
-                    ?.use { it.bufferedReader().readText() }
-                    ?: return@withContext
-                val backup = runCatching { json.decodeFromString<BackupData>(text) }.getOrNull() ?: return@withContext
-
-                subscriptionDao.deleteAll()
-                serverDao.deleteAll()
-                appBypassDao.deleteAll()
-
-                backup.subscriptions.forEach { sub ->
-                    subscriptionDao.insert(
-                        SubscriptionEntity(
-                            name = sub.name,
-                            url = sub.url,
-                            preferJson = sub.preferJson,
-                            autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
-                            descriptionHidden = sub.descriptionHidden,
-                            userAgentMode = sub.userAgentMode,
-                            customUserAgent = sub.customUserAgent,
-                            customHeaders = sub.customHeaders,
-                        ).withSubscriptionMetadata(sub.metadata)
-                            .withSubscriptionAppRouting(sub.appRouting)
-                            .withSubscriptionRouting(sub.routing),
-                    )
-                }
-                backup.bypassedApps.forEach { value ->
-                    val app = parseAppKey(value)
-                    appBypassDao.upsert(
-                        AppBypassEntity(
-                            packageName = app.packageName,
-                            profileId = app.profileId,
-                            uid = 0,
-                            excluded = true,
-                        ),
-                    )
-                }
-                settingsRepo.restoreFromMap(backup.settings)
-                launcherIconManager.apply(settingsRepo.launcherIcon.first())
-                appUpdateScheduler.setEnabled(settingsRepo.appUpdateChecksEnabled.first())
-                reloadActiveConnectionIfConnected()
+            _backupBusy.value = true
+            val result = runCatching { withContext(Dispatchers.IO) { backupManager.restore(prepared) } }
+            result.exceptionOrNull()?.let { error ->
+                if (error is CancellationException) throw error
             }
+            if (result.isSuccess) {
+                preparedBackupImport = null
+                _backupImportSummary.value = null
+                _backupEvents.emit(BackupOperationMessage(R.string.settings_backup_imported))
+            } else {
+                _backupEvents.emit(
+                    backupFailureMessage(
+                        defaultMessageResId = R.string.settings_backup_import_failed,
+                        detailedMessageResId = R.string.settings_backup_import_failed_with_detail,
+                        error = requireNotNull(result.exceptionOrNull()),
+                    ),
+                )
+            }
+            _backupBusy.value = false
         }
     }
+
+    private fun backupFailureMessage(
+        @StringRes defaultMessageResId: Int,
+        @StringRes detailedMessageResId: Int,
+        error: Throwable,
+    ): BackupOperationMessage = error.message?.takeIf { it.isNotBlank() }?.let { detail ->
+        BackupOperationMessage(detailedMessageResId, detail)
+    } ?: BackupOperationMessage(defaultMessageResId)
 
     private fun updateGeoDataAsset(
         asset: GeoDataAsset,

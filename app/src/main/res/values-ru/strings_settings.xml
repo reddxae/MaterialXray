@@ -57,6 +57,15 @@
     <string name="settings_section_data">Данные</string>
     <string name="settings_export">Экспорт</string>
     <string name="settings_import">Импорт</string>
+    <string name="settings_backup_exported">Резервная копия экспортирована</string>
+    <string name="settings_backup_export_failed">Не удалось экспортировать резервную копию</string>
+    <string name="settings_backup_export_failed_with_detail">Не удалось экспортировать резервную копию: %1$s</string>
+    <string name="settings_backup_imported">Резервная копия импортирована</string>
+    <string name="settings_backup_import_failed">Не удалось импортировать резервную копию</string>
+    <string name="settings_backup_import_failed_with_detail">Не удалось импортировать резервную копию: %1$s</string>
+    <string name="settings_backup_import_title">Заменить локальную конфигурацию?</string>
+    <string name="settings_backup_import_confirmation">Резервная копия содержит подписки: %1$d, серверы: %2$d, маршруты приложений: %3$d. Импорт заменит текущую локальную конфигурацию.</string>
+    <string name="settings_backup_importing">Импорт&#8230;</string>
     <string name="settings_reset_internal_database">Сбросить внутреннюю базу данных</string>
     <string name="settings_reset_internal_database_description">Удалить подписки, серверы и маршрутизацию приложений, сохранив настройки приложения</string>
     <string name="settings_resetting_internal_database">Сброс внутренней базы данных&#8230;</string>

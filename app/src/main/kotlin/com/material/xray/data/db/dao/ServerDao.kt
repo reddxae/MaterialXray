@@ -21,6 +21,9 @@ interface ServerDao {
     @Query("SELECT * FROM servers WHERE id = :id")
     suspend fun getById(id: Long): ServerEntity?
 
+    @Query("SELECT * FROM servers ORDER BY subscriptionId, sortOrder")
+    suspend fun getAll(): List<ServerEntity>
+
     @Insert
     suspend fun insertAll(servers: List<ServerEntity>): List<Long>
 

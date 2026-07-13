@@ -1,8 +1,10 @@
 package com.material.xray
 
 import android.app.Application
+import android.util.Log
 import com.material.xray.core.launcher.LauncherIconManager
 import com.material.xray.core.locale.initializeAppLocales
+import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.service.AppUpdateScheduler
 import com.material.xray.service.SubscriptionUpdateScheduler
@@ -25,16 +27,24 @@ class MaterialXrayApp : Application() {
 
     @Inject lateinit var launcherIconManager: LauncherIconManager
 
+    @Inject lateinit var backupManager: BackupManager
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
         initializeAppLocales(this)
         appScope.launch {
+            runCatching { backupManager.recoverInterruptedRestore() }
+                .onFailure { error -> Log.e(LOG_TAG, "Unable to recover interrupted backup restore", error) }
             launcherIconManager.apply(settingsRepository.launcherIcon.first())
             appUpdateScheduler.setEnabled(settingsRepository.appUpdateChecksEnabled.first())
         }
         subscriptionUpdateScheduler.schedulePeriodicUpdates()
         subscriptionUpdateScheduler.enqueueDueCheckNow()
+    }
+
+    private companion object {
+        const val LOG_TAG = "MaterialXrayApp"
     }
 }

@@ -86,6 +86,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.core.locale.setAppLocales
+import com.material.xray.data.repository.BackupSummary
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
@@ -132,6 +133,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
     val xrayCoreVersion by viewModel.xrayCoreVersion.collectAsStateWithLifecycle()
     val databaseResetting by viewModel.databaseResetting.collectAsStateWithLifecycle()
+    val backupBusy by viewModel.backupBusy.collectAsStateWithLifecycle()
+    val backupImportSummary by viewModel.backupImportSummary.collectAsStateWithLifecycle()
     val appUpdateChecksEnabled by viewModel.appUpdateChecksEnabled.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -223,7 +226,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let { viewModel.importBackup(it) } }
+    ) { uri -> uri?.let { viewModel.prepareBackupImport(it) } }
 
     LaunchedEffect(viewModel, context, resources) {
         viewModel.assetUpdateEvents.collect { message ->
@@ -233,6 +236,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
         }
     }
+
+    BackupOperationEventEffect(viewModel)
 
     LaunchedEffect(viewModel) {
         viewModel.rootAccessDeniedEvents.collect {
@@ -822,10 +827,16 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Text(stringResource(R.string.settings_section_data), style = MaterialTheme.typography.titleMedium)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { exportLauncher.launch("material-xray-backup.json") }) {
+                OutlinedButton(
+                    enabled = !backupBusy,
+                    onClick = { exportLauncher.launch("material-xray-backup.json") },
+                ) {
                     Text(stringResource(R.string.settings_export))
                 }
-                OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) {
+                OutlinedButton(
+                    enabled = !backupBusy,
+                    onClick = { importLauncher.launch(arrayOf("application/json")) },
+                ) {
                     Text(stringResource(R.string.settings_import))
                 }
             }
@@ -892,6 +903,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         showUpdateFrequencyDialog = showUpdateFrequencyDialog,
         showFieldStyleDialog = showFieldStyleDialog,
         showResetDatabaseDialog = showResetDatabaseDialog,
+        backupImportSummary = backupImportSummary,
+        backupBusy = backupBusy,
         notificationSettings = notificationSettings,
         onDismissRootAccessDenied = { showRootAccessDeniedDialog = false },
         onDismissNotificationFields = { showNotificationFieldsDialog = false },
@@ -902,11 +915,27 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             showResetDatabaseDialog = false
             viewModel.resetInternalDatabase()
         },
+        onDismissBackupImport = viewModel::dismissBackupImport,
+        onConfirmBackupImport = viewModel::confirmBackupImport,
         onFieldEnabledChange = viewModel::setNotificationFieldEnabled,
         onReorderFields = viewModel::setNotificationFieldOrder,
         onUpdateFrequency = viewModel::setNotificationUpdateIntervalMs,
         onSelectFieldStyle = viewModel::setNotificationStyle,
     )
+}
+
+@Composable
+private fun BackupOperationEventEffect(viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    LaunchedEffect(viewModel, context, resources) {
+        viewModel.backupEvents.collect { message ->
+            val text = message.detail?.let { detail ->
+                resources.getString(message.messageResId, detail)
+            } ?: resources.getString(message.messageResId)
+            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+        }
+    }
 }
 
 private data class AdvancedOptionsScrollAnchor(
@@ -1052,6 +1081,8 @@ private fun SettingsDialogs(
     showUpdateFrequencyDialog: Boolean,
     showFieldStyleDialog: Boolean,
     showResetDatabaseDialog: Boolean,
+    backupImportSummary: BackupSummary?,
+    backupBusy: Boolean,
     notificationSettings: NotificationSettings,
     onDismissRootAccessDenied: () -> Unit,
     onDismissNotificationFields: () -> Unit,
@@ -1059,11 +1090,52 @@ private fun SettingsDialogs(
     onDismissFieldStyle: () -> Unit,
     onDismissResetDatabase: () -> Unit,
     onResetDatabase: () -> Unit,
+    onDismissBackupImport: () -> Unit,
+    onConfirmBackupImport: () -> Unit,
     onFieldEnabledChange: (NotificationField, Boolean) -> Unit,
     onReorderFields: (List<NotificationField>) -> Unit,
     onUpdateFrequency: (Int) -> Unit,
     onSelectFieldStyle: (NotificationStyle) -> Unit,
 ) {
+    if (backupImportSummary != null) {
+        AlertDialog(
+            onDismissRequest = onDismissBackupImport,
+            title = { Text(stringResource(R.string.settings_backup_import_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.settings_backup_import_confirmation,
+                        backupImportSummary.subscriptionCount,
+                        backupImportSummary.serverCount,
+                        backupImportSummary.appRouteCount,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !backupBusy,
+                    onClick = onConfirmBackupImport,
+                ) {
+                    Text(
+                        if (backupBusy) {
+                            stringResource(R.string.settings_backup_importing)
+                        } else {
+                            stringResource(R.string.settings_import)
+                        },
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !backupBusy,
+                    onClick = onDismissBackupImport,
+                ) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            },
+        )
+    }
+
     if (showRootAccessDeniedDialog) {
         AlertDialog(
             onDismissRequest = onDismissRootAccessDenied,

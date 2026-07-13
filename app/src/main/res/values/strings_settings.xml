@@ -55,6 +55,15 @@
     <string name="settings_section_data">Data</string>
     <string name="settings_export">Export</string>
     <string name="settings_import">Import</string>
+    <string name="settings_backup_exported">Backup exported</string>
+    <string name="settings_backup_export_failed">Unable to export backup</string>
+    <string name="settings_backup_export_failed_with_detail">Unable to export backup: %1$s</string>
+    <string name="settings_backup_imported">Backup imported</string>
+    <string name="settings_backup_import_failed">Unable to import backup</string>
+    <string name="settings_backup_import_failed_with_detail">Unable to import backup: %1$s</string>
+    <string name="settings_backup_import_title">Replace local configuration?</string>
+    <string name="settings_backup_import_confirmation">The backup contains %1$d subscriptions, %2$d servers, and %3$d app routes. Importing it will replace the current local configuration.</string>
+    <string name="settings_backup_importing">Importing&#8230;</string>
     <string name="settings_reset_internal_database">Reset internal database</string>
     <string name="settings_reset_internal_database_description">Delete subscriptions, servers, and app routing data while keeping app settings</string>
     <string name="settings_resetting_internal_database">Resetting internal database&#8230;</string>

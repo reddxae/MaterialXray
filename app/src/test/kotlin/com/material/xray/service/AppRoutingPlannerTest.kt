@@ -219,6 +219,7 @@ class AppRoutingPlannerTest {
         override fun observeBySubscription(subId: Long): Flow<List<ServerEntity>> = observeAll()
         override suspend fun getBySubscription(subId: Long): List<ServerEntity> = servers
         override suspend fun getById(id: Long): ServerEntity? = servers.firstOrNull { it.id == id }
+        override suspend fun getAll(): List<ServerEntity> = servers
         override suspend fun insertAll(servers: List<ServerEntity>): List<Long> = servers.map { it.id }
         override suspend fun deleteBySubscription(subId: Long) = Unit
         override suspend fun updateLatency(id: Long, latency: Int) = Unit

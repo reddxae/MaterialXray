@@ -74,6 +74,7 @@ class BackupDataTest {
             ),
             domainStrategy = "IPIfNonMatch",
             domainMatcher = "hybrid",
+            fallbackOutboundTag = "direct",
         )
         val backup = BackupData(
             subscriptions = listOf(

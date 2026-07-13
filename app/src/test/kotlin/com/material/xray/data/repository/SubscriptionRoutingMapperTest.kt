@@ -21,6 +21,7 @@ class SubscriptionRoutingMapperTest {
             ),
             domainStrategy = "IPIfNonMatch",
             domainMatcher = "hybrid",
+            fallbackOutboundTag = "direct",
         )
         val entity = SubscriptionEntity(name = "Provider", url = "https://example.com/sub")
             .withSubscriptionRouting(routing)

@@ -16,6 +16,7 @@ data class XrayRuntimeSettings(
     val tunMtu: Int = DEFAULT_TUN_MTU,
     val routingDomainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     val routingDomainMatcher: String? = null,
+    val routingFallbackOutbound: XrayOutbound? = null,
 ) {
     companion object {
         const val DEFAULT_XRAY_BUFFER_SIZE_KIB = 512

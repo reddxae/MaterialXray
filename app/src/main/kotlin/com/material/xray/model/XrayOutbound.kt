@@ -17,6 +17,8 @@ enum class XrayOutbound(
     companion object {
         val default = Proxy
 
-        fun fromTag(tag: String?): XrayOutbound = entries.firstOrNull { it.tag == tag?.trim()?.lowercase() } ?: default
+        fun fromTag(tag: String?): XrayOutbound = fromTagOrNull(tag) ?: default
+
+        fun fromTagOrNull(tag: String?): XrayOutbound? = entries.firstOrNull { it.tag == tag?.trim()?.lowercase() }
     }
 }

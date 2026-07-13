@@ -144,6 +144,43 @@ class ConfigGeneratorTest {
     }
 
     @Test
+    fun `routing profile fallback overrides configured default outbound`() {
+        val config = generator.generate(
+            vlessReality,
+            defaultOutbound = XrayOutbound.Direct,
+            routingFallbackOutbound = XrayOutbound.Proxy,
+        )
+        val firstOutbound = Json.parseToJsonElement(config).jsonObject
+            .getValue("outbounds").jsonArray
+            .first().jsonObject
+
+        assertEquals("proxy", firstOutbound.getValue("tag").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `routing profile fallback applies to raw configs`() {
+        val rawServer = vlessReality.copy(
+            rawConfigJson = """
+                {
+                  "outbounds": [
+                    {"tag":"proxy","protocol":"vless","settings":{}}
+                  ]
+                }
+            """.trimIndent(),
+        )
+        val config = generator.generate(
+            rawServer,
+            defaultOutbound = XrayOutbound.Proxy,
+            routingFallbackOutbound = XrayOutbound.Direct,
+        )
+        val firstOutbound = Json.parseToJsonElement(config).jsonObject
+            .getValue("outbounds").jsonArray
+            .first().jsonObject
+
+        assertEquals("direct", firstOutbound.getValue("tag").jsonPrimitive.content)
+    }
+
+    @Test
     fun `generates VLESS REALITY outbound correctly`() {
         val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255)
         val json = Json.parseToJsonElement(config).jsonObject

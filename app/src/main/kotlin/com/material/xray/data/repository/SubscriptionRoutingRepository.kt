@@ -34,6 +34,7 @@ class SubscriptionRoutingRepository @Inject constructor(
             rules = settingsRepository.routingRules.first(),
             domainStrategy = settingsRepository.routingDomainStrategy.first(),
             domainMatcher = settingsRepository.routingDomainMatcher.first(),
+            fallbackOutboundTag = settingsRepository.routingFallbackOutbound.first()?.tag,
         ).normalized()
         if (current == target) return false
         settingsRepository.setSubscriptionRouting(target)

@@ -103,6 +103,7 @@ class SubscriptionFetcherTest {
         assertEquals("block", routing.rules[0].outboundTag)
         assertEquals(listOf("geoip:ru"), routing.rules[2].ips)
         assertEquals("direct", routing.rules[2].outboundTag)
+        assertNull(routing.fallbackOutboundTag)
     }
 
     @Test

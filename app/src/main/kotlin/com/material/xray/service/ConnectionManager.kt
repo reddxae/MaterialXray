@@ -360,6 +360,7 @@ class ConnectionManager(
             routingRules = runtimeSettings.routingRules,
             routingDomainStrategy = runtimeSettings.routingDomainStrategy,
             routingDomainMatcher = runtimeSettings.routingDomainMatcher,
+            routingFallbackOutbound = runtimeSettings.routingFallbackOutbound,
             appProxyRoutes = appRoutingPlan.proxyRoutes,
             physicalInterface = physicalRoute?.dev,
             xrayApiSocketName = xrayApiSocketName,

@@ -72,6 +72,7 @@ class SettingsRepository @Inject constructor(
         val DELETED_DEFAULT_ROUTING_RULE_IDS = stringSetPreferencesKey("deleted_default_routing_rule_ids")
         val ROUTING_DOMAIN_STRATEGY = stringPreferencesKey("routing_domain_strategy")
         val ROUTING_DOMAIN_MATCHER = stringPreferencesKey("routing_domain_matcher")
+        val ROUTING_FALLBACK_OUTBOUND = stringPreferencesKey("routing_fallback_outbound")
         val USE_ROOT_SERVICE = booleanPreferencesKey("use_root_service")
         val NOTIFICATION_ENABLED = booleanPreferencesKey("notification_enabled")
         val NOTIFICATION_UPDATE_INTERVAL_MS = intPreferencesKey("notification_update_interval_ms")
@@ -175,6 +176,9 @@ class SettingsRepository @Inject constructor(
     val routingDomainMatcher: Flow<String?> = store.data.map { prefs ->
         SubscriptionRouting.normalizeDomainMatcher(prefs[ROUTING_DOMAIN_MATCHER])
     }
+    val routingFallbackOutbound: Flow<XrayOutbound?> = store.data.map { prefs ->
+        XrayOutbound.fromTagOrNull(prefs[ROUTING_FALLBACK_OUTBOUND])
+    }
     val notificationSettings: Flow<NotificationSettings> = store.data.map { prefs ->
         NotificationSettings(
             enabled = prefs[NOTIFICATION_ENABLED] ?: true,
@@ -214,6 +218,7 @@ class SettingsRepository @Inject constructor(
         tunMtu = tunMtu.first(),
         routingDomainStrategy = routingDomainStrategy.first(),
         routingDomainMatcher = routingDomainMatcher.first(),
+        routingFallbackOutbound = routingFallbackOutbound.first(),
     )
 
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
@@ -348,6 +353,8 @@ class SettingsRepository @Inject constructor(
         prefs[ROUTING_DOMAIN_STRATEGY] = normalized?.domainStrategy ?: SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY
         normalized?.domainMatcher?.let { prefs[ROUTING_DOMAIN_MATCHER] = it }
             ?: prefs.remove(ROUTING_DOMAIN_MATCHER)
+        normalized?.fallbackOutboundTag?.let { prefs[ROUTING_FALLBACK_OUTBOUND] = it }
+            ?: prefs.remove(ROUTING_FALLBACK_OUTBOUND)
     }
 
     suspend fun getAllAsMap(): Map<String, String> {
@@ -416,6 +423,9 @@ class SettingsRepository @Inject constructor(
             map["routing_domain_matcher"]
                 ?.let(SubscriptionRouting::normalizeDomainMatcher)
                 ?.let { prefs[ROUTING_DOMAIN_MATCHER] = it }
+            map["routing_fallback_outbound"]
+                ?.let(SubscriptionRouting::normalizeFallbackOutboundTag)
+                ?.let { prefs[ROUTING_FALLBACK_OUTBOUND] = it }
             map["deleted_default_routing_rule_ids"]
                 ?.split(",")
                 ?.map { it.trim().trim('[', ']') }

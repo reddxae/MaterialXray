@@ -369,7 +369,7 @@ class SettingsViewModel @Inject constructor(
             try {
                 val result = runCatching {
                     if (connectionStateHolder.state.value.requiresDisconnectForDatabaseReset()) {
-                        XrayService.disconnect(context)
+                        XrayService.disconnect(context, force = true)
                         check(
                             withTimeoutOrNull(DATABASE_RESET_DISCONNECT_TIMEOUT_MILLIS) {
                                 connectionStateHolder.state.first { !it.requiresDisconnectForDatabaseReset() }

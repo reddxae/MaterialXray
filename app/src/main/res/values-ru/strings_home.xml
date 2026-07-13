@@ -10,6 +10,7 @@
     <string name="home_action_copy">Копировать</string>
     <string name="home_action_start">Запустить</string>
     <string name="home_action_stop">Остановить</string>
+    <string name="home_action_always_on">Всегда включено</string>
     <string name="home_action_restart">Перезапустить</string>
     <string name="home_action_edit">Изменить</string>
     <string name="home_action_support">Поддержать</string>

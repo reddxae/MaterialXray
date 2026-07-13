@@ -32,6 +32,8 @@ class XrayTileService : TileService() {
 
     @Inject lateinit var connectionStateHolder: ConnectionStateHolder
 
+    @Inject lateinit var alwaysOnVpnState: AlwaysOnVpnState
+
     @Inject lateinit var routingChangeManager: RoutingChangeManager
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -46,8 +48,12 @@ class XrayTileService : TileService() {
         super.onStartListening()
         listeningJob?.cancel()
         listeningJob = scope.launch {
-            combine(connectionStateHolder.state, settingsRepo.lastServerId) { state, selectedServerId ->
-                TileSnapshot(state, hasSelectedServer = selectedServerId >= 0)
+            combine(
+                connectionStateHolder.state,
+                settingsRepo.lastServerId,
+                alwaysOnVpnState.active,
+            ) { state, selectedServerId, alwaysOnVpn ->
+                TileSnapshot(state, hasSelectedServer = selectedServerId >= 0, alwaysOnVpn = alwaysOnVpn)
             }.collect { snapshot ->
                 updateTile(snapshot)
             }
@@ -63,9 +69,16 @@ class XrayTileService : TileService() {
     override fun onClick() {
         super.onClick()
         when (connectionStateHolder.state.value) {
+            is ConnectionState.Connected if alwaysOnVpnState.active.value -> Unit
             is ConnectionState.Connected -> {
                 XrayService.disconnect(this)
-                updateTile(TileSnapshot(ConnectionState.Disconnecting, hasSelectedServer = true))
+                updateTile(
+                    TileSnapshot(
+                        state = ConnectionState.Disconnecting,
+                        hasSelectedServer = true,
+                        alwaysOnVpn = false,
+                    ),
+                )
             }
             is ConnectionState.Connecting,
             ConnectionState.ApplyingRoutingChanges,
@@ -88,6 +101,7 @@ class XrayTileService : TileService() {
                 TileSnapshot(
                     state = connectionStateHolder.state.value,
                     hasSelectedServer = settingsRepo.lastServerId.first() >= 0,
+                    alwaysOnVpn = alwaysOnVpnState.active.value,
                 ),
             )
         }
@@ -102,13 +116,25 @@ class XrayTileService : TileService() {
             runCatching { serverRepository.parseConfig(serverEntity) }.getOrNull()
         }
         if (serverConfig == null) {
-            updateTile(TileSnapshot(connectionStateHolder.state.value, hasSelectedServer = false))
+            updateTile(
+                TileSnapshot(
+                    state = connectionStateHolder.state.value,
+                    hasSelectedServer = false,
+                    alwaysOnVpn = alwaysOnVpnState.active.value,
+                ),
+            )
             return
         }
 
         routingChangeManager.clearPendingChanges()
         XrayService.connect(this, serverConfig)
-        updateTile(TileSnapshot(ConnectionState.Connecting, hasSelectedServer = true))
+        updateTile(
+            TileSnapshot(
+                state = ConnectionState.Connecting,
+                hasSelectedServer = true,
+                alwaysOnVpn = alwaysOnVpnState.active.value,
+            ),
+        )
     }
 
     private fun updateTile(snapshot: TileSnapshot) {
@@ -143,6 +169,7 @@ class XrayTileService : TileService() {
     }
 
     private fun TileSnapshot.stateDescription(): String = when {
+        state is ConnectionState.Connected && alwaysOnVpn -> localizedString(R.string.tile_state_connected_always_on)
         state is ConnectionState.Connected -> localizedString(R.string.tile_state_connected)
         !hasSelectedServer -> localizedString(R.string.tile_state_no_server_selected)
         state is ConnectionState.Connecting -> localizedString(R.string.tile_state_connecting)
@@ -163,6 +190,7 @@ class XrayTileService : TileService() {
     private data class TileSnapshot(
         val state: ConnectionState,
         val hasSelectedServer: Boolean,
+        val alwaysOnVpn: Boolean,
     )
 
     companion object {

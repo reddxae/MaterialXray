@@ -60,6 +60,7 @@
 
     <!-- Описания состояний плитки быстрых настроек -->
     <string name="tile_state_connected">Подключено</string>
+    <string name="tile_state_connected_always_on">Подключено, постоянная VPN</string>
     <string name="tile_state_no_server_selected">Сервер не выбран</string>
     <string name="tile_state_connecting">Подключение</string>
     <string name="tile_state_applying_routing_changes">Применение изменений маршрутизации</string>

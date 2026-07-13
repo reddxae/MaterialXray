@@ -35,6 +35,7 @@ import com.material.xray.model.endpointSummary
 import com.material.xray.model.maskedBalancerOutboundAddress
 import com.material.xray.model.matchesBalancerOutbound
 import com.material.xray.model.proxyOutboundCount
+import com.material.xray.service.AlwaysOnVpnState
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.AppUpdateInstallProgress
 import com.material.xray.service.AppUpdateInstaller
@@ -116,6 +117,7 @@ class HomeViewModel @Inject constructor(
     private val subscriptionRefreshCoordinator: SubscriptionRefreshCoordinator,
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
     private val connectionStateHolder: ConnectionStateHolder,
+    alwaysOnVpnState: AlwaysOnVpnState,
     private val routingChangeManager: RoutingChangeManager,
     private val serverLatencyTester: ServerLatencyTester,
 ) : ViewModel() {
@@ -129,6 +131,7 @@ class HomeViewModel @Inject constructor(
     private val latencySemaphore = Semaphore(MAX_CONCURRENT_LATENCY_TESTS)
 
     val connectionState: StateFlow<ConnectionState> = connectionStateHolder.state
+    val alwaysOnVpn: StateFlow<Boolean> = alwaysOnVpnState.active
     val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateHolder.events
     private val _uiEvents = MutableSharedFlow<HomeUiEvent>()
     val uiEvents: SharedFlow<HomeUiEvent> = _uiEvents.asSharedFlow()

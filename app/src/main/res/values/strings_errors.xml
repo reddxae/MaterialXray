@@ -5,6 +5,7 @@
     <string name="connection_error_root_access_denied">Root access denied</string>
     <string name="connection_error_vpn_permission_required">VPN permission is required</string>
     <string name="connection_error_vpn_interface">Could not establish VPN interface</string>
+    <string name="connection_error_no_server_selected">Select a server before using always-on VPN</string>
     <string name="connection_error_xray_binary_not_found">Xray binary not found</string>
     <string name="connection_error_physical_route_not_found">Could not detect physical network route for Xray bypass</string>
     <string name="connection_error_server_address_unresolved">Could not resolve %1$s before starting Xray</string>

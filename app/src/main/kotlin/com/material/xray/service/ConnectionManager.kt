@@ -638,6 +638,11 @@ class ConnectionManager(
         }
     }
 
+    suspend fun ensureCleanRootRuntime() {
+        cleanupManager.ensureCleanState()
+        runningViaVpnService = false
+    }
+
     private suspend fun fail(
         message: String,
         cleanState: Boolean = true,

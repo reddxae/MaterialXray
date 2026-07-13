@@ -24,6 +24,7 @@ import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.endpointSummary
 import com.material.xray.model.proxyOutboundCount
+import com.material.xray.service.AlwaysOnVpnState
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -98,6 +99,7 @@ class AppsViewModel @Inject constructor(
     private val subscriptionDao: SubscriptionDao,
     private val serverRepository: ServerRepository,
     private val settingsRepository: SettingsRepository,
+    alwaysOnVpnState: AlwaysOnVpnState,
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val routingChangeManager: RoutingChangeManager,
     private val appInventory: AppInventory,
@@ -114,6 +116,11 @@ class AppsViewModel @Inject constructor(
 
     private val _isLoadingApps = MutableStateFlow(true)
     val isLoadingApps: StateFlow<Boolean> = _isLoadingApps
+
+    private val effectiveUseRootService = combine(
+        settingsRepository.useRootService,
+        alwaysOnVpnState.active,
+    ) { useRootService, alwaysOnVpn -> useRootService && !alwaysOnVpn }
 
     val appSpecificServerNoteShown: StateFlow<Boolean> = settingsRepository.appSpecificServerNoteShown
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -145,7 +152,7 @@ class AppsViewModel @Inject constructor(
     val routeOptions: StateFlow<List<AppRouteOption>> = combine(
         serverRepository.observeAll(),
         settingsRepository.showAdvancedOptions,
-        settingsRepository.useRootService,
+        effectiveUseRootService,
     ) { servers, showAdvancedOptions, useRootService ->
         if (!useRootService) {
             return@combine listOf(DEFAULT_ROUTE_OPTION, DIRECT_ROUTE_OPTION)
@@ -181,7 +188,7 @@ class AppsViewModel @Inject constructor(
         bypassedApps,
         appListFilters,
         routeOptions,
-        settingsRepository.useRootService,
+        effectiveUseRootService,
     ) { installed, assignments, filters, options, useRootService ->
         val assignmentByApp = assignments.associateBy { appKey(it.profileId, it.packageName) }
         val serverOptionsById = options

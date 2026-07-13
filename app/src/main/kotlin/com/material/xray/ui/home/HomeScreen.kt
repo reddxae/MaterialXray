@@ -4,11 +4,14 @@ import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateBounds
 import androidx.compose.animation.animateContentSize
@@ -142,7 +145,11 @@ import kotlinx.coroutines.delay
 @Composable
 fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     val uiState = collectHomeUiState(viewModel)
-    val connectionUiState = buildConnectionUiState(uiState.connectionState, uiState.selectedServer)
+    val connectionUiState = buildConnectionUiState(
+        connectionState = uiState.connectionState,
+        selectedServer = uiState.selectedServer,
+        alwaysOnVpn = uiState.alwaysOnVpn,
+    )
 
     var showAddDialog by remember { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
@@ -267,13 +274,16 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                     isRestartRequired = connectionUiState.isRestartRequired,
                     isInterfaceBusy = connectionUiState.isInterfaceBusy,
                     isTransitioning = connectionUiState.isTransitioning,
+                    isAlwaysOnVpn = connectionUiState.isAlwaysOnVpn,
                     canStart = uiState.selectedServer != null,
                     onClick = {
-                        if (connectionUiState.isConnected) {
-                            viewModel.disconnect()
-                        } else if (!connectionUiState.isTransitioning) {
-                            if (uiState.useRootService) viewModel.connect() else startRootlessConnection()
-                        }
+                        connectionUiState.handleClick(
+                            context = context,
+                            useRootService = uiState.useRootService,
+                            disconnect = viewModel::disconnect,
+                            connectRoot = viewModel::connect,
+                            connectVpn = startRootlessConnection,
+                        )
                     },
                     onViewConfig = { viewModel.showRunningConfig() },
                 )
@@ -588,6 +598,7 @@ private fun InstallPermissionRationaleDialogHost(
 @Composable
 private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val alwaysOnVpn by viewModel.alwaysOnVpn.collectAsStateWithLifecycle()
     val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
     val activeBalancerServer by viewModel.activeBalancerServer.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
@@ -605,6 +616,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
 
     return HomeUiState(
         connectionState = connectionState,
+        alwaysOnVpn = alwaysOnVpn,
         selectedServer = selectedServer,
         activeBalancerServer = activeBalancerServer,
         selectedServerId = selectedServerId,
@@ -626,6 +638,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
 private fun buildConnectionUiState(
     connectionState: ConnectionState,
     selectedServer: ServerConfig?,
+    alwaysOnVpn: Boolean,
 ): ConnectionUiState {
     val isConnected = connectionState is ConnectionState.Connected
     val isRestartRequired = connectionState is ConnectionState.RestartRequired
@@ -641,8 +654,9 @@ private fun buildConnectionUiState(
         isRestartRequired = isRestartRequired,
         isInterfaceBusy = isInterfaceBusy,
         isTransitioning = isTransitioning,
+        isAlwaysOnVpn = alwaysOnVpn,
         buttonColor = when {
-            isConnected || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
+            isConnected && !alwaysOnVpn || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
             isTransitioning -> MaterialTheme.colorScheme.tertiary
             else -> MaterialTheme.colorScheme.primary
         },
@@ -664,6 +678,7 @@ private fun ServerConfig.localizedEndpointSummary(): String {
 
 private data class HomeUiState(
     val connectionState: ConnectionState,
+    val alwaysOnVpn: Boolean,
     val selectedServer: ServerConfig?,
     val activeBalancerServer: ActiveBalancerServerState?,
     val selectedServerId: Long,
@@ -685,6 +700,7 @@ private data class ConnectionUiState(
     val isRestartRequired: Boolean,
     val isInterfaceBusy: Boolean,
     val isTransitioning: Boolean,
+    val isAlwaysOnVpn: Boolean,
     val buttonColor: Color,
     val displayServerName: String,
     val selectedServerDetail: String,
@@ -701,6 +717,7 @@ private fun ConnectionPanel(
     isRestartRequired: Boolean,
     isInterfaceBusy: Boolean,
     isTransitioning: Boolean,
+    isAlwaysOnVpn: Boolean,
     canStart: Boolean,
     onClick: () -> Unit,
     onViewConfig: () -> Unit,
@@ -795,11 +812,14 @@ private fun ConnectionPanel(
                     )
                 } else {
                     Text(
-                        text = when {
-                            isConnected -> stringResource(R.string.home_action_stop)
-                            isRestartRequired || isInterfaceBusy -> stringResource(R.string.home_action_restart)
-                            else -> stringResource(R.string.home_action_start)
-                        },
+                        text = stringResource(
+                            connectionActionLabel(
+                                isConnected = isConnected,
+                                isAlwaysOnVpn = isAlwaysOnVpn,
+                                isRestartRequired = isRestartRequired,
+                                isInterfaceBusy = isInterfaceBusy,
+                            ),
+                        ),
                         modifier = Modifier.padding(horizontal = 8.dp),
                         style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
@@ -830,6 +850,34 @@ private fun ConnectionPanel(
 
         Spacer(modifier = Modifier.height(10.dp))
     }
+}
+
+private fun ConnectionUiState.handleClick(
+    context: Context,
+    useRootService: Boolean,
+    disconnect: () -> Unit,
+    connectRoot: () -> Unit,
+    connectVpn: () -> Unit,
+) {
+    when {
+        isConnected && isAlwaysOnVpn -> context.startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
+        isConnected -> disconnect()
+        !isTransitioning && useRootService -> connectRoot()
+        !isTransitioning -> connectVpn()
+    }
+}
+
+@StringRes
+private fun connectionActionLabel(
+    isConnected: Boolean,
+    isAlwaysOnVpn: Boolean,
+    isRestartRequired: Boolean,
+    isInterfaceBusy: Boolean,
+): Int = when {
+    isConnected && isAlwaysOnVpn -> R.string.home_action_always_on
+    isConnected -> R.string.home_action_stop
+    isRestartRequired || isInterfaceBusy -> R.string.home_action_restart
+    else -> R.string.home_action_start
 }
 
 @Composable

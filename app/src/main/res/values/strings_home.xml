@@ -10,6 +10,7 @@
     <string name="home_action_copy">Copy</string>
     <string name="home_action_start">Start</string>
     <string name="home_action_stop">Stop</string>
+    <string name="home_action_always_on">Always on</string>
     <string name="home_action_restart">Restart</string>
     <string name="home_action_edit">Edit</string>
     <string name="home_action_support">Support</string>

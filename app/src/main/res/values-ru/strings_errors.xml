@@ -5,6 +5,7 @@
     <string name="connection_error_root_access_denied">В root-доступе отказано</string>
     <string name="connection_error_vpn_permission_required">Требуется разрешение на использование VPN</string>
     <string name="connection_error_vpn_interface">Не удалось создать интерфейс VPN</string>
+    <string name="connection_error_no_server_selected">Выберите сервер перед использованием постоянной VPN</string>
     <string name="connection_error_xray_binary_not_found">Исполняемый файл Xray не найден</string>
     <string name="connection_error_physical_route_not_found">Не удалось определить маршрут физической сети для обхода Xray</string>
     <string name="connection_error_server_address_unresolved">Не удалось определить адрес %1$s перед запуском Xray</string>

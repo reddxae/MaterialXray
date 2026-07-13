@@ -67,6 +67,7 @@
 
     <!-- Quick Settings tile state descriptions -->
     <string name="tile_state_connected">Connected</string>
+    <string name="tile_state_connected_always_on">Connected, always-on VPN</string>
     <string name="tile_state_no_server_selected">No server selected</string>
     <string name="tile_state_connecting">Connecting</string>
     <string name="tile_state_applying_routing_changes">Applying routing changes</string>

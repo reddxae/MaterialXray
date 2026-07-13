@@ -1,6 +1,7 @@
 package com.material.xray.core.xray
 
 import android.content.Context
+import android.util.AtomicFile
 import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -25,19 +26,28 @@ data class XrayState(
 )
 
 class StateFile(context: Context) {
-    private val file = File(context.filesDir, "state.json")
+    private val file = AtomicFile(File(context.filesDir, "state.json"))
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
     }
 
     fun read(): XrayState? = runCatching {
-        if (!file.exists()) return null
-        json.decodeFromString<XrayState>(file.readText())
+        if (!file.baseFile.exists()) return null
+        val encoded = file.openRead().bufferedReader().use { it.readText() }
+        json.decodeFromString<XrayState>(encoded)
     }.getOrNull()
 
     fun write(state: XrayState) {
-        file.writeText(json.encodeToString(state))
+        val output = file.startWrite()
+        var committed = false
+        try {
+            output.write(json.encodeToString(state).toByteArray())
+            file.finishWrite(output)
+            committed = true
+        } finally {
+            if (!committed) file.failWrite(output)
+        }
     }
 
     fun delete() {

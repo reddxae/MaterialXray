@@ -50,6 +50,27 @@ data class FetchedSubscription(
     val routing: SubscriptionRouting? = null,
 )
 
+class SubscriptionFetchException(
+    val reason: Reason,
+    val statusCode: Int? = null,
+) : IOException(
+    when (reason) {
+        Reason.INVALID_URL -> "Invalid subscription URL"
+        Reason.HTTP_STATUS -> "Subscription request failed with HTTP $statusCode"
+        Reason.INSECURE_RESPONSE -> "Subscription must be fetched over HTTPS"
+        Reason.EMPTY_RESPONSE -> "Subscription returned an empty response with HTTP $statusCode"
+        Reason.UNSUPPORTED_CONTENT -> "Subscription did not contain any supported configurations"
+    },
+) {
+    enum class Reason {
+        INVALID_URL,
+        HTTP_STATUS,
+        INSECURE_RESPONSE,
+        EMPTY_RESPONSE,
+        UNSUPPORTED_CONTENT,
+    }
+}
+
 class SubscriptionFetcher @Inject constructor(
     private val client: OkHttpClient,
 ) {
@@ -68,7 +89,7 @@ class SubscriptionFetcher @Inject constructor(
     ): FetchedSubscription = withContext(Dispatchers.IO) {
         val normalizedUrl = url.trim()
         val httpUrl = normalizedUrl.toHttpUrlOrNull()
-            ?: throw IOException("Invalid subscription URL: $normalizedUrl")
+            ?: throw SubscriptionFetchException(SubscriptionFetchException.Reason.INVALID_URL)
 
         if (preferJson) {
             httpUrl.jsonEndpointOrNull()?.let { jsonUrl ->
@@ -100,15 +121,10 @@ class SubscriptionFetcher @Inject constructor(
         ).build()
 
         return client.newCall(request).execute().use { response ->
-            val responseError = when {
-                !response.isSuccessful -> "Subscription request failed with HTTP ${response.code}"
-                !response.request.url.isHttps -> "Subscription must be fetched over HTTPS"
-                else -> null
-            }
-            if (responseError != null) throw IOException(responseError)
+            response.requireValidSubscriptionResponse()
 
             val resolvedUrl = response.request.url.toString()
-            val bodyText = response.body.string()
+            val bodyText = response.readSubscriptionBody()
 
             val metadata = parseMetadata(response)
             val configs = parseSubscriptionBody(
@@ -116,8 +132,11 @@ class SubscriptionFetcher @Inject constructor(
                 contentType = metadata.contentType,
             )
 
-            if (configs.isEmpty() && bodyText.isNotBlank()) {
-                throw IOException("Subscription did not contain any supported configurations")
+            if (configs.isEmpty()) {
+                throw SubscriptionFetchException(
+                    reason = SubscriptionFetchException.Reason.UNSUPPORTED_CONTENT,
+                    statusCode = response.code,
+                )
             }
 
             FetchedSubscription(
@@ -129,6 +148,28 @@ class SubscriptionFetcher @Inject constructor(
                 routing = parseRouting(response),
             )
         }
+    }
+
+    private fun Response.requireValidSubscriptionResponse() {
+        val errorReason = when {
+            !isSuccessful -> SubscriptionFetchException.Reason.HTTP_STATUS
+            !request.url.isHttps -> SubscriptionFetchException.Reason.INSECURE_RESPONSE
+            else -> null
+        }
+        if (errorReason != null) {
+            throw SubscriptionFetchException(reason = errorReason, statusCode = code)
+        }
+    }
+
+    private fun Response.readSubscriptionBody(): String {
+        val bodyText = body.string()
+        if (bodyText.isBlank()) {
+            throw SubscriptionFetchException(
+                reason = SubscriptionFetchException.Reason.EMPTY_RESPONSE,
+                statusCode = code,
+            )
+        }
+        return bodyText
     }
 
     private fun HttpUrl.jsonEndpointOrNull(): HttpUrl? {

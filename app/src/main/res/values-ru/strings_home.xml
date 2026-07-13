@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="home_unable_to_fetch_link">Не удалось загрузить ссылку</string>
+    <string name="home_subscription_fetch_failed_http">Не удалось загрузить подписку: сервер вернул HTTP %1$d.</string>
+    <string name="home_subscription_fetch_failed_empty">Не удалось загрузить подписку: сервер вернул пустой ответ (HTTP %1$d).</string>
+    <string name="home_subscription_fetch_failed_unsupported">Не удалось загрузить подписку: ответ не удалось обработать или он не содержит поддерживаемых конфигураций (HTTP %1$d).</string>
+    <string name="home_subscription_fetch_failed_invalid_url">Не удалось загрузить подписку: некорректный URL.</string>
+    <string name="home_subscription_fetch_failed_insecure">Не удалось загрузить подписку: ответ был перенаправлен на небезопасное соединение.</string>
+    <string name="home_subscription_fetch_failed_timeout">Не удалось загрузить подписку: время ожидания запроса истекло.</string>
+    <string name="home_subscription_fetch_failed_dns">Не удалось загрузить подписку: не удалось определить адрес сервера.</string>
+    <string name="home_subscription_fetch_failed_tls">Не удалось загрузить подписку: не удалось установить защищённое соединение.</string>
+    <string name="home_subscription_fetch_failed_connection">Не удалось загрузить подписку: не удалось подключиться к серверу.</string>
+    <string name="home_subscription_fetch_failed_network">Не удалось загрузить подписку из-за сетевой ошибки.</string>
+    <string name="home_subscription_refresh_batch_failed">Не удалось обновить подписки: %1$d. Первая ошибка: %2$s</string>
     <string name="home_clipboard_xray_config_label">Конфигурация Xray</string>
 
     <string name="home_root_fallback_message">Не удалось получить root-доступ на этом устройстве. Material Xray продолжит работу в режиме без root-доступа.</string>

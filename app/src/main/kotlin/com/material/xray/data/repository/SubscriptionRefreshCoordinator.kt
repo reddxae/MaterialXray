@@ -23,22 +23,22 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     private val routingChangeManager: RoutingChangeManager,
     private val connectionStateHolder: ConnectionStateHolder,
 ) {
-    suspend fun refreshAll(): Map<Long, SubscriptionRepository.RefreshResult> {
+    suspend fun refreshAll(): SubscriptionRepository.RefreshBatchResult {
         val selectedBeforeRefresh = selectedServerEntity()
-        val results = subscriptionRepository.refreshAll()
-        syncAppRoutesAfterRefreshResults(results)
-        syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, results)
-        return results
+        val result = subscriptionRepository.refreshAll()
+        syncAppRoutesAfterRefreshResults(result.successes)
+        syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, result.successes)
+        return result
     }
 
     suspend fun refreshDueSubscriptions(
         nowMillis: Long = System.currentTimeMillis(),
-    ): Map<Long, SubscriptionRepository.RefreshResult> {
+    ): SubscriptionRepository.RefreshBatchResult {
         val selectedBeforeRefresh = selectedServerEntity()
-        val results = subscriptionRepository.refreshDueSubscriptions(nowMillis)
-        syncAppRoutesAfterRefreshResults(results)
-        syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, results)
-        return results
+        val result = subscriptionRepository.refreshDueSubscriptions(nowMillis)
+        syncAppRoutesAfterRefreshResults(result.successes)
+        syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, result.successes)
+        return result
     }
 
     suspend fun refreshSubscription(

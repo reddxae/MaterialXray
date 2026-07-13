@@ -241,6 +241,52 @@ class SubscriptionFetcherTest {
     }
 
     @Test
+    fun `fetch reports HTTP status failures`() = runTest {
+        val fetcher = fetcherReturning(
+            body = "Forbidden",
+            contentType = "text/plain",
+            statusCode = 403,
+        )
+
+        val error = runCatching {
+            fetcher.fetchWithMetadata("https://subscriptions.example/forbidden")
+        }.exceptionOrNull()
+
+        assertTrue(error is SubscriptionFetchException)
+        error as SubscriptionFetchException
+        assertEquals(SubscriptionFetchException.Reason.HTTP_STATUS, error.reason)
+        assertEquals(403, error.statusCode)
+    }
+
+    @Test
+    fun `fetch reports empty successful responses`() = runTest {
+        val fetcher = fetcherReturning(body = "", contentType = "text/plain")
+
+        val error = runCatching {
+            fetcher.fetchWithMetadata("https://subscriptions.example/empty")
+        }.exceptionOrNull()
+
+        assertTrue(error is SubscriptionFetchException)
+        error as SubscriptionFetchException
+        assertEquals(SubscriptionFetchException.Reason.EMPTY_RESPONSE, error.reason)
+        assertEquals(200, error.statusCode)
+    }
+
+    @Test
+    fun `fetch reports responses without supported configurations`() = runTest {
+        val fetcher = fetcherReturning(body = "not a subscription", contentType = "text/plain")
+
+        val error = runCatching {
+            fetcher.fetchWithMetadata("https://subscriptions.example/unsupported")
+        }.exceptionOrNull()
+
+        assertTrue(error is SubscriptionFetchException)
+        error as SubscriptionFetchException
+        assertEquals(SubscriptionFetchException.Reason.UNSUPPORTED_CONTENT, error.reason)
+        assertEquals(200, error.statusCode)
+    }
+
+    @Test
     fun `fetch parses json Hysteria outbound`() = runTest {
         val body = """
             {
@@ -294,14 +340,18 @@ class SubscriptionFetcherTest {
         assertTrue(config.rawConfigJson.isNotBlank())
     }
 
-    private fun fetcherReturning(body: String, contentType: String): SubscriptionFetcher {
+    private fun fetcherReturning(
+        body: String,
+        contentType: String,
+        statusCode: Int = 200,
+    ): SubscriptionFetcher {
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 Response.Builder()
                     .request(chain.request())
                     .protocol(OkHttpProtocol.HTTP_1_1)
-                    .code(200)
-                    .message("OK")
+                    .code(statusCode)
+                    .message(if (statusCode == 200) "OK" else "Error")
                     .headers(Headers.headersOf("content-type", contentType))
                     .body(body.toResponseBody(contentType.toMediaType()))
                     .build()

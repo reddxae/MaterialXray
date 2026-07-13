@@ -1,7 +1,6 @@
 package com.material.xray.ui.home
 
 import android.content.Context
-import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.R
@@ -14,6 +13,7 @@ import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
+import com.material.xray.data.parser.SubscriptionFetchException
 import com.material.xray.data.repository.AppUpdateRepository
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
@@ -47,8 +47,13 @@ import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.Locale
 import javax.inject.Inject
+import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -98,7 +103,7 @@ data class SubscriptionRoutingData(
 )
 
 sealed interface HomeUiEvent {
-    data class Toast(@param:StringRes val messageResId: Int) : HomeUiEvent
+    data class Toast(val message: String) : HomeUiEvent
 }
 
 const val LATENCY_TESTING = Int.MIN_VALUE
@@ -265,7 +270,7 @@ class HomeViewModel @Inject constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                _uiEvents.emit(HomeUiEvent.Toast(R.string.home_app_update_install_failed))
+                _uiEvents.emit(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
             }
         }
     }
@@ -277,7 +282,7 @@ class HomeViewModel @Inject constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                _uiEvents.emit(HomeUiEvent.Toast(R.string.home_app_update_install_failed))
+                _uiEvents.emit(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
             }
         }
     }
@@ -287,7 +292,7 @@ class HomeViewModel @Inject constructor(
             try {
                 appUpdateInstaller.confirmInstallPermissionRationale()
             } catch (_: Exception) {
-                _uiEvents.emit(HomeUiEvent.Toast(R.string.home_app_update_install_failed))
+                _uiEvents.emit(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
             }
         }
     }
@@ -377,15 +382,15 @@ class HomeViewModel @Inject constructor(
         customHeaders: String,
     ) {
         viewModelScope.launch {
-            runCatching { subscriptionRepo.add(name, url, preferJson, userAgentMode, customUserAgent, customHeaders) }
-                .onFailure { _uiEvents.emit(HomeUiEvent.Toast(R.string.home_unable_to_fetch_link)) }
+            runSubscriptionOperation {
+                subscriptionRepo.add(name, url, preferJson, userAgentMode, customUserAgent, customHeaders)
+            }
         }
     }
 
     fun addLink(link: String) {
         viewModelScope.launch {
-            runCatching { subscriptionRepo.addLink(link) }
-                .onFailure { _uiEvents.emit(HomeUiEvent.Toast(R.string.home_unable_to_fetch_link)) }
+            runSubscriptionOperation { subscriptionRepo.addLink(link) }
         }
     }
 
@@ -440,7 +445,7 @@ class HomeViewModel @Inject constructor(
 
             if (hasSubscriptionChanges) {
                 withRefreshTracking {
-                    runCatching {
+                    runSubscriptionOperation {
                         subscriptionRefreshCoordinator.updateSubscription(
                             sub.copy(
                                 preferJson = preferJson,
@@ -467,7 +472,10 @@ class HomeViewModel @Inject constructor(
     fun refreshAll() {
         viewModelScope.launch {
             withRefreshTracking {
-                runCatching { subscriptionRefreshCoordinator.refreshAll() }
+                runSubscriptionOperation {
+                    val result = subscriptionRefreshCoordinator.refreshAll()
+                    reportBatchRefreshFailures(result.failures)
+                }
             }
         }
     }
@@ -475,7 +483,9 @@ class HomeViewModel @Inject constructor(
     fun refreshSubscription(sub: SubscriptionEntity) {
         viewModelScope.launch {
             withRefreshTracking {
-                runCatching { subscriptionRefreshCoordinator.refreshSubscription(sub.id, sub.url) }
+                runSubscriptionOperation {
+                    subscriptionRefreshCoordinator.refreshSubscription(sub.id, sub.url)
+                }
             }
         }
     }
@@ -670,6 +680,65 @@ class HomeViewModel @Inject constructor(
         } finally {
             refreshOperations.update { current -> (current - 1).coerceAtLeast(0) }
         }
+    }
+
+    private suspend fun runSubscriptionOperation(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: IOException) {
+            _uiEvents.emit(HomeUiEvent.Toast(subscriptionFailureMessage(error)))
+        }
+    }
+
+    private suspend fun reportBatchRefreshFailures(failures: Map<Long, IOException>) {
+        if (failures.isEmpty()) return
+
+        val firstFailure = subscriptionFailureMessage(failures.values.first())
+        val message = if (failures.size == 1) {
+            firstFailure
+        } else {
+            context.localizedString(
+                R.string.home_subscription_refresh_batch_failed,
+                failures.size,
+                firstFailure,
+            )
+        }
+        _uiEvents.emit(HomeUiEvent.Toast(message))
+    }
+
+    private fun subscriptionFailureMessage(error: IOException): String = when (error) {
+        is SubscriptionFetchException -> when (error.reason) {
+            SubscriptionFetchException.Reason.INVALID_URL -> context.localizedString(
+                R.string.home_subscription_fetch_failed_invalid_url,
+            )
+
+            SubscriptionFetchException.Reason.HTTP_STATUS -> context.localizedString(
+                R.string.home_subscription_fetch_failed_http,
+                error.statusCode ?: 0,
+            )
+
+            SubscriptionFetchException.Reason.INSECURE_RESPONSE -> context.localizedString(
+                R.string.home_subscription_fetch_failed_insecure,
+            )
+
+            SubscriptionFetchException.Reason.EMPTY_RESPONSE -> context.localizedString(
+                R.string.home_subscription_fetch_failed_empty,
+                error.statusCode ?: 0,
+            )
+
+            SubscriptionFetchException.Reason.UNSUPPORTED_CONTENT -> context.localizedString(
+                R.string.home_subscription_fetch_failed_unsupported,
+                error.statusCode ?: 0,
+            )
+        }
+
+        is SocketTimeoutException -> context.localizedString(R.string.home_subscription_fetch_failed_timeout)
+        is UnknownHostException -> context.localizedString(R.string.home_subscription_fetch_failed_dns)
+        is SSLException -> context.localizedString(R.string.home_subscription_fetch_failed_tls)
+        is ConnectException -> context.localizedString(R.string.home_subscription_fetch_failed_connection)
+        else -> context.localizedString(R.string.home_subscription_fetch_failed_network)
     }
 
     private companion object {

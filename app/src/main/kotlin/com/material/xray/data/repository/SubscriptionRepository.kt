@@ -13,8 +13,10 @@ import com.material.xray.model.SubscriptionRequestIdentity
 import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.parseSubscriptionHeaders
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -50,6 +52,11 @@ class SubscriptionRepository @Inject constructor(
         val serverIdReplacements: Map<Long, Long>,
         val appRouting: SubscriptionAppRouting? = null,
         val routing: SubscriptionRouting? = null,
+    )
+
+    data class RefreshBatchResult(
+        val successes: Map<Long, RefreshResult>,
+        val failures: Map<Long, IOException>,
     )
 
     suspend fun add(
@@ -157,23 +164,11 @@ class SubscriptionRepository @Inject constructor(
         )
     }
 
-    suspend fun refreshAll(): Map<Long, RefreshResult> = buildMap {
-        subscriptionDao.getAll().forEach { sub ->
-            runCatching { refresh(sub.id, sub.url) }
-                .getOrNull()
-                ?.let { result -> put(sub.id, result) }
-        }
-    }
+    suspend fun refreshAll(): RefreshBatchResult = refreshSubscriptions(subscriptionDao.getAll())
 
-    suspend fun refreshDueSubscriptions(nowMillis: Long = System.currentTimeMillis()): Map<Long, RefreshResult> = buildMap {
-        subscriptionDao.getAll()
-            .filter { it.isDueForRefresh(nowMillis) }
-            .forEach { sub ->
-                runCatching { refresh(sub.id, sub.url) }
-                    .getOrNull()
-                    ?.let { result -> put(sub.id, result) }
-            }
-    }
+    suspend fun refreshDueSubscriptions(nowMillis: Long = System.currentTimeMillis()): RefreshBatchResult = refreshSubscriptions(
+        subscriptionDao.getAll().filter { it.isDueForRefresh(nowMillis) },
+    )
 
     suspend fun delete(sub: SubscriptionEntity) {
         subscriptionDao.delete(sub)
@@ -194,6 +189,23 @@ class SubscriptionRepository @Inject constructor(
         )
         subscriptionDao.update(updated)
         return refresh(updated.id, updated.url)
+    }
+
+    private suspend fun refreshSubscriptions(subscriptions: List<SubscriptionEntity>): RefreshBatchResult {
+        val successes = mutableMapOf<Long, RefreshResult>()
+        val failures = mutableMapOf<Long, IOException>()
+        subscriptions.forEach { subscription ->
+            try {
+                refresh(subscription.id, subscription.url)?.let { result ->
+                    successes[subscription.id] = result
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: IOException) {
+                failures[subscription.id] = error
+            }
+        }
+        return RefreshBatchResult(successes = successes, failures = failures)
     }
 
     private suspend fun SubscriptionEntity.applyFetchedData(fetched: FetchedSubscription): SubscriptionEntity {

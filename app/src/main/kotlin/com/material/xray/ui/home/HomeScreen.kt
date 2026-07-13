@@ -218,7 +218,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     LaunchedEffect(viewModel) {
         viewModel.uiEvents.collect { event ->
             when (event) {
-                is HomeUiEvent.Toast -> Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
+                is HomeUiEvent.Toast -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
             }
         }
     }

@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="home_unable_to_fetch_link">Unable to fetch link</string>
+    <string name="home_subscription_fetch_failed_http">Subscription fetch failed: server returned HTTP %1$d.</string>
+    <string name="home_subscription_fetch_failed_empty">Subscription fetch failed: server returned an empty response (HTTP %1$d).</string>
+    <string name="home_subscription_fetch_failed_unsupported">Subscription fetch failed: response could not be parsed or contained no supported configurations (HTTP %1$d).</string>
+    <string name="home_subscription_fetch_failed_invalid_url">Subscription fetch failed: the URL is invalid.</string>
+    <string name="home_subscription_fetch_failed_insecure">Subscription fetch failed: the response was redirected to an insecure connection.</string>
+    <string name="home_subscription_fetch_failed_timeout">Subscription fetch failed: the request timed out.</string>
+    <string name="home_subscription_fetch_failed_dns">Subscription fetch failed: the server address could not be resolved.</string>
+    <string name="home_subscription_fetch_failed_tls">Subscription fetch failed: a secure connection could not be established.</string>
+    <string name="home_subscription_fetch_failed_connection">Subscription fetch failed: could not connect to the server.</string>
+    <string name="home_subscription_fetch_failed_network">Subscription fetch failed because of a network error.</string>
+    <string name="home_subscription_refresh_batch_failed">%1$d subscriptions failed to refresh. First error: %2$s</string>
     <string name="home_clipboard_xray_config_label">Xray config</string>
 
     <string name="home_root_fallback_message">Unable to access root on this device. Material Xray will fall back to rootless mode.</string>

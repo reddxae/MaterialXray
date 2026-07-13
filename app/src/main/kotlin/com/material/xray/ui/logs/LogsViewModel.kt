@@ -1,6 +1,8 @@
 package com.material.xray.ui.logs
 
 import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import com.material.xray.R
 import com.material.xray.core.locale.localizedString
@@ -8,8 +10,15 @@ import com.material.xray.service.LogBuffer
 import com.material.xray.service.LogEntry
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import java.io.IOException
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
+
+internal const val LOG_EXPORT_FILE_NAME = "material-xray-logs.txt"
+private const val LOG_EXPORT_DIRECTORY = "logs"
 
 @HiltViewModel
 class LogsViewModel @Inject constructor(
@@ -38,6 +47,29 @@ class LogsViewModel @Inject constructor(
                 context.localizedString(R.string.clipboard_label_log_entry),
                 "$time [${entry.source.name}] ${entry.message}",
             ),
+        )
+    }
+
+    suspend fun saveLogs(destination: Uri) = withContext(Dispatchers.IO) {
+        val outputStream = context.contentResolver.openOutputStream(destination, "wt")
+            ?: throw IOException("Unable to open the selected log file")
+        outputStream.bufferedWriter(Charsets.UTF_8).use { writer ->
+            writer.write(logBuffer.formatAll())
+        }
+    }
+
+    suspend fun createShareFile(): Uri = withContext(Dispatchers.IO) {
+        val exportDirectory = File(context.cacheDir, LOG_EXPORT_DIRECTORY)
+        if (!exportDirectory.isDirectory && !exportDirectory.mkdirs()) {
+            throw IOException("Unable to create the log export directory")
+        }
+
+        val exportFile = File(exportDirectory, LOG_EXPORT_FILE_NAME)
+        exportFile.writeText(logBuffer.formatAll(), Charsets.UTF_8)
+        FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            exportFile,
         )
     }
 }

@@ -10,6 +10,12 @@
     <string name="logs_filter_app">App</string>
     <string name="logs_filter_xray" translatable="false">Xray</string>
     <string name="logs_copy_all">Copy all</string>
+    <string name="logs_export">Export logs</string>
+    <string name="logs_save_to_file">Save to file</string>
+    <string name="logs_saved">Logs saved</string>
+    <string name="logs_save_failed">Could not save logs</string>
+    <string name="logs_share">Share logs</string>
+    <string name="logs_share_failed">Could not share logs</string>
     <string name="logs_clear">Clear logs</string>
     <string name="logs_copied">Logs copied</string>
     <string name="log_entry_copied">Copied</string>

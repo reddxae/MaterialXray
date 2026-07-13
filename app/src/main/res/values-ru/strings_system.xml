@@ -9,6 +9,12 @@
     <string name="logs_filter_all">Все</string>
     <string name="logs_filter_app">Приложение</string>
     <string name="logs_copy_all">Копировать всё</string>
+    <string name="logs_export">Экспорт журнала</string>
+    <string name="logs_save_to_file">Сохранить в файл</string>
+    <string name="logs_saved">Журнал сохранён</string>
+    <string name="logs_save_failed">Не удалось сохранить журнал</string>
+    <string name="logs_share">Поделиться журналом</string>
+    <string name="logs_share_failed">Не удалось поделиться журналом</string>
     <string name="logs_clear">Очистить журнал</string>
     <string name="logs_copied">Журнал скопирован</string>
     <string name="log_entry_copied">Скопировано</string>

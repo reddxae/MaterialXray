@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.material.xray.R
+import com.material.xray.core.locale.localizedString
 import com.material.xray.data.repository.AppUpdateRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.AppUpdate
@@ -61,7 +62,7 @@ class AppUpdateNotifier @Inject constructor(
         val notificationManager = context.getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            context.getString(R.string.notification_channel_app_updates),
+            context.localizedString(R.string.notification_channel_app_updates),
             NotificationManager.IMPORTANCE_DEFAULT,
         )
         notificationManager.createNotificationChannel(channel)
@@ -76,9 +77,9 @@ class AppUpdateNotifier @Inject constructor(
             openAppIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val text = context.getString(R.string.notification_app_update_text, update.tagName)
+        val text = context.localizedString(R.string.notification_app_update_text, update.tagName)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle(context.getString(R.string.notification_app_update_title))
+            .setContentTitle(context.localizedString(R.string.notification_app_update_title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(R.drawable.ic_launcher_default_monochrome)

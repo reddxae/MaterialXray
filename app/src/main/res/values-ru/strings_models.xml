@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ping_method_httping_label">httping (рекомендуется)</string>
+    <string name="ping_method_httping_description">Сквозная проверка. Проверяет работоспособность конфигурации и измеряет фактическую задержку.</string>
+    <string name="ping_method_tcping_description">Проверка рукопожатия TCP. Показывает только базовую доступность и одностороннюю задержку.</string>
+
+    <string name="subscription_user_agent_automatic_label">Автоматически</string>
+    <string name="subscription_user_agent_automatic_description">Представляться как Material Xray и добавлять заголовки с данными устройства.</string>
+    <string name="subscription_user_agent_happ_description">Имитировать клиент Happ. Полезно для провайдеров, которые обслуживают только известные клиенты.</string>
+    <string name="subscription_user_agent_custom_label">Пользовательский</string>
+    <string name="subscription_user_agent_custom_description">Отправлять указанные User-Agent и заголовки без изменений.</string>
+
+    <string name="routing_policy_user_label">Управляется пользователем</string>
+    <string name="routing_policy_user_description">Управлять правилами маршрутизации и маршрутизацией приложений вручную</string>
+    <string name="routing_policy_subscription_provider_label">Провайдер подписки</string>
+    <string name="routing_policy_subscription_provider_description">Применять правила и маршрутизацию приложений от провайдера выбранной подписки</string>
+
+    <string name="xray_outbound_proxy_label">прокси</string>
+    <string name="xray_outbound_proxy_description">Направлять трафик через выбранный прокси-сервер</string>
+    <string name="xray_outbound_direct_label">напрямую</string>
+    <string name="xray_outbound_direct_description">Обходить прокси и подключаться напрямую.</string>
+    <string name="xray_outbound_block_label">блокировать</string>
+    <string name="xray_outbound_block_description">Отбрасывать трафик через исходящее соединение blackhole.</string>
+
+    <string name="launcher_icon_default">Классический</string>
+    <string name="launcher_icon_material">Material</string>
+
+    <string name="notification_field_traffic_speed_label">Скорость трафика</string>
+    <string name="notification_field_traffic_speed_description">Пропускная способность прокси и прямого подключения</string>
+    <string name="notification_field_ram_usage_label">ОЗУ Xray</string>
+    <string name="notification_field_ram_usage_description">Использование памяти ядром</string>
+    <string name="notification_field_connection_count_label">Соединения</string>
+    <string name="notification_field_connection_count_description">Открытые сокеты ядра</string>
+
+    <string name="notification_style_normal_label">Обычный</string>
+    <string name="notification_style_normal_description">Каждое поле на отдельной строке</string>
+    <string name="notification_style_compact_label">Компактный</string>
+    <string name="notification_style_compact_description">Все поля в одной строке</string>
+</resources>

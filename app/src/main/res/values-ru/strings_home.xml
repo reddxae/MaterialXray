@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_unable_to_fetch_link">Не удалось загрузить ссылку</string>
+    <string name="home_clipboard_xray_config_label">Конфигурация Xray</string>
+
+    <string name="home_root_fallback_message">Не удалось получить root-доступ на этом устройстве. Material Xray продолжит работу в режиме без root-доступа.</string>
+    <string name="home_action_continue">Продолжить</string>
+    <string name="home_action_cancel">Отмена</string>
+    <string name="home_action_close">Закрыть</string>
+    <string name="home_action_copy">Копировать</string>
+    <string name="home_action_start">Запустить</string>
+    <string name="home_action_stop">Остановить</string>
+    <string name="home_action_restart">Перезапустить</string>
+    <string name="home_action_edit">Изменить</string>
+    <string name="home_action_support">Поддержать</string>
+    <string name="home_action_remove">Удалить</string>
+    <string name="home_action_open">Открыть</string>
+    <string name="home_action_save">Сохранить</string>
+    <string name="home_action_add">Добавить</string>
+
+    <string name="home_app_update_title">Доступно обновление</string>
+    <string name="home_app_update_message">Material Xray %1$s готов к скачиванию. Нажмите здесь, чтобы установить обновление.</string>
+    <string name="home_app_update_install_failed">Не удалось скачать или установить обновление</string>
+    <string name="home_app_update_permission_title">Разрешить самостоятельное обновление</string>
+    <string name="home_app_update_permission_message">Material Xray требуется разрешение на установку собственных обновлений. Android откроет экран «Установка неизвестных приложений». Включите параметр «Разрешить установку из этого источника».</string>
+    <string name="home_app_update_permission_continue">Открыть настройки</string>
+    <string name="home_app_update_permission_not_now">Не сейчас</string>
+    <string name="home_app_update_progress_resolving">Поиск последней версии&#8230;</string>
+    <string name="home_app_update_progress_connecting">Подключение к серверу загрузки&#8230;</string>
+    <string name="home_app_update_progress_downloading">Скачивание обновления&#8230;</string>
+    <string name="home_app_update_progress_downloading_percent">Скачивание обновления&#8230; %1$d%%</string>
+    <string name="home_app_update_progress_verifying">Проверка скачанного APK&#8230;</string>
+    <string name="home_app_update_progress_preparing">Подготовка к установке&#8230;</string>
+    <string name="home_app_update_progress_opening_installer">Запуск установщика Android&#8230;</string>
+    <string name="home_app_update_progress_installing_root">Установка обновления с root-доступом&#8230;</string>
+
+    <string name="home_no_server_selected">Сервер не выбран</string>
+    <string name="home_select_server_below">Выберите сервер ниже</string>
+    <string name="home_selected_server">Выбранный сервер</string>
+    <string name="home_balancer_active_server">Используется: %1$s</string>
+    <string name="home_balancer_active_server_with_latency">Используется: %1$s &#8226; %2$d мс</string>
+    <string name="home_server_endpoint_unknown">неизвестно</string>
+    <plurals name="home_server_multiconnect_summary">
+        <item quantity="one">multiconnect &#8226; %1$d сервер</item>
+        <item quantity="few">multiconnect &#8226; %1$d сервера</item>
+        <item quantity="many">multiconnect &#8226; %1$d серверов</item>
+        <item quantity="other">multiconnect &#8226; %1$d сервера</item>
+    </plurals>
+    <string name="home_no_active_xray_config">Активный файл конфигурации Xray не найден.</string>
+    <string name="home_connection_connected">Подключено</string>
+    <string name="home_connection_connecting">Подключение&#8230;</string>
+    <string name="home_connection_applying_routing">Применение изменений маршрутизации&#8230;</string>
+    <string name="home_connection_updating_routing">Обновление данных маршрутизации&#8230;</string>
+    <string name="home_connection_restart_required">Требуется перезапуск</string>
+    <string name="home_connection_interface_busy">Интерфейс занят</string>
+    <string name="home_connection_disconnecting">Отключение&#8230;</string>
+    <string name="home_connection_error">Ошибка</string>
+    <string name="home_connection_disconnected">Отключено</string>
+    <string name="home_connection_interface_busy_detail">Выбранный интерфейс уже используется другим клиентом.\nВыберите «Перезапустить», чтобы остановить его и подключиться к выбранному серверу.</string>
+    <string name="home_connection_restart_required_detail">Клиент был перезапущен. Выберите «Перезапустить», чтобы восстановить управление.</string>
+
+    <string name="home_active_xray_config_title">Активная конфигурация Xray</string>
+    <string name="home_no_subscriptions_title">Подписок пока нет</string>
+    <string name="home_no_subscriptions_message">Добавьте подписку, чтобы здесь появились серверы.</string>
+    <string name="home_add_server_or_subscription">Добавить сервер или подписку</string>
+    <string name="home_paste_from_clipboard">Вставить из буфера обмена</string>
+    <string name="home_scan_qr_code">Сканировать QR-код</string>
+    <string name="home_add_manually">Добавить вручную</string>
+    <string name="home_no_servers_in_subscription">В этой подписке нет серверов.</string>
+
+    <string name="home_subscription_refresh_content_description">Обновить %1$s</string>
+    <string name="home_subscription_test_content_description">Проверить %1$s с помощью %2$s</string>
+    <string name="home_subscription_menu_content_description">Меню подписки</string>
+    <string name="home_subscription_show_description">Показать описание</string>
+    <string name="home_subscription_hide_description">Скрыть описание</string>
+    <string name="home_subscription_apply_routing">Применить маршрутизацию</string>
+    <string name="home_choose_ping_method_title">Выберите способ</string>
+    <string name="home_open_link_title">Открыть ссылку?</string>
+
+    <string name="home_latency_testing">Проверка&#8230;</string>
+    <string name="home_latency_not_available">Н/Д</string>
+    <string name="home_latency_milliseconds">%1$d мс</string>
+    <string name="home_zero_gigabytes">0 ГБ</string>
+
+    <string name="home_edit_subscription_title">Изменить подписку</string>
+    <string name="home_field_name">Название</string>
+    <string name="home_name_from_provider_hint">Оставьте пустым, чтобы получить название от провайдера подписки</string>
+    <string name="home_auto_update_label">Автообновление</string>
+    <string name="home_auto_update_manual">Только вручную</string>
+    <string name="home_duration_manual">Только вручную</string>
+    <plurals name="home_auto_update_every_hours">
+        <item quantity="one">Автообновление раз в %1$d час</item>
+        <item quantity="few">Автообновление раз в %1$d часа</item>
+        <item quantity="many">Автообновление раз в %1$d часов</item>
+        <item quantity="other">Автообновление раз в %1$d часа</item>
+    </plurals>
+    <plurals name="home_auto_update_every_days">
+        <item quantity="one">Автообновление раз в %1$d день</item>
+        <item quantity="few">Автообновление раз в %1$d дня</item>
+        <item quantity="many">Автообновление раз в %1$d дней</item>
+        <item quantity="other">Автообновление раз в %1$d дня</item>
+    </plurals>
+    <plurals name="home_duration_hours">
+        <item quantity="one">%1$d час</item>
+        <item quantity="few">%1$d часа</item>
+        <item quantity="many">%1$d часов</item>
+        <item quantity="other">%1$d часа</item>
+    </plurals>
+    <plurals name="home_duration_days">
+        <item quantity="one">%1$d день</item>
+        <item quantity="few">%1$d дня</item>
+        <item quantity="many">%1$d дней</item>
+        <item quantity="other">%1$d дня</item>
+    </plurals>
+
+    <string name="home_apply_subscription_routing_title">Применить маршрутизацию подписки?</string>
+    <string name="home_apply_subscription_routing_message">Текущая конфигурация маршрутизации будет заменена.</string>
+    <string name="home_apply_subscription_routing_confirm">Да, применить</string>
+    <string name="home_apply_subscription_routing_dismiss">Нет, спасибо</string>
+    <string name="home_remove_subscription_title">Удалить подписку?</string>
+    <plurals name="home_remove_subscription_message">
+        <item quantity="one">%1$d сервер из этой подписки будет удалён.</item>
+        <item quantity="few">Все %1$d сервера из этой подписки будут удалены.</item>
+        <item quantity="many">Все %1$d серверов из этой подписки будут удалены.</item>
+        <item quantity="other">Все %1$d сервера из этой подписки будут удалены.</item>
+    </plurals>
+
+    <string name="home_fetch_type_label">Способ загрузки</string>
+    <string name="home_fetch_type_json_first">Сначала JSON</string>
+    <string name="home_fetch_type_compatibility">Режим совместимости</string>
+    <string name="home_fetch_type_json_first_description">Сначала пробовать адрес /json, затем сохранённый URL-адрес</string>
+    <string name="home_fetch_type_compatibility_description">Загружать непосредственно по сохранённому URL-адресу</string>
+    <string name="home_user_agent_example">Например: %1$s</string>
+    <string name="home_field_headers">Заголовки</string>
+    <string name="home_headers_example">По одному на строку, например: X-Hwid: 0123456789abcdef</string>
+
+    <string name="home_subscription_unlimited_traffic">∞ трафика</string>
+    <string name="home_subscription_unlimited_traffic_downloaded">∞ трафика, ↓ %1$s</string>
+    <string name="home_subscription_used_of_total">%1$s из %2$s</string>
+    <string name="home_subscription_downloaded">↓ %1$s</string>
+    <string name="home_subscription_downloaded_expires_on">↓ %1$s, истекает %2$s</string>
+    <string name="home_subscription_downloaded_expired">↓ %1$s, срок истёк</string>
+    <string name="home_subscription_expired_inline">срок истёк</string>
+    <string name="home_subscription_expired_standalone">Срок истёк</string>
+    <string name="home_subscription_expires_on_inline">истекает %1$s</string>
+    <string name="home_subscription_expires_on_standalone">Истекает %1$s</string>
+    <string name="home_gigabytes">%1$s ГБ</string>
+</resources>

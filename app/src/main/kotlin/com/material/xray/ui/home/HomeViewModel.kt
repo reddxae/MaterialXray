@@ -5,6 +5,9 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.R
+import com.material.xray.core.locale.appLocaleChanges
+import com.material.xray.core.locale.forAppLanguage
+import com.material.xray.core.locale.localizedString
 import com.material.xray.core.network.LatencyProbeResult
 import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.core.xray.StateFile
@@ -60,6 +63,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -140,9 +144,11 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     private val latencyByServerId = MutableStateFlow<Map<Long, ServerLatencyState>>(emptyMap())
 
-    val serverItems: StateFlow<List<ServerListItem>> = combine(allServers, latencyByServerId) { servers, latencies ->
-        servers.map { it.toListItem(latencies[it.id]) }
-    }
+    val serverItems: StateFlow<List<ServerListItem>> = combine(
+        allServers,
+        latencyByServerId,
+        appLocaleChanges.onStart { emit(Unit) },
+    ) { servers, latencies, _ -> servers.map { it.toListItem(latencies[it.id]) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val serversBySubscription: StateFlow<Map<Long, List<ServerListItem>>> = serverItems
@@ -313,7 +319,7 @@ class HomeViewModel @Inject constructor(
             ?.takeIf { it.isNotBlank() }
 
         ConnectionState.Connected(
-            serverName = persistedServerName ?: selectedServerName ?: context.getString(R.string.home_selected_server),
+            serverName = persistedServerName ?: selectedServerName ?: context.localizedString(R.string.home_selected_server),
             corePid = persistedState?.xrayPid ?: -1,
             tunName = activeTunName,
             physicalInterface = persistedState?.physicalInterface ?: "unknown",
@@ -329,7 +335,7 @@ class HomeViewModel @Inject constructor(
                 runCatching { activeConfigFile.takeIf { it.isFile }?.readText() }
                     .getOrNull()
                     ?.takeIf { it.isNotBlank() }
-                    ?: context.getString(R.string.home_no_active_xray_config)
+                    ?: context.localizedString(R.string.home_no_active_xray_config)
             }
         }
     }
@@ -614,7 +620,8 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun ServerEntity.toListItem(latency: ServerLatencyState?): ServerListItem {
-        val localeKey = context.resources.configuration.locales.toLanguageTags()
+        val resources = context.forAppLanguage().resources
+        val localeKey = resources.configuration.locales.toLanguageTags()
         val summary = endpointSummaryCache.getOrPut("$localeKey\u0000$configJson") {
             runCatching {
                 val config = json.decodeFromString<ServerConfig>(configJson)
@@ -622,14 +629,14 @@ class HomeViewModel @Inject constructor(
                 if (outboundCount == null) {
                     config.endpointSummary()
                 } else {
-                    context.resources.getQuantityString(
+                    resources.getQuantityString(
                         R.plurals.home_server_multiconnect_summary,
                         outboundCount,
                         outboundCount,
                     )
                 }
             }.getOrElse {
-                val unknown = context.getString(R.string.home_server_endpoint_unknown)
+                val unknown = context.localizedString(R.string.home_server_endpoint_unknown)
                 "${protocol.lowercase(Locale.ROOT)} • $unknown • $unknown"
             }
         }

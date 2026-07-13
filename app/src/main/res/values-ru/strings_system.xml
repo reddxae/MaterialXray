@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Навигация и экран журнала -->
+    <string name="navigation_home">Главная</string>
+    <string name="navigation_routing">Маршруты</string>
+    <string name="navigation_logs">Журнал</string>
+    <string name="navigation_settings">Настройки</string>
+
+    <string name="logs_filter_all">Все</string>
+    <string name="logs_filter_app">Приложение</string>
+    <string name="logs_copy_all">Копировать всё</string>
+    <string name="logs_clear">Очистить журнал</string>
+    <string name="logs_copied">Журнал скопирован</string>
+    <string name="log_entry_copied">Скопировано</string>
+    <string name="clipboard_label_logs">Журнал %1$s</string>
+    <string name="clipboard_label_log_entry">Запись журнала</string>
+
+    <!-- Служба переднего плана и уведомления -->
+    <string name="notification_status_starting">Запуск&#8230;</string>
+    <string name="notification_status_switching_server">Смена сервера&#8230;</string>
+    <string name="notification_status_retrying_connection">Повторное подключение (%1$d/%2$d)&#8230;</string>
+    <string name="notification_status_recovering_core">Восстановление нативного ядра&#8230;</string>
+    <string name="notification_status_waiting_for_physical_route">Ожидание маршрута физической сети</string>
+    <string name="notification_status_waiting_for_physical_network">Ожидание физической сети</string>
+    <string name="notification_status_refreshing_physical_route">Обновление маршрута физической сети</string>
+    <string name="notification_status_pinning_interface">Привязка %1$s к %2$s</string>
+    <string name="notification_status_connecting">Подключение&#8230;</string>
+    <string name="notification_status_applying_routing_changes">Применение изменений маршрутизации&#8230;</string>
+    <string name="notification_status_updating_routing_data">Обновление данных маршрутизации&#8230;</string>
+    <string name="notification_status_restart_required">Требуется перезапуск</string>
+    <string name="notification_status_interface_busy">Интерфейс занят</string>
+    <string name="notification_status_disconnecting">Отключение&#8230;</string>
+    <string name="notification_status_error">Ошибка: %1$s</string>
+    <string name="notification_unknown_connection_error">Неизвестная ошибка подключения</string>
+    <string name="notification_selected_server">Выбранный сервер</string>
+    <string name="notification_connection_failed">Не удалось подключиться</string>
+    <string name="notification_vpn_service_active">Служба VPN активна</string>
+    <string name="notification_root_service_active">Служба с root-доступом активна (%1$s привязан к %2$s)</string>
+    <string name="notification_disconnect">Отключиться</string>
+    <string name="notification_channel_service">Служба Xray</string>
+    <string name="notification_channel_connection_failures">Ошибки подключения</string>
+    <string name="notification_channel_app_updates">Обновления приложения</string>
+    <string name="notification_app_update_title">Доступно обновление</string>
+    <string name="notification_app_update_text">Доступна версия %1$s. Нажмите, чтобы открыть Material Xray.</string>
+
+    <!-- Динамические поля уведомления -->
+    <string name="notification_traffic_compact">П %1$s / Н %2$s</string>
+    <string name="notification_traffic_expanded">Прокси: %1$s | Напрямую: %2$s</string>
+    <string name="notification_ram_compact">ОЗУ %1$s</string>
+    <string name="notification_ram_expanded">ОЗУ ядра: %1$s</string>
+    <string name="notification_connections_compact">%1$s Соед.</string>
+    <string name="notification_connections_expanded_unavailable">Соединения: %1$s</string>
+    <plurals name="notification_connections_expanded">
+        <item quantity="one">Соединение: %1$s</item>
+        <item quantity="few">Соединения: %1$s</item>
+        <item quantity="many">Соединений: %1$s</item>
+        <item quantity="other">Соединения: %1$s</item>
+    </plurals>
+    <string name="notification_value_with_unit">%1$s %2$s</string>
+
+    <!-- Описания состояний плитки быстрых настроек -->
+    <string name="tile_state_connected">Подключено</string>
+    <string name="tile_state_no_server_selected">Сервер не выбран</string>
+    <string name="tile_state_connecting">Подключение</string>
+    <string name="tile_state_applying_routing_changes">Применение изменений маршрутизации</string>
+    <string name="tile_state_updating_routing_data">Обновление данных маршрутизации</string>
+    <string name="tile_state_restart_required">Требуется перезапуск</string>
+    <string name="tile_state_interface_busy">Интерфейс занят</string>
+    <string name="tile_state_disconnecting">Отключение</string>
+    <string name="tile_state_connection_error">Ошибка подключения</string>
+    <string name="tile_state_disconnected">Отключено</string>
+</resources>

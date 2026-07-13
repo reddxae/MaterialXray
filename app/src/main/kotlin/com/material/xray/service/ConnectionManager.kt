@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.system.Os
 import com.material.xray.R
 import com.material.xray.core.app.AppInventory
+import com.material.xray.core.locale.localizedString
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.CleanupManager
 import com.material.xray.core.xray.ConfigGenerator
@@ -130,7 +131,7 @@ class ConnectionManager(
             val pid = startXrayProcess(useRootService, vpnInterface)
 
             if (pid <= 0) {
-                fail(context.getString(R.string.connection_error_missing_process_id))
+                fail(context.localizedString(R.string.connection_error_missing_process_id))
                 return
             }
 
@@ -164,15 +165,15 @@ class ConnectionManager(
                 connectStartedAt = connectStartedAt,
             )
         } catch (e: IOException) {
-            fail(e.message ?: context.getString(R.string.error_unknown))
+            fail(e.message ?: context.localizedString(R.string.error_unknown))
         } catch (e: SecurityException) {
-            fail(e.message ?: context.getString(R.string.error_unknown))
+            fail(e.message ?: context.localizedString(R.string.error_unknown))
         } catch (e: IllegalArgumentException) {
-            fail(e.message ?: context.getString(R.string.error_unknown))
+            fail(e.message ?: context.localizedString(R.string.error_unknown))
         } catch (e: IllegalStateException) {
-            fail(e.message ?: context.getString(R.string.error_unknown))
+            fail(e.message ?: context.localizedString(R.string.error_unknown))
         } catch (e: SerializationException) {
-            fail(e.message ?: context.getString(R.string.error_unknown))
+            fail(e.message ?: context.localizedString(R.string.error_unknown))
         }
     }
 
@@ -212,7 +213,7 @@ class ConnectionManager(
             shell.open()
         }
         if (!rootGranted) {
-            fail(context.getString(R.string.connection_error_root_access_denied))
+            fail(context.localizedString(R.string.connection_error_root_access_denied))
             return false
         }
         log.append(
@@ -230,7 +231,7 @@ class ConnectionManager(
     private suspend fun prepareVpnServiceRuntime(vpnInterface: ParcelFileDescriptor?): Boolean {
         if (vpnInterface == null) {
             fail(
-                context.getString(R.string.connection_error_vpn_permission_required),
+                context.localizedString(R.string.connection_error_vpn_permission_required),
                 retryable = false,
             )
             return false
@@ -253,7 +254,7 @@ class ConnectionManager(
                 }
             }
             if (!xrayReady) {
-                fail(context.getString(R.string.connection_error_xray_binary_not_found))
+                fail(context.localizedString(R.string.connection_error_xray_binary_not_found))
                 return null
             }
         }
@@ -299,7 +300,7 @@ class ConnectionManager(
             tunManager.detectPhysicalRoute(tunName)
         }
         if (route == null) {
-            fail(context.getString(R.string.connection_error_physical_route_not_found))
+            fail(context.localizedString(R.string.connection_error_physical_route_not_found))
             return PhysicalRouteResult(success = false, route = null)
         }
         log.append(
@@ -326,7 +327,7 @@ class ConnectionManager(
             }
         }
         if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
-            fail(context.getString(R.string.connection_error_server_address_unresolved, server.address))
+            fail(context.localizedString(R.string.connection_error_server_address_unresolved, server.address))
             return null
         }
         if (resolvedServer.selectedAddress != null) {
@@ -481,11 +482,11 @@ class ConnectionManager(
         val stage = if (tunSetup.processExited) "$diagnosticsStage-exit" else "$diagnosticsStage-failure"
         diagnostics.logNamespaceDiagnostics(stage = stage, tunName = tunName, xrayPid = pid)
         if (tunSetup.processExited) {
-            fail(context.getString(R.string.connection_error_xray_crashed, processSupervisor.readCrashReason()))
+            fail(context.localizedString(R.string.connection_error_xray_crashed, processSupervisor.readCrashReason()))
         } else {
             fail(
                 tunSetup.error
-                    ?: context.getString(R.string.connection_error_tun_timeout, tunName),
+                    ?: context.localizedString(R.string.connection_error_tun_timeout, tunName),
             )
         }
     }
@@ -520,9 +521,9 @@ class ConnectionManager(
         }
         if (!routingResult.success) {
             fail(
-                context.getString(
+                context.localizedString(
                     R.string.connection_error_apply_ip_routing,
-                    routingResult.error ?: context.getString(R.string.error_unknown),
+                    routingResult.error ?: context.localizedString(R.string.error_unknown),
                 ),
             )
             return false

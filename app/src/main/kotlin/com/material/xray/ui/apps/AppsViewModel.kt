@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.material.xray.R
 import com.material.xray.core.app.AppInventory
 import com.material.xray.core.app.appKey
+import com.material.xray.core.locale.localizedString
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.dao.SubscriptionDao
 import com.material.xray.data.db.entity.AppBypassEntity
@@ -204,7 +205,7 @@ class AppsViewModel @Inject constructor(
                 filters.searchQuery.isEmpty() ||
                     it.name.contains(filters.searchQuery, ignoreCase = true) ||
                     it.packageName.contains(filters.searchQuery, ignoreCase = true) ||
-                    context.getString(
+                    context.localizedString(
                         if (it.workProfile) R.string.apps_work_profile_label else R.string.apps_personal_profile_label,
                     ).contains(filters.searchQuery, ignoreCase = true)
             }

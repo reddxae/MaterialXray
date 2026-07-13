@@ -7,6 +7,7 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.material.xray.R
+import com.material.xray.core.locale.localizedString
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.ConnectionState
@@ -131,7 +132,7 @@ class XrayTileService : TileService() {
             ?.serverName
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?: getString(R.string.app_name)
+            ?: localizedString(R.string.app_name)
     }
 
     private fun TileSnapshot.tileState(): Int = when {
@@ -142,16 +143,16 @@ class XrayTileService : TileService() {
     }
 
     private fun TileSnapshot.stateDescription(): String = when {
-        state is ConnectionState.Connected -> getString(R.string.tile_state_connected)
-        !hasSelectedServer -> getString(R.string.tile_state_no_server_selected)
-        state is ConnectionState.Connecting -> getString(R.string.tile_state_connecting)
-        state is ConnectionState.ApplyingRoutingChanges -> getString(R.string.tile_state_applying_routing_changes)
-        state is ConnectionState.UpdatingRoutingData -> getString(R.string.tile_state_updating_routing_data)
-        state is ConnectionState.RestartRequired -> getString(R.string.tile_state_restart_required)
-        state is ConnectionState.InterfaceBusy -> getString(R.string.tile_state_interface_busy)
-        state is ConnectionState.Disconnecting -> getString(R.string.tile_state_disconnecting)
-        state is ConnectionState.Error -> getString(R.string.tile_state_connection_error)
-        else -> getString(R.string.tile_state_disconnected)
+        state is ConnectionState.Connected -> localizedString(R.string.tile_state_connected)
+        !hasSelectedServer -> localizedString(R.string.tile_state_no_server_selected)
+        state is ConnectionState.Connecting -> localizedString(R.string.tile_state_connecting)
+        state is ConnectionState.ApplyingRoutingChanges -> localizedString(R.string.tile_state_applying_routing_changes)
+        state is ConnectionState.UpdatingRoutingData -> localizedString(R.string.tile_state_updating_routing_data)
+        state is ConnectionState.RestartRequired -> localizedString(R.string.tile_state_restart_required)
+        state is ConnectionState.InterfaceBusy -> localizedString(R.string.tile_state_interface_busy)
+        state is ConnectionState.Disconnecting -> localizedString(R.string.tile_state_disconnecting)
+        state is ConnectionState.Error -> localizedString(R.string.tile_state_connection_error)
+        else -> localizedString(R.string.tile_state_disconnected)
     }
 
     private fun ConnectionState.isTransitioning(): Boolean = this is ConnectionState.Connecting ||

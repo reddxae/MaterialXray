@@ -2,6 +2,7 @@ package com.material.xray
 
 import android.app.Application
 import com.material.xray.core.launcher.LauncherIconManager
+import com.material.xray.core.locale.initializeAppLocales
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.service.AppUpdateScheduler
 import com.material.xray.service.SubscriptionUpdateScheduler
@@ -28,6 +29,7 @@ class MaterialXrayApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        initializeAppLocales(this)
         appScope.launch {
             launcherIconManager.apply(settingsRepository.launcherIcon.first())
             appUpdateScheduler.setEnabled(settingsRepository.appUpdateChecksEnabled.first())

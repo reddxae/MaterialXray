@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
@@ -21,6 +22,9 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.material.xray.R
 import com.material.xray.core.app.AppInventory
+import com.material.xray.core.locale.appLocaleChanges
+import com.material.xray.core.locale.forAppLanguage
+import com.material.xray.core.locale.localizedString
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.ConfigGenerator
 import com.material.xray.core.xray.GeoDataManager
@@ -52,6 +56,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -123,8 +128,8 @@ class XrayService : VpnService() {
         super.onCreate()
         createNotificationChannel()
         startAsForeground(
-            getString(R.string.app_name),
-            getString(R.string.notification_status_starting),
+            localizedString(R.string.app_name),
+            localizedString(R.string.notification_status_starting),
             showDisconnectAction = false,
         )
 
@@ -176,15 +181,26 @@ class XrayService : VpnService() {
             }
         }
 
+        scope.launch {
+            appLocaleChanges.collect {
+                refreshLocalizedSystemUi()
+            }
+        }
+
         registerNetworkCallback()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        refreshLocalizedSystemUi()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CONNECT -> {
                 startAsForeground(
-                    getString(R.string.app_name),
-                    getString(R.string.notification_status_starting),
+                    localizedString(R.string.app_name),
+                    localizedString(R.string.notification_status_starting),
                     showDisconnectAction = false,
                 )
                 val configJson = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
@@ -197,8 +213,8 @@ class XrayService : VpnService() {
             }
             ACTION_SWITCH_SERVER -> {
                 startAsForeground(
-                    getString(R.string.app_name),
-                    getString(R.string.notification_status_switching_server),
+                    localizedString(R.string.app_name),
+                    localizedString(R.string.notification_status_switching_server),
                     showDisconnectAction = false,
                 )
                 val configJson = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
@@ -208,7 +224,7 @@ class XrayService : VpnService() {
                     stopLogTail()
                     stopProcessWatchdog()
                     logBuffer.append(LogSource.APP, "Switching to ${config.name}...")
-                    updateNotification(getString(R.string.notification_status_switching_server))
+                    updateNotification(localizedString(R.string.notification_status_switching_server))
                     connectionManager.disconnect(updateState = false, fastRootCleanup = true)
                     closeVpnInterface()
                     connectWithCurrentSettings(
@@ -299,7 +315,7 @@ class XrayService : VpnService() {
                 logBuffer.append(LogSource.APP, retryMessage)
                 connectionStateHolder.update(transitionState)
                 updateNotification(
-                    getString(
+                    localizedString(
                         R.string.notification_status_retrying_connection,
                         attempt,
                         CONNECTION_MAX_ATTEMPTS,
@@ -316,14 +332,14 @@ class XrayService : VpnService() {
             if (connected) return
 
             val errorState = connectionStateHolder.state.value as? ConnectionState.Error
-            lastError = errorState?.message ?: getString(R.string.notification_unknown_connection_error)
+            lastError = errorState?.message ?: localizedString(R.string.notification_unknown_connection_error)
             if (errorState?.retryable == false || attempt == CONNECTION_MAX_ATTEMPTS) break
 
             delay(CONNECTION_RETRY_DELAY_MS)
             attempt++
         }
 
-        showConnectionFailureNotification(lastError ?: getString(R.string.notification_unknown_connection_error))
+        showConnectionFailureNotification(lastError ?: localizedString(R.string.notification_unknown_connection_error))
     }
 
     private suspend fun connectOnceWithCurrentSettings(
@@ -469,7 +485,7 @@ class XrayService : VpnService() {
         val restoredRoute = persistedRoute ?: fallbackRoute
         ConnectionState.Connected(
             serverName = state.serverName.takeIf { it.isNotBlank() }
-                ?: getString(R.string.notification_selected_server),
+                ?: localizedString(R.string.notification_selected_server),
             corePid = state.xrayPid,
             tunName = state.tunName,
             physicalInterface = restoredRoute?.dev ?: "unknown",
@@ -691,7 +707,7 @@ class XrayService : VpnService() {
                 }
 
                 connectionStateHolder.update(ConnectionState.Connecting)
-                updateNotification(getString(R.string.notification_status_recovering_core))
+                updateNotification(localizedString(R.string.notification_status_recovering_core))
                 connectionManager.disconnect(updateState = false, fastRootCleanup = true)
                 delay(PROCESS_RESTART_DELAY_MS)
                 connectWithCurrentSettings(config, cleanStateFirst = false)
@@ -788,7 +804,7 @@ class XrayService : VpnService() {
         }
         if (!stabilized) {
             logBuffer.append(LogSource.APP, "Network changed ($reason), but no usable physical route appeared")
-            updateNotification(getString(R.string.notification_status_waiting_for_physical_route))
+            updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
         }
     }
 
@@ -806,7 +822,7 @@ class XrayService : VpnService() {
             if (attempt == 1) {
                 logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for a usable physical route")
             }
-            updateNotification(getString(R.string.notification_status_waiting_for_physical_route))
+            updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
             return@withLock NetworkRetargetResult.Retry
         }
 
@@ -839,7 +855,7 @@ class XrayService : VpnService() {
             "Network route changed ($reason): ${latestState.describePhysicalRoute()} -> " +
                 "${currentRoute.describe()}, refreshing routing...",
         )
-        updateNotification(getString(R.string.notification_status_refreshing_physical_route))
+        updateNotification(localizedString(R.string.notification_status_refreshing_physical_route))
         when (
             val result = withContext(Dispatchers.IO) {
                 connectionManager.reapplyPhysicalRoutingForNetworkChange(
@@ -861,7 +877,7 @@ class XrayService : VpnService() {
                 NetworkRetargetResult.Done
             }
             PhysicalRouteUpdateResult.RouteUnavailable -> {
-                updateNotification(getString(R.string.notification_status_waiting_for_physical_route))
+                updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
                 NetworkRetargetResult.Retry
             }
             PhysicalRouteUpdateResult.RequiresReconnect -> {
@@ -882,7 +898,7 @@ class XrayService : VpnService() {
             if (attempt == 1) {
                 logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for an active physical network")
             }
-            updateNotification(getString(R.string.notification_status_waiting_for_physical_network))
+            updateNotification(localizedString(R.string.notification_status_waiting_for_physical_network))
             return true
         }
         if (currentNetwork?.interfaceName != null && currentRoute.dev != currentNetwork.interfaceName) {
@@ -893,7 +909,7 @@ class XrayService : VpnService() {
                         "Android interface ${currentNetwork.interfaceName}",
                 )
             }
-            updateNotification(getString(R.string.notification_status_waiting_for_physical_route))
+            updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
             return true
         }
         return false
@@ -905,7 +921,7 @@ class XrayService : VpnService() {
         currentRoute: TunManager.PhysicalRoute,
     ) {
         updateNotification(
-            getString(
+            localizedString(
                 R.string.notification_status_pinning_interface,
                 previousState.tunName,
                 currentRoute.dev,
@@ -923,7 +939,7 @@ class XrayService : VpnService() {
         if (prepare(this) != null) {
             connectionStateHolder.update(
                 ConnectionState.Error(
-                    message = getString(R.string.connection_error_vpn_permission_required),
+                    message = localizedString(R.string.connection_error_vpn_permission_required),
                     retryable = false,
                 ),
             )
@@ -932,7 +948,7 @@ class XrayService : VpnService() {
         }
 
         val builder = Builder()
-            .setSession(getString(R.string.app_name))
+            .setSession(localizedString(R.string.app_name))
             .setMtu(runtimeSettings.tunMtu)
             .addAddress(VPN_ADDRESS, VPN_PREFIX_LENGTH)
             .addRoute("0.0.0.0", 0)
@@ -977,7 +993,7 @@ class XrayService : VpnService() {
         }
 
         closeVpnInterface()
-        val establishError = getString(R.string.connection_error_vpn_interface)
+        val establishError = localizedString(R.string.connection_error_vpn_interface)
         return runCatching { builder.establish() ?: error(establishError) }
             .onSuccess { descriptor ->
                 vpnInterface = descriptor
@@ -1103,18 +1119,18 @@ class XrayService : VpnService() {
 
         val title = when (state) {
             is ConnectionState.Connected -> state.serverName
-            else -> getString(R.string.app_name)
+            else -> localizedString(R.string.app_name)
         }
         val text = overrideText ?: when (state) {
             is ConnectionState.Connected -> connectedNotificationText(state)
-            is ConnectionState.Connecting -> getString(R.string.notification_status_connecting)
+            is ConnectionState.Connecting -> localizedString(R.string.notification_status_connecting)
             ConnectionState.ApplyingRoutingChanges ->
-                getString(R.string.notification_status_applying_routing_changes)
-            ConnectionState.UpdatingRoutingData -> getString(R.string.notification_status_updating_routing_data)
-            is ConnectionState.RestartRequired -> getString(R.string.notification_status_restart_required)
-            is ConnectionState.InterfaceBusy -> getString(R.string.notification_status_interface_busy)
-            is ConnectionState.Disconnecting -> getString(R.string.notification_status_disconnecting)
-            is ConnectionState.Error -> getString(R.string.notification_status_error, state.message)
+                localizedString(R.string.notification_status_applying_routing_changes)
+            ConnectionState.UpdatingRoutingData -> localizedString(R.string.notification_status_updating_routing_data)
+            is ConnectionState.RestartRequired -> localizedString(R.string.notification_status_restart_required)
+            is ConnectionState.InterfaceBusy -> localizedString(R.string.notification_status_interface_busy)
+            is ConnectionState.Disconnecting -> localizedString(R.string.notification_status_disconnecting)
+            is ConnectionState.Error -> localizedString(R.string.notification_status_error, state.message)
             ConnectionState.Disconnected -> return
         }
         val showDisconnectAction = state !is ConnectionState.Error
@@ -1123,6 +1139,12 @@ class XrayService : VpnService() {
         lastNotificationContent = content
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, buildNotification(title, text, showDisconnectAction))
+    }
+
+    private fun refreshLocalizedSystemUi() {
+        lastNotificationContent = null
+        createNotificationChannel()
+        updateNotification()
     }
 
     private fun showConnectionFailureNotification(message: String) {
@@ -1134,7 +1156,7 @@ class XrayService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(this, FAILURE_CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_connection_failed))
+            .setContentTitle(localizedString(R.string.notification_connection_failed))
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setSmallIcon(R.drawable.ic_launcher_default_monochrome)
@@ -1151,9 +1173,9 @@ class XrayService : VpnService() {
 
     private fun connectedNotificationText(state: ConnectionState.Connected): String {
         val baseText = if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) {
-            getString(R.string.notification_vpn_service_active)
+            localizedString(R.string.notification_vpn_service_active)
         } else {
-            getString(
+            localizedString(
                 R.string.notification_root_service_active,
                 state.tunName,
                 state.physicalInterface,
@@ -1164,9 +1186,9 @@ class XrayService : VpnService() {
 
         val metrics = notificationMetrics
         val separator = if (settings.style == NotificationStyle.Compact) {
-            getString(R.string.notification_separator_compact)
+            localizedString(R.string.notification_separator_compact)
         } else {
-            getString(R.string.notification_separator_expanded)
+            localizedString(R.string.notification_separator_expanded)
         }
         return settings.normalizedFieldOrder()
             .mapNotNull { field -> notificationFieldText(field, settings, metrics) }
@@ -1186,31 +1208,31 @@ class XrayService : VpnService() {
                 val proxy = formatNullableBytesPerSecond(metrics.proxyBps)
                 val direct = formatNullableBytesPerSecond(metrics.directBps)
                 if (compact) {
-                    getString(R.string.notification_traffic_compact, proxy, direct)
+                    localizedString(R.string.notification_traffic_compact, proxy, direct)
                 } else {
-                    getString(R.string.notification_traffic_expanded, proxy, direct)
+                    localizedString(R.string.notification_traffic_expanded, proxy, direct)
                 }
             }
             NotificationField.RamUsage -> {
                 val ram = metrics.ramMb?.let(::formatMebibytes)
-                    ?: getString(R.string.notification_metric_unavailable)
+                    ?: localizedString(R.string.notification_metric_unavailable)
                 if (compact) {
-                    getString(R.string.notification_ram_compact, ram)
+                    localizedString(R.string.notification_ram_compact, ram)
                 } else {
-                    getString(R.string.notification_ram_expanded, ram)
+                    localizedString(R.string.notification_ram_expanded, ram)
                 }
             }
             NotificationField.ConnectionCount -> {
                 val count = metrics.connectionCount
                 val formattedCount = count?.let { formatInteger(it.toLong()) }
-                    ?: getString(R.string.notification_metric_unavailable)
+                    ?: localizedString(R.string.notification_metric_unavailable)
                 when {
-                    compact -> getString(R.string.notification_connections_compact, formattedCount)
-                    count == null -> getString(
+                    compact -> localizedString(R.string.notification_connections_compact, formattedCount)
+                    count == null -> localizedString(
                         R.string.notification_connections_expanded_unavailable,
                         formattedCount,
                     )
-                    else -> resources.getQuantityString(
+                    else -> forAppLanguage().resources.getQuantityString(
                         R.plurals.notification_connections_expanded,
                         count,
                         formattedCount,
@@ -1229,7 +1251,7 @@ class XrayService : VpnService() {
     private fun Long?.orZero(): Long = this ?: 0L
 
     private fun formatNullableBytesPerSecond(bytesPerSecond: Long?): String = bytesPerSecond?.let(::formatBytesPerSecond)
-        ?: getString(R.string.notification_metric_unavailable)
+        ?: localizedString(R.string.notification_metric_unavailable)
 
     private fun formatBytesPerSecond(bytesPerSecond: Long): String {
         val units = intArrayOf(
@@ -1247,25 +1269,25 @@ class XrayService : VpnService() {
         val formattedValue = if (unitIndex == 0) {
             formatInteger(value.toLong())
         } else {
-            NumberFormat.getNumberInstance(resources.configuration.locales[0]).apply {
+            NumberFormat.getNumberInstance(forAppLanguage().resources.configuration.locales[0]).apply {
                 minimumFractionDigits = 1
                 maximumFractionDigits = 1
             }.format(value)
         }
-        return getString(
+        return localizedString(
             R.string.notification_value_with_unit,
             formattedValue,
-            getString(units[unitIndex]),
+            localizedString(units[unitIndex]),
         )
     }
 
-    private fun formatMebibytes(value: Long): String = getString(
+    private fun formatMebibytes(value: Long): String = localizedString(
         R.string.notification_value_with_unit,
         formatInteger(value),
-        getString(R.string.notification_unit_mebibytes),
+        localizedString(R.string.notification_unit_mebibytes),
     )
 
-    private fun formatInteger(value: Long): String = NumberFormat.getIntegerInstance(resources.configuration.locales[0]).format(value)
+    private fun formatInteger(value: Long): String = NumberFormat.getIntegerInstance(forAppLanguage().resources.configuration.locales[0]).format(value)
 
     private fun startAsForeground(title: String, text: String, showDisconnectAction: Boolean) {
         lastNotificationContent = NotificationContent(title, text, showDisconnectAction)
@@ -1301,7 +1323,7 @@ class XrayService : VpnService() {
         if (showDisconnectAction) {
             builder.addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
-                getString(R.string.notification_disconnect),
+                localizedString(R.string.notification_disconnect),
                 disconnectIntent,
             )
         }
@@ -1312,12 +1334,12 @@ class XrayService : VpnService() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            getString(R.string.notification_channel_service),
+            localizedString(R.string.notification_channel_service),
             NotificationManager.IMPORTANCE_LOW,
         )
         val failureChannel = NotificationChannel(
             FAILURE_CHANNEL_ID,
-            getString(R.string.notification_channel_connection_failures),
+            localizedString(R.string.notification_channel_connection_failures),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             enableVibration(true)

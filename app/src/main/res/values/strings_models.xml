@@ -24,11 +24,11 @@
     <string name="xray_outbound_block_label">block</string>
     <string name="xray_outbound_block_description">Drop traffic with a blackhole outbound.</string>
 
-    <string name="xray_log_level_debug">debug</string>
-    <string name="xray_log_level_info">info</string>
-    <string name="xray_log_level_warning">warning</string>
-    <string name="xray_log_level_error">error</string>
-    <string name="xray_log_level_none">none</string>
+    <string name="xray_log_level_debug" translatable="false">debug</string>
+    <string name="xray_log_level_info" translatable="false">info</string>
+    <string name="xray_log_level_warning" translatable="false">warning</string>
+    <string name="xray_log_level_error" translatable="false">error</string>
+    <string name="xray_log_level_none" translatable="false">none</string>
 
     <string name="launcher_icon_default">Default</string>
     <string name="launcher_icon_material">Material</string>
@@ -36,7 +36,7 @@
     <string name="notification_field_traffic_speed_label">Traffic speed</string>
     <string name="notification_field_traffic_speed_description">Proxy and direct throughput</string>
     <string name="notification_field_ram_usage_label">Xray RAM</string>
-    <string name="notification_field_ram_usage_description">Native core resident memory</string>
+    <string name="notification_field_ram_usage_description">Memory used by the core</string>
     <string name="notification_field_connection_count_label">Connections</string>
     <string name="notification_field_connection_count_description">Open sockets owned by the core</string>
 

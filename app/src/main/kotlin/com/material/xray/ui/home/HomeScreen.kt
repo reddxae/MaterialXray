@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -106,6 +107,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
@@ -798,9 +800,16 @@ private fun ConnectionPanel(
                             isRestartRequired || isInterfaceBusy -> stringResource(R.string.home_action_restart)
                             else -> stringResource(R.string.home_action_start)
                         },
+                        modifier = Modifier.padding(horizontal = 8.dp),
                         style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
                         color = contentColor,
+                        maxLines = 1,
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 10.sp,
+                            maxFontSize = MaterialTheme.typography.titleLarge.fontSize,
+                            stepSize = 1.sp,
+                        ),
                     )
                 }
             }

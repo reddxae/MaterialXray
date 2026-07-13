@@ -3,6 +3,7 @@ package com.material.xray.ui.logs
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import com.material.xray.R
+import com.material.xray.core.locale.localizedString
 import com.material.xray.service.LogBuffer
 import com.material.xray.service.LogEntry
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,9 +22,9 @@ class LogsViewModel @Inject constructor(
 
     fun copyAll() {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        val label = context.getString(
+        val label = context.localizedString(
             R.string.clipboard_label_logs,
-            context.getString(R.string.app_name),
+            context.localizedString(R.string.app_name),
         )
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, logBuffer.formatAll()))
     }
@@ -34,7 +35,7 @@ class LogsViewModel @Inject constructor(
             .format(java.util.Date(entry.timestamp))
         clipboard.setPrimaryClip(
             android.content.ClipData.newPlainText(
-                context.getString(R.string.clipboard_label_log_entry),
+                context.localizedString(R.string.clipboard_label_log_entry),
                 "$time [${entry.source.name}] ${entry.message}",
             ),
         )

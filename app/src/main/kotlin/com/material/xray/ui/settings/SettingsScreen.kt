@@ -1,10 +1,16 @@
 package com.material.xray.ui.settings
 
 import android.app.Activity
+import android.content.Intent
+import android.content.res.Resources
+import android.net.Uri
+import android.os.Build
 import android.os.Process
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -75,9 +81,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.core.os.LocaleListCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
+import com.material.xray.core.locale.setAppLocales
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
@@ -89,8 +97,10 @@ import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collect
+import org.xmlpull.v1.XmlPullParser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -630,6 +640,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppLanguageSetting()
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1216,6 +1228,134 @@ private fun SettingsActionRow(
         )
     }
 }
+
+@Composable
+private fun AppLanguageSetting() {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    var showDialog by remember { mutableStateOf(false) }
+    val supportedLocales = remember(resources) { resources.loadSupportedAppLocales() }
+    val selectedLocale = AppCompatDelegate.getApplicationLocales()[0]
+    val selectedLanguageName = selectedLocale?.nativeDisplayName()
+        ?: stringResource(R.string.settings_app_language_system_default)
+
+    SettingsActionRow(
+        title = stringResource(R.string.settings_app_language_title),
+        subtitle = selectedLanguageName,
+        onClick = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APP_LOCALE_SETTINGS,
+                        Uri.parse("package:${context.packageName}"),
+                    ),
+                )
+            } else {
+                showDialog = true
+            }
+        },
+    )
+
+    if (showDialog) {
+        AppLanguageDialog(
+            supportedLocales = supportedLocales,
+            selectedLocale = selectedLocale,
+            onDismiss = { showDialog = false },
+            onSelect = { locale ->
+                showDialog = false
+                setAppLocales(
+                    if (locale == null) {
+                        LocaleListCompat.getEmptyLocaleList()
+                    } else {
+                        LocaleListCompat.create(locale)
+                    },
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun AppLanguageDialog(
+    supportedLocales: List<Locale>,
+    selectedLocale: Locale?,
+    onDismiss: () -> Unit,
+    onSelect: (Locale?) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_app_language_dialog_title)) },
+        text = {
+            Column {
+                AppLanguageOption(
+                    label = stringResource(R.string.settings_app_language_system_default),
+                    selected = selectedLocale == null,
+                    onClick = { onSelect(null) },
+                )
+                supportedLocales.forEach { locale ->
+                    AppLanguageOption(
+                        label = locale.nativeDisplayName(),
+                        selected = locale == selectedLocale,
+                        onClick = { onSelect(locale) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.settings_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun AppLanguageOption(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+private fun Resources.loadSupportedAppLocales(): List<Locale> {
+    val parser = getXml(R.xml.locales_config)
+    return try {
+        buildList {
+            var event = parser.eventType
+            while (event != XmlPullParser.END_DOCUMENT) {
+                if (event == XmlPullParser.START_TAG && parser.name == "locale") {
+                    parser.getAttributeValue(ANDROID_RESOURCE_NAMESPACE, "name")
+                        ?.let(Locale::forLanguageTag)
+                        ?.takeUnless { it.language.isEmpty() }
+                        ?.let(::add)
+                }
+                event = parser.next()
+            }
+        }
+    } finally {
+        parser.close()
+    }
+}
+
+private fun Locale.nativeDisplayName(): String = getDisplayName(this).replaceFirstChar { it.titlecase() }
+
+private const val ANDROID_RESOURCE_NAMESPACE = "http://schemas.android.com/apk/res/android"
 
 @Composable
 private fun FieldStyleDialog(

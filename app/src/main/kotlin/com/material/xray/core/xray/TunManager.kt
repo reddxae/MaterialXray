@@ -342,7 +342,7 @@ class TunManager(private val shell: RootShell) {
         private const val MAX_APP_TUN_ROUTES = 64
         private const val APP_UID_RULE_PRIORITY = 12000
         private const val DEFAULT_UID_RULE_PRIORITY = 12010
-        private const val DEFAULT_TUN_ADDRESS_CIDR = "10.0.0.1/30"
+        const val DEFAULT_TUN_ADDRESS_CIDR = "10.0.0.1/30"
         private const val TUN_WAIT_ATTEMPTS = 120
         private const val TUN_WAIT_POLL_INTERVAL_MS = 50L
 

@@ -3,14 +3,35 @@ package com.material.xray.service
 import android.content.Context
 import android.os.Build
 import android.os.PowerManager
+import android.system.Os
 import com.material.xray.core.root.RootShell
-import com.material.xray.core.xray.XrayBinary
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.delay
 
 internal interface XrayProcessProbe {
     suspend fun isAlive(pid: Int): Boolean
+}
+
+internal interface RootXrayProcessController : XrayProcessProbe {
+    suspend fun prepareLogFile()
+    suspend fun start(binDir: String): Int
+    suspend fun kill(pid: Int, signal: Int = 15): Boolean
+    suspend fun readResidentMemoryMb(pid: Int): Long?
+    suspend fun readCrashReason(lines: Int = 80): String
+    suspend fun ensureNativeRuntimeExemptions()
+}
+
+internal interface UserXrayProcessController : XrayProcessProbe {
+    fun prepareLogFile()
+    fun start(binDir: String, tunFd: Int): Int
+    suspend fun kill(pid: Int, signal: Int = 15): Boolean
+    suspend fun stop()
+    suspend fun stopOrphan(pid: Int)
+    fun requestStop()
+    suspend fun readResidentMemoryMb(pid: Int): Long?
+    suspend fun readCrashReason(lines: Int = 80): String
+    fun readActiveConnectionCount(pid: Int): Int?
 }
 
 internal interface RootCommandRunner {
@@ -27,18 +48,6 @@ internal interface XrayProcessBinary {
     val rootBinaryPath: String
     val androidBinaryPath: String?
     fun configPath(): String
-}
-
-internal class XrayBinaryProcessBinary(
-    private val xrayBinary: XrayBinary,
-) : XrayProcessBinary {
-    override val rootBinaryPath: String
-        get() = xrayBinary.rootBinaryPath
-
-    override val androidBinaryPath: String?
-        get() = xrayBinary.androidBinaryPath
-
-    override fun configPath(): String = xrayBinary.configPath()
 }
 
 internal interface XrayRuntimeEnvironment {
@@ -76,16 +85,16 @@ internal class XrayProcessSupervisor(
     private val commandRunner: RootCommandRunner,
     private val xrayBinary: XrayProcessBinary,
     private val log: LogBuffer,
-) : XrayProcessProbe {
+) : RootXrayProcessController {
     val logFile: String
         get() = "${environment.filesDir.absolutePath}/xray.log"
 
-    suspend fun prepareLogFile() {
+    override suspend fun prepareLogFile() {
         commandRunner.execute("rm -f $logFile")
         FileOutputStream(environment.filesDir.resolve("xray.log"), false).use { }
     }
 
-    suspend fun start(binDir: String): Int {
+    override suspend fun start(binDir: String): Int {
         val command = buildString {
             append("config=${shellQuote(xrayBinary.configPath())}; ")
             append("cd ${shellQuote(binDir)} && ")
@@ -119,22 +128,22 @@ internal class XrayProcessSupervisor(
         return commandRunner.execute("kill -0 $pid 2>/dev/null").isSuccess
     }
 
-    suspend fun kill(pid: Int, signal: Int = 15): Boolean {
+    override suspend fun kill(pid: Int, signal: Int): Boolean {
         if (pid <= 0) return false
         return commandRunner.execute("kill -$signal $pid 2>/dev/null").isSuccess
     }
 
-    suspend fun readResidentMemoryMb(pid: Int): Long? {
+    override suspend fun readResidentMemoryMb(pid: Int): Long? {
         val rssKb = readResidentMemoryKb(pid) ?: return null
         return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
     }
 
-    suspend fun readCrashReason(lines: Int = 80): String {
+    override suspend fun readCrashReason(lines: Int): String {
         val crashLog = commandRunner.execute("tail -n $lines ${shellQuote(logFile)} 2>/dev/null").output.trim()
         return crashLog.lines().lastOrNull { it.isNotBlank() } ?: "xray process exited"
     }
 
-    suspend fun ensureNativeRuntimeExemptions() {
+    override suspend fun ensureNativeRuntimeExemptions() {
         val packageName = environment.packageName
         val packageUid = environment.packageUid
 
@@ -212,16 +221,16 @@ internal class UserXrayProcessSupervisor(
     private val environment: XrayRuntimeEnvironment,
     private val xrayBinary: XrayProcessBinary,
     private val processLauncher: UserXrayProcessLauncher = AndroidUserXrayProcessLauncher(),
-) : XrayProcessProbe {
+) : UserXrayProcessController {
     private var pid: Int = -1
     private val logFile: File
         get() = environment.filesDir.resolve("xray.log")
 
-    fun prepareLogFile() {
+    override fun prepareLogFile() {
         FileOutputStream(logFile, false).use { }
     }
 
-    fun start(binDir: String, tunFd: Int): Int {
+    override fun start(binDir: String, tunFd: Int): Int {
         val binaryPath = requireNotNull(xrayBinary.androidBinaryPath) { "Android xray binary is unavailable" }
         pid = processLauncher.start(
             binaryPath = binaryPath,
@@ -239,28 +248,28 @@ internal class UserXrayProcessSupervisor(
         return processLauncher.isAlive(pid)
     }
 
-    suspend fun kill(pid: Int, signal: Int = 15): Boolean {
+    override suspend fun kill(pid: Int, signal: Int): Boolean {
         if (pid <= 0 || this.pid != pid) return false
         return processLauncher.kill(pid, signal)
     }
 
-    suspend fun stop() {
+    override suspend fun stop() {
         val stoppedPid = pid.takeIf { it > 0 } ?: return
         stopProcess(stoppedPid)
         pid = -1
     }
 
-    suspend fun stopOrphan(pid: Int) {
+    override suspend fun stopOrphan(pid: Int) {
         if (pid > 0 && this.pid != pid) stopProcess(pid)
     }
 
-    fun requestStop() {
+    override fun requestStop() {
         val stoppedPid = pid.takeIf { it > 0 } ?: return
         processLauncher.kill(stoppedPid, signal = 15)
         pid = -1
     }
 
-    suspend fun readResidentMemoryMb(pid: Int): Long? {
+    override suspend fun readResidentMemoryMb(pid: Int): Long? {
         val rssKb = File("/proc/$pid/status")
             .takeIf { it.isFile }
             ?.readLines()
@@ -272,11 +281,16 @@ internal class UserXrayProcessSupervisor(
         return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
     }
 
-    suspend fun readCrashReason(lines: Int = 80): String = logFile.takeIf { it.isFile }
+    override suspend fun readCrashReason(lines: Int): String = logFile.takeIf { it.isFile }
         ?.readLines()
         ?.takeLast(lines)
         ?.lastOrNull { it.isNotBlank() }
         ?: "xray process exited"
+
+    override fun readActiveConnectionCount(pid: Int): Int? = File("/proc/$pid/fd")
+        .takeIf { it.isDirectory }
+        ?.listFiles()
+        ?.count { fd -> runCatching { Os.readlink(fd.absolutePath).startsWith("socket:") }.getOrDefault(false) }
 
     private companion object {
         private const val KILOBYTES_PER_MEGABYTE = 1024L

@@ -22,13 +22,10 @@ import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.material.xray.R
-import com.material.xray.core.app.AppInventory
 import com.material.xray.core.locale.appLocaleChanges
 import com.material.xray.core.locale.forAppLanguage
 import com.material.xray.core.locale.localizedString
 import com.material.xray.core.root.RootShell
-import com.material.xray.core.xray.ConfigGenerator
-import com.material.xray.core.xray.GeoDataManager
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.core.xray.TunManager
@@ -39,7 +36,6 @@ import com.material.xray.data.db.entity.AppRouteMode
 import com.material.xray.data.db.entity.routeAssignment
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
-import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
@@ -80,17 +76,13 @@ class XrayService : VpnService() {
 
     @Inject lateinit var settingsRepo: SettingsRepository
 
-    @Inject lateinit var subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository
-
     @Inject lateinit var connectionStateCoordinator: ConnectionStateCoordinator
 
     @Inject lateinit var alwaysOnVpnState: AlwaysOnVpnState
 
     @Inject lateinit var logBuffer: LogBuffer
 
-    @Inject lateinit var geoDataManager: GeoDataManager
-
-    @Inject lateinit var appInventory: AppInventory
+    @Inject lateinit var connectionManagerFactory: ConnectionManagerFactory
 
     private lateinit var connectionManager: ConnectionManager
     private lateinit var xrayLogStreamer: XrayLogStreamer
@@ -141,17 +133,7 @@ class XrayService : VpnService() {
         )
 
         xrayLogStreamer = XrayLogStreamer(filesDir.resolve("xray.log"), logBuffer)
-        connectionManager = ConnectionManager(
-            context = this,
-            shell = rootShell,
-            configGenerator = ConfigGenerator(),
-            geoDataManager = geoDataManager,
-            appBypassDao = appBypassDao,
-            subscriptionAppRoutingRepository = subscriptionAppRoutingRepository,
-            serverRepository = serverRepository,
-            appInventory = appInventory,
-            stateCoordinator = connectionStateCoordinator,
-            log = logBuffer,
+        connectionManager = connectionManagerFactory.create(
             onXrayLogReady = { startLogTail() },
         )
         networkRetargetWorker = NetworkRetargetWorker(

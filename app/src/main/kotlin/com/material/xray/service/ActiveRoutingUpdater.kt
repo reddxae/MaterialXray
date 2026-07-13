@@ -17,6 +17,26 @@ internal interface ActiveRoutingStateStore {
     fun write(state: XrayState)
 }
 
+internal interface ConnectionStateStore : ActiveRoutingStateStore {
+    fun delete()
+}
+
+internal interface ActiveRoutingController {
+    suspend fun applyAppRoutingChanges(
+        connectedState: ConnectionState.Connected,
+        tunName: String,
+        fwmark: Int,
+        routeTable: Int,
+    ): Boolean
+
+    suspend fun reapplyPhysicalRoutingForNetworkChange(
+        connectedState: ConnectionState.Connected,
+        tunName: String,
+        fwmark: Int,
+        routeTable: Int,
+    ): PhysicalRouteUpdateResult
+}
+
 internal interface TunRoutingGateway {
     suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute?
 
@@ -41,11 +61,15 @@ internal interface TunRoutingGateway {
 
 internal class StateFileRoutingStateStore(
     private val stateFile: StateFile,
-) : ActiveRoutingStateStore {
+) : ConnectionStateStore {
     override fun read(): XrayState? = stateFile.read()
 
     override fun write(state: XrayState) {
         stateFile.write(state)
+    }
+
+    override fun delete() {
+        stateFile.delete()
     }
 }
 
@@ -91,8 +115,8 @@ internal class ActiveRoutingUpdater(
     private val processProbe: XrayProcessProbe,
     private val log: LogBuffer,
     private val elapsedRealtime: () -> Long,
-) {
-    suspend fun applyAppRoutingChanges(
+) : ActiveRoutingController {
+    override suspend fun applyAppRoutingChanges(
         connectedState: ConnectionState.Connected,
         tunName: String,
         fwmark: Int,
@@ -181,7 +205,7 @@ internal class ActiveRoutingUpdater(
         return true
     }
 
-    suspend fun reapplyPhysicalRoutingForNetworkChange(
+    override suspend fun reapplyPhysicalRoutingForNetworkChange(
         connectedState: ConnectionState.Connected,
         tunName: String,
         fwmark: Int,

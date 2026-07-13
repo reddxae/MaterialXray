@@ -9,6 +9,14 @@ internal interface DiagnosticCommandRunner {
     suspend fun execute(command: String, namespace: NetworkNamespace): RootShell.Result
 }
 
+internal interface ConnectionDiagnosticReporter {
+    suspend fun logNamespaceDiagnostics(
+        stage: String,
+        tunName: String? = null,
+        xrayPid: Int? = null,
+    )
+}
+
 internal class RootShellDiagnosticCommandRunner(
     private val shell: RootShell,
 ) : DiagnosticCommandRunner {
@@ -20,11 +28,11 @@ internal class RootShellDiagnosticCommandRunner(
 internal class ConnectionDiagnostics(
     private val commandRunner: DiagnosticCommandRunner,
     private val log: LogBuffer,
-) {
-    suspend fun logNamespaceDiagnostics(
+) : ConnectionDiagnosticReporter {
+    override suspend fun logNamespaceDiagnostics(
         stage: String,
-        tunName: String? = null,
-        xrayPid: Int? = null,
+        tunName: String?,
+        xrayPid: Int?,
     ) {
         logCommand(
             "$stage/current-netns",

@@ -1,87 +1,44 @@
 package com.material.xray.service
 
-import android.content.Context
 import android.os.ParcelFileDescriptor
-import android.os.SystemClock
-import android.system.Os
 import com.material.xray.R
-import com.material.xray.core.app.AppInventory
-import com.material.xray.core.locale.localizedString
-import com.material.xray.core.root.RootShell
-import com.material.xray.core.xray.CleanupManager
 import com.material.xray.core.xray.ConfigGenerator
-import com.material.xray.core.xray.GeoDataManager
-import com.material.xray.core.xray.ServerAddressResolver
-import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XRAY_API_SOCKET_NAME_PREFIX
-import com.material.xray.core.xray.XrayBinary
-import com.material.xray.core.xray.XrayRoutingClient
 import com.material.xray.core.xray.XrayState
-import com.material.xray.core.xray.XrayStatsClient
-import com.material.xray.data.db.dao.AppBypassDao
-import com.material.xray.data.repository.ServerRepository
-import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
-import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 
-class ConnectionManager(
-    private val context: Context,
-    private val shell: RootShell,
+internal class ConnectionManager(
     private val configGenerator: ConfigGenerator,
-    private val geoDataManager: GeoDataManager,
-    private val appBypassDao: AppBypassDao,
-    private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
-    private val serverRepository: ServerRepository,
-    private val appInventory: AppInventory,
     private val stateCoordinator: ConnectionStateCoordinator,
     private val log: LogBuffer,
+    dependencies: ConnectionManagerDependencies,
     private val onXrayLogReady: () -> Unit = {},
 ) {
-    private val xrayBinary = XrayBinary(context)
-    private val serverAddressResolver = ServerAddressResolver(context)
-    private val tunManager = TunManager(shell)
-    private val cleanupManager = CleanupManager(context, shell)
-    private val stateFile = StateFile(context)
+    private val environment = dependencies.environment
+    private val rootRuntime = dependencies.rootRuntime
+    private val xrayBinary = dependencies.xrayBinary
+    private val routingData = dependencies.routingData
+    private val serverResolver = dependencies.serverResolver
+    private val tunGateway = dependencies.tunGateway
+    private val cleanup = dependencies.cleanup
+    private val stateStore = dependencies.stateStore
+    private val processSupervisor = dependencies.rootProcess
+    private val userProcessSupervisor = dependencies.userProcess
+    private val diagnostics = dependencies.diagnostics
+    private val appRoutingPlanner = dependencies.routingPlanBuilder
+    private val activeRouting = dependencies.activeRouting
+    private val apiClientFactory = dependencies.apiClientFactory
 
-    @Volatile private var xrayStatsClient: XrayStatsClient? = null
+    @Volatile private var xrayStatsClient: ConnectionStatsClient? = null
 
-    @Volatile private var xrayRoutingClient: XrayRoutingClient? = null
-
-    private val processSupervisor = XrayProcessSupervisor(
-        environment = AndroidXrayRuntimeEnvironment(context),
-        commandRunner = RootShellCommandRunner(shell),
-        xrayBinary = XrayBinaryProcessBinary(xrayBinary),
-        log = log,
-    )
-    private val userProcessSupervisor = UserXrayProcessSupervisor(
-        environment = AndroidXrayRuntimeEnvironment(context),
-        xrayBinary = XrayBinaryProcessBinary(xrayBinary),
-    )
-    private val diagnostics = ConnectionDiagnostics(RootShellDiagnosticCommandRunner(shell), log)
-    private val appRoutingPlanner = AppRoutingPlanner(
-        appBypassDao = appBypassDao,
-        serverRepository = serverRepository,
-        appInventory = appInventory,
-        serverAddressResolver = serverAddressResolver,
-        log = log,
-        providerRoutingSync = { subscriptionAppRoutingRepository.syncInstalledApps() },
-    )
-    private val activeRoutingUpdater = ActiveRoutingUpdater(
-        appUidProvider = { context.applicationInfo.uid },
-        tunGateway = TunManagerRoutingGateway(tunManager),
-        stateStore = StateFileRoutingStateStore(stateFile),
-        routingPlanBuilder = appRoutingPlanner,
-        processProbe = processSupervisor,
-        log = log,
-        elapsedRealtime = SystemClock::elapsedRealtime,
-    )
+    @Volatile private var xrayRoutingClient: ConnectionRoutingClient? = null
     private var runningViaVpnService = false
 
     suspend fun connect(
@@ -93,7 +50,7 @@ class ConnectionManager(
         fastReconnect: Boolean = false,
     ) {
         stateCoordinator.startConnection(transitionState)
-        val connectStartedAt = SystemClock.elapsedRealtime()
+        val connectStartedAt = environment.elapsedRealtime()
         val tunName = runtimeSettings.tunName
         val fwmark = runtimeSettings.fwmark
         val routeTable = runtimeSettings.routeTable
@@ -128,14 +85,16 @@ class ConnectionManager(
 
             val xrayApiSocketName = nextXrayApiSocketName()
             closeXrayApiClients()
-            xrayStatsClient = XrayStatsClient(xrayApiSocketName)
-            xrayRoutingClient = XrayRoutingClient(xrayApiSocketName)
+            apiClientFactory.create(xrayApiSocketName).also { clients ->
+                xrayStatsClient = clients.stats
+                xrayRoutingClient = clients.routing
+            }
 
             writeXrayConfig(xrayServer, runtimeSettings, useRootService, appRoutingPlan, physicalRouteResult.route, xrayApiSocketName)
             val pid = startXrayProcess(useRootService, vpnInterface)
 
             if (pid <= 0) {
-                fail(context.localizedString(R.string.connection_error_missing_process_id))
+                fail(environment.localizedString(R.string.connection_error_missing_process_id))
                 return
             }
 
@@ -169,15 +128,15 @@ class ConnectionManager(
                 connectStartedAt = connectStartedAt,
             )
         } catch (e: IOException) {
-            fail(e.message ?: context.localizedString(R.string.error_unknown))
+            fail(e.message ?: environment.localizedString(R.string.error_unknown))
         } catch (e: SecurityException) {
-            fail(e.message ?: context.localizedString(R.string.error_unknown))
+            fail(e.message ?: environment.localizedString(R.string.error_unknown))
         } catch (e: IllegalArgumentException) {
-            fail(e.message ?: context.localizedString(R.string.error_unknown))
+            fail(e.message ?: environment.localizedString(R.string.error_unknown))
         } catch (e: IllegalStateException) {
-            fail(e.message ?: context.localizedString(R.string.error_unknown))
+            fail(e.message ?: environment.localizedString(R.string.error_unknown))
         } catch (e: SerializationException) {
-            fail(e.message ?: context.localizedString(R.string.error_unknown))
+            fail(e.message ?: environment.localizedString(R.string.error_unknown))
         }
     }
 
@@ -191,7 +150,7 @@ class ConnectionManager(
         if (cleanStateFirst && useRootService) {
             log.append(LogSource.APP, "Cleaning up previous state...")
             timedStep("Cleanup") {
-                cleanupManager.ensureCleanState(fallbackTunName = tunName)
+                cleanup.ensureCleanState(fallbackTunName = tunName)
             }
         }
 
@@ -214,15 +173,15 @@ class ConnectionManager(
     private suspend fun prepareRootRuntime(fastReconnect: Boolean): Boolean {
         log.append(LogSource.APP, "Requesting root access...")
         val rootGranted = timedStep("Root shell setup") {
-            shell.open()
+            rootRuntime.open()
         }
         if (!rootGranted) {
-            fail(context.localizedString(R.string.connection_error_root_access_denied))
+            fail(environment.localizedString(R.string.connection_error_root_access_denied))
             return false
         }
         log.append(
             LogSource.APP,
-            "Root access granted (namespace=${shell.defaultNetworkNamespace().name.lowercase()})",
+            "Root access granted (namespace=${rootRuntime.networkNamespaceName()})",
         )
         if (fastReconnect) {
             log.append(LogSource.APP, "Runtime exemption check skipped for fast reconnect")
@@ -235,7 +194,7 @@ class ConnectionManager(
     private suspend fun prepareVpnServiceRuntime(vpnInterface: ParcelFileDescriptor?): Boolean {
         if (vpnInterface == null) {
             fail(
-                context.localizedString(R.string.connection_error_vpn_permission_required),
+                environment.localizedString(R.string.connection_error_vpn_permission_required),
                 retryable = false,
             )
             return false
@@ -247,11 +206,11 @@ class ConnectionManager(
     }
 
     private suspend fun cleanOrphanedVpnServiceRuntime() {
-        val staleState = stateFile.read()
+        val staleState = stateStore.read()
             ?.takeIf { it.physicalInterface == VPN_SERVICE_INTERFACE_LABEL }
             ?: return
         userProcessSupervisor.stopOrphan(staleState.xrayPid)
-        stateFile.delete()
+        stateStore.delete()
     }
 
     private suspend fun prepareXrayBinary(useRootService: Boolean, fastReconnect: Boolean): String? {
@@ -267,7 +226,7 @@ class ConnectionManager(
                 }
             }
             if (!xrayReady) {
-                fail(context.localizedString(R.string.connection_error_xray_binary_not_found))
+                fail(environment.localizedString(R.string.connection_error_xray_binary_not_found))
                 return null
             }
         }
@@ -288,12 +247,12 @@ class ConnectionManager(
         }
 
         log.append(LogSource.APP, "Checking routing data...")
-        if (geoDataManager.needsRefresh()) {
+        if (routingData.needsRefresh()) {
             stateCoordinator.markUpdatingRoutingData()
             log.append(LogSource.APP, "Updating routing data...")
         }
         val geoDataStatus = timedStep("Routing data setup") {
-            geoDataManager.ensureReady()
+            routingData.ensureReady()
         }
         stateCoordinator.startConnection(transitionState)
         if (geoDataStatus.downloaded) {
@@ -310,10 +269,10 @@ class ConnectionManager(
         if (!useRootService) return PhysicalRouteResult(success = true, route = null)
 
         val route = timedStep("Physical route detection") {
-            tunManager.detectPhysicalRoute(tunName)
+            tunGateway.detectPhysicalRoute(tunName)
         }
         if (route == null) {
-            fail(context.localizedString(R.string.connection_error_physical_route_not_found))
+            fail(environment.localizedString(R.string.connection_error_physical_route_not_found))
             return PhysicalRouteResult(success = false, route = null)
         }
         log.append(
@@ -328,7 +287,7 @@ class ConnectionManager(
     private suspend fun resolveServer(server: ServerConfig, allowIpv6: Boolean): ServerConfig? {
         val resolvedServer = if (server.rawConfigJson.isNotBlank()) {
             log.append(LogSource.APP, "Skipping endpoint pre-resolution for raw JSON subscription config")
-            ServerAddressResolver.Result(
+            ServerResolution(
                 server = server,
                 attempted = false,
                 selectedAddress = null,
@@ -336,11 +295,11 @@ class ConnectionManager(
             )
         } else {
             timedStep("Server address resolution") {
-                serverAddressResolver.resolve(server, allowIpv6)
+                serverResolver.resolve(server, allowIpv6)
             }
         }
         if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
-            fail(context.localizedString(R.string.connection_error_server_address_unresolved, server.address))
+            fail(environment.localizedString(R.string.connection_error_server_address_unresolved, server.address))
             return null
         }
         if (resolvedServer.selectedAddress != null) {
@@ -395,7 +354,7 @@ class ConnectionManager(
 
     private suspend fun startXrayProcess(useRootService: Boolean, vpnInterface: ParcelFileDescriptor?): Int {
         log.append(LogSource.APP, "Starting xray process...")
-        val binDir = context.filesDir.resolve("bin").absolutePath
+        val binDir = environment.binDir
         return timedStep("xray process launch") {
             if (useRootService) {
                 processSupervisor.start(binDir)
@@ -420,7 +379,7 @@ class ConnectionManager(
         physicalRoute: TunManager.PhysicalRoute?,
         ipRulesApplied: Boolean,
     ) {
-        stateFile.write(
+        stateStore.write(
             XrayState(
                 xrayPid = pid,
                 tunName = tunName,
@@ -444,7 +403,10 @@ class ConnectionManager(
 
         log.append(LogSource.APP, "Waiting for TUN interface '$tunName'...")
         val tunSetup = timedStep("TUN setup") {
-            tunManager.configureTun(tunName) { isProcessAlive(pid) }
+            tunGateway.configureTun(
+                tunName = tunName,
+                addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
+            ) { isProcessAlive(pid) }
         }
         if (!tunSetup.success) {
             handleTunSetupFailure(tunSetup, tunName, pid, diagnosticsStage = "tun")
@@ -473,7 +435,7 @@ class ConnectionManager(
         appRoutingPlan.tunRoutes.forEachIndexed { index, route ->
             log.append(LogSource.APP, "Waiting for app TUN interface '${route.tunName}'...")
             val appTunSetup = timedStep("App TUN setup ${index + 1}") {
-                tunManager.configureTun(
+                tunGateway.configureTun(
                     tunName = route.tunName,
                     addressCidr = TunManager.appTunAddressCidr(index + 1),
                 ) { isProcessAlive(pid) }
@@ -496,11 +458,11 @@ class ConnectionManager(
         val stage = if (tunSetup.processExited) "$diagnosticsStage-exit" else "$diagnosticsStage-failure"
         diagnostics.logNamespaceDiagnostics(stage = stage, tunName = tunName, xrayPid = pid)
         if (tunSetup.processExited) {
-            fail(context.localizedString(R.string.connection_error_xray_crashed, processSupervisor.readCrashReason()))
+            fail(environment.localizedString(R.string.connection_error_xray_crashed, processSupervisor.readCrashReason()))
         } else {
             fail(
                 tunSetup.error
-                    ?: context.localizedString(R.string.connection_error_tun_timeout, tunName),
+                    ?: environment.localizedString(R.string.connection_error_tun_timeout, tunName),
             )
         }
     }
@@ -522,7 +484,7 @@ class ConnectionManager(
             "Applying IP routing (tunTable=$routeTable, bypassTable=$bypassTable, fwmark=$fwmark, ${bypassUids.size} apps direct, ${appRoutingPlan.tunRoutes.size} app proxy route(s))...",
         )
         val routingResult = timedStep("IP routing setup") {
-            tunManager.applyRouting(
+            tunGateway.applyRouting(
                 tunName = tunName,
                 fwmark = fwmark,
                 routeTable = routeTable,
@@ -530,14 +492,15 @@ class ConnectionManager(
                 physicalRoute = requireNotNull(physicalRoute),
                 bypassUids = bypassUids,
                 appTunRoutes = appRoutingPlan.tunRoutes,
+                managedAppRouteCount = appRoutingPlan.tunRoutes.size,
                 routeProfileIds = appRoutingPlan.routeProfileIds,
             )
         }
         if (!routingResult.success) {
             fail(
-                context.localizedString(
+                environment.localizedString(
                     R.string.connection_error_apply_ip_routing,
-                    routingResult.error ?: context.localizedString(R.string.error_unknown),
+                    routingResult.error ?: environment.localizedString(R.string.error_unknown),
                 ),
             )
             return false
@@ -575,7 +538,7 @@ class ConnectionManager(
         log.append(LogSource.APP, "Connected to ${server.name}")
         log.append(
             LogSource.APP,
-            "Connection setup finished in ${SystemClock.elapsedRealtime() - connectStartedAt} ms",
+            "Connection setup finished in ${environment.elapsedRealtime() - connectStartedAt} ms",
         )
         stateCoordinator.markConnected(
             ConnectionState.Connected(
@@ -597,7 +560,7 @@ class ConnectionManager(
     suspend fun applyAppRoutingChanges(
         connectedState: ConnectionState.Connected,
         runtimeSettings: XrayRuntimeSettings,
-    ): Boolean = activeRoutingUpdater.applyAppRoutingChanges(
+    ): Boolean = activeRouting.applyAppRoutingChanges(
         connectedState = connectedState,
         tunName = runtimeSettings.tunName,
         fwmark = runtimeSettings.fwmark,
@@ -607,7 +570,7 @@ class ConnectionManager(
     suspend fun reapplyPhysicalRoutingForNetworkChange(
         connectedState: ConnectionState.Connected,
         runtimeSettings: XrayRuntimeSettings,
-    ): PhysicalRouteUpdateResult = activeRoutingUpdater.reapplyPhysicalRoutingForNetworkChange(
+    ): PhysicalRouteUpdateResult = activeRouting.reapplyPhysicalRoutingForNetworkChange(
         connectedState = connectedState,
         tunName = runtimeSettings.tunName,
         fwmark = runtimeSettings.fwmark,
@@ -615,8 +578,8 @@ class ConnectionManager(
     )
 
     suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? {
-        if (!shell.open()) return null
-        return tunManager.detectPhysicalRoute(tunName)
+        if (!rootRuntime.open()) return null
+        return tunGateway.detectPhysicalRoute(tunName)
     }
 
     suspend fun detectPhysicalInterface(tunName: String): String? = detectPhysicalRoute(tunName)?.dev
@@ -633,16 +596,16 @@ class ConnectionManager(
         val wasRunningViaVpnService = runningViaVpnService
         userProcessSupervisor.stop()
         if (wasRunningViaVpnService) {
-            stateFile.delete()
+            stateStore.delete()
         } else {
-            val hasRootState = stateFile.read() != null
+            val hasRootState = stateStore.read() != null
             val knownStateStopped = if (fastRootCleanup) {
-                cleanupManager.ensureKnownStateStopped()
+                cleanup.ensureKnownStateStopped()
             } else {
                 false
             }
             if (!knownStateStopped && (hasRootState || updateState)) {
-                cleanupManager.ensureCleanState()
+                cleanup.ensureCleanState()
             }
         }
         runningViaVpnService = false
@@ -659,7 +622,7 @@ class ConnectionManager(
     }
 
     suspend fun ensureCleanRootRuntime() {
-        cleanupManager.ensureCleanState()
+        cleanup.ensureCleanState()
         runningViaVpnService = false
     }
 
@@ -672,9 +635,9 @@ class ConnectionManager(
         if (cleanState) {
             userProcessSupervisor.stop()
             if (!runningViaVpnService) {
-                cleanupManager.ensureCleanState()
+                cleanup.ensureCleanState()
             } else {
-                stateFile.delete()
+                stateStore.delete()
             }
             runningViaVpnService = false
         }
@@ -701,10 +664,9 @@ class ConnectionManager(
     }
 
     suspend fun readActiveConnectionCount(pid: Int): Int? = if (runningViaVpnService) {
-        withContext(Dispatchers.IO) { readUserProcessSocketCount(pid) }
+        withContext(Dispatchers.IO) { userProcessSupervisor.readActiveConnectionCount(pid) }
     } else {
-        val result = shell.execute("ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:'")
-        result.output.trim().toIntOrNull()
+        rootRuntime.readActiveConnectionCount(pid)
     }
 
     suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> = xrayStatsClient
@@ -721,23 +683,18 @@ class ConnectionManager(
     }
 
     private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
-        val appUid = context.applicationInfo.uid
+        val appUid = environment.appUid
         return if (appUid > 0) directUids + appUid else directUids
     }
 
-    private fun readUserProcessSocketCount(pid: Int): Int? = File("/proc/$pid/fd")
-        .takeIf { it.isDirectory }
-        ?.listFiles()
-        ?.count { fd -> runCatching { Os.readlink(fd.absolutePath).startsWith("socket:") }.getOrDefault(false) }
-
-    private fun nextXrayApiSocketName(): String = "$XRAY_API_SOCKET_NAME_PREFIX-${android.os.Process.myPid()}-${SystemClock.elapsedRealtime()}"
+    private fun nextXrayApiSocketName(): String = "$XRAY_API_SOCKET_NAME_PREFIX-${environment.processId}-${environment.elapsedRealtime()}"
 
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
-        val startedAt = SystemClock.elapsedRealtime()
+        val startedAt = environment.elapsedRealtime()
         return try {
             block()
         } finally {
-            log.append(LogSource.APP, "$label took ${SystemClock.elapsedRealtime() - startedAt} ms")
+            log.append(LogSource.APP, "$label took ${environment.elapsedRealtime() - startedAt} ms")
         }
     }
 }

@@ -18,12 +18,19 @@ import kotlinx.coroutines.withContext
 internal class XrayRoutingClient(
     private val socketName: String = XRAY_API_SOCKET_NAME_PREFIX,
     private val timeoutMs: Long = XRAY_API_TIMEOUT_MS,
-) {
+) : AutoCloseable {
+    private val channelDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED, ::buildChannel)
+    private val channel by channelDelegate
+    private val routingStub by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        RoutingServiceGrpc.newBlockingStub(channel)
+    }
+    private val observatoryStub by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ObservatoryServiceGrpc.newBlockingStub(channel)
+    }
+
     suspend fun queryBalancerSelection(balancerTag: String): ActiveBalancerSelection? = withContext(Dispatchers.IO) {
-        withChannel { channel ->
-            val routingStub = RoutingServiceGrpc.newBlockingStub(channel)
-                .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
-            val response = routingStub.getBalancerInfo(
+        withChannel {
+            val response = routingStub.withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS).getBalancerInfo(
                 GetBalancerInfoRequest.newBuilder()
                     .setTag(balancerTag)
                     .build(),
@@ -32,9 +39,8 @@ internal class XrayRoutingClient(
                 ?: response.balancer.principleTarget.tagList.singleOrNull()?.takeIf { it.isNotBlank() }
                 ?: return@withChannel null
             val latencyMs = runCatching {
-                val observatoryStub = ObservatoryServiceGrpc.newBlockingStub(channel)
-                    .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
-                observatoryStub.getOutboundStatus(GetOutboundStatusRequest.getDefaultInstance())
+                observatoryStub.withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
+                    .getOutboundStatus(GetOutboundStatusRequest.getDefaultInstance())
                     .status
                     .statusList
                     .firstOrNull { it.outboundTag == outboundTag && it.alive }
@@ -47,23 +53,20 @@ internal class XrayRoutingClient(
         }
     }
 
-    private fun <T> withChannel(block: (ManagedChannel) -> T): Result<T> {
-        var channel: ManagedChannel? = null
-        return try {
-            channel = buildChannel()
-            Result.success(block(channel))
-        } catch (e: StatusRuntimeException) {
-            Result.failure(e)
-        } catch (e: IllegalArgumentException) {
-            Result.failure(e)
-        } catch (e: IllegalStateException) {
-            Result.failure(e)
-        } catch (e: SecurityException) {
-            Result.failure(e)
-        } finally {
-            channel?.shutdownNow()
-            channel?.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)
-        }
+    private fun <T> withChannel(block: () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (e: StatusRuntimeException) {
+        Result.failure(e)
+    } catch (e: IllegalArgumentException) {
+        Result.failure(e)
+    } catch (e: IllegalStateException) {
+        Result.failure(e)
+    } catch (e: SecurityException) {
+        Result.failure(e)
+    }
+
+    override fun close() {
+        if (channelDelegate.isInitialized()) channel.shutdownNow()
     }
 
     private fun buildChannel(): ManagedChannel = OkHttpChannelBuilder

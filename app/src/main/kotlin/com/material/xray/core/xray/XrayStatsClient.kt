@@ -16,7 +16,13 @@ import kotlinx.coroutines.withContext
 internal class XrayStatsClient(
     private val socketName: String = XRAY_API_SOCKET_NAME_PREFIX,
     private val timeoutMs: Long = XRAY_API_TIMEOUT_MS,
-) {
+) : AutoCloseable {
+    private val channelDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED, ::buildChannel)
+    private val channel by channelDelegate
+    private val stub by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        StatsServiceGrpc.newBlockingStub(channel)
+    }
+
     suspend fun queryOutboundTrafficStatsBytes(): Map<String, Long> = queryStats(pattern = "outbound")
 
     suspend fun queryStats(pattern: String, reset: Boolean = false): Map<String, Long> = withContext(Dispatchers.IO) {
@@ -55,25 +61,20 @@ internal class XrayStatsClient(
         }
     }
 
-    private fun <T> withBlockingStub(block: (StatsServiceGrpc.StatsServiceBlockingStub) -> T): Result<T> {
-        var channel: ManagedChannel? = null
-        return try {
-            channel = buildChannel()
-            val stub = StatsServiceGrpc.newBlockingStub(channel)
-                .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
-            Result.success(block(stub))
-        } catch (e: StatusRuntimeException) {
-            Result.failure(e)
-        } catch (e: IllegalArgumentException) {
-            Result.failure(e)
-        } catch (e: IllegalStateException) {
-            Result.failure(e)
-        } catch (e: SecurityException) {
-            Result.failure(e)
-        } finally {
-            channel?.shutdownNow()
-            channel?.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS)
-        }
+    private fun <T> withBlockingStub(block: (StatsServiceGrpc.StatsServiceBlockingStub) -> T): Result<T> = try {
+        Result.success(block(stub.withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)))
+    } catch (e: StatusRuntimeException) {
+        Result.failure(e)
+    } catch (e: IllegalArgumentException) {
+        Result.failure(e)
+    } catch (e: IllegalStateException) {
+        Result.failure(e)
+    } catch (e: SecurityException) {
+        Result.failure(e)
+    }
+
+    override fun close() {
+        if (channelDelegate.isInitialized()) channel.shutdownNow()
     }
 
     private fun buildChannel(): ManagedChannel = OkHttpChannelBuilder

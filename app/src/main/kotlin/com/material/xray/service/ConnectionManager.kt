@@ -49,8 +49,11 @@ class ConnectionManager(
     private val tunManager = TunManager(shell)
     private val cleanupManager = CleanupManager(context, shell)
     private val stateFile = StateFile(context)
-    private var xrayStatsClient = XrayStatsClient()
-    private var xrayRoutingClient = XrayRoutingClient()
+
+    @Volatile private var xrayStatsClient: XrayStatsClient? = null
+
+    @Volatile private var xrayRoutingClient: XrayRoutingClient? = null
+
     private val processSupervisor = XrayProcessSupervisor(
         environment = AndroidXrayRuntimeEnvironment(context),
         commandRunner = RootShellCommandRunner(shell),
@@ -124,6 +127,7 @@ class ConnectionManager(
             }
 
             val xrayApiSocketName = nextXrayApiSocketName()
+            closeXrayApiClients()
             xrayStatsClient = XrayStatsClient(xrayApiSocketName)
             xrayRoutingClient = XrayRoutingClient(xrayApiSocketName)
 
@@ -642,6 +646,7 @@ class ConnectionManager(
             }
         }
         runningViaVpnService = false
+        closeXrayApiClients()
         if (updateState) {
             log.append(LogSource.APP, "Disconnected")
             stateCoordinator.markDisconnected()
@@ -650,6 +655,7 @@ class ConnectionManager(
 
     fun prepareForServiceDestruction() {
         if (runningViaVpnService) userProcessSupervisor.requestStop()
+        closeXrayApiClients()
     }
 
     suspend fun ensureCleanRootRuntime() {
@@ -672,6 +678,7 @@ class ConnectionManager(
             }
             runningViaVpnService = false
         }
+        closeXrayApiClients()
         stateCoordinator.markError(message, retryable)
     }
 
@@ -700,9 +707,18 @@ class ConnectionManager(
         result.output.trim().toIntOrNull()
     }
 
-    suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> = xrayStatsClient.queryOutboundTrafficStatsBytes()
+    suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> = xrayStatsClient
+        ?.queryOutboundTrafficStatsBytes()
+        .orEmpty()
 
-    internal suspend fun readBalancerSelection(balancerTag: String) = xrayRoutingClient.queryBalancerSelection(balancerTag)
+    internal suspend fun readBalancerSelection(balancerTag: String) = xrayRoutingClient?.queryBalancerSelection(balancerTag)
+
+    private fun closeXrayApiClients() {
+        xrayStatsClient?.close()
+        xrayStatsClient = null
+        xrayRoutingClient?.close()
+        xrayRoutingClient = null
+    }
 
     private fun runtimeBypassUids(directUids: Set<Int>): Set<Int> {
         val appUid = context.applicationInfo.uid

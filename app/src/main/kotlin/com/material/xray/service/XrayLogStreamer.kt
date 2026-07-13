@@ -46,10 +46,16 @@ class XrayLogStreamer(
     private fun readNewLines(offset: Long): Long {
         RandomAccessFile(logFile, "r").use { file ->
             file.seek(offset)
+            val messages = ArrayList<String>(LOG_BATCH_SIZE)
             while (true) {
                 val line = file.readUtf8Line() ?: break
-                logBuffer.append(LogSource.XRAY, line)
+                messages += line
+                if (messages.size == LOG_BATCH_SIZE) {
+                    logBuffer.appendAll(LogSource.XRAY, messages)
+                    messages.clear()
+                }
             }
+            logBuffer.appendAll(LogSource.XRAY, messages)
             return file.filePointer
         }
     }
@@ -58,5 +64,6 @@ class XrayLogStreamer(
 
     private companion object {
         const val POLL_INTERVAL_MS = 250L
+        const val LOG_BATCH_SIZE = 256
     }
 }

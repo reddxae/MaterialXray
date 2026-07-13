@@ -23,26 +23,36 @@ class LogBuffer @Inject constructor() {
     private val buffer = ArrayDeque<LogEntry>(maxSize)
     private var nextId = 0L
 
-    @Synchronized
     fun append(source: LogSource, message: String) {
-        runCatching {
-            when (source) {
-                LogSource.APP -> Log.d("MXray", message)
-                LogSource.XRAY -> Log.d("MXray.xray", message)
+        appendAll(source, listOf(message))
+    }
+
+    fun appendAll(source: LogSource, messages: List<String>) {
+        if (messages.isEmpty()) return
+        messages.forEach { message ->
+            runCatching {
+                when (source) {
+                    LogSource.APP -> Log.d("MXray", message)
+                    LogSource.XRAY -> Log.d("MXray.xray", message)
+                }
             }
         }
 
-        if (buffer.size == maxSize) {
-            buffer.removeFirst()
+        synchronized(this) {
+            messages.forEach { message ->
+                if (buffer.size == maxSize) {
+                    buffer.removeFirst()
+                }
+                buffer.addLast(
+                    LogEntry(
+                        id = nextId++,
+                        source = source,
+                        message = message,
+                    ),
+                )
+            }
+            _entries.value = buffer.toList()
         }
-        buffer.addLast(
-            LogEntry(
-                id = nextId++,
-                source = source,
-                message = message,
-            ),
-        )
-        _entries.value = buffer.toList()
     }
 
     @Synchronized

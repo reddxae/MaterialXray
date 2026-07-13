@@ -41,6 +41,12 @@
     <string name="settings_app_language_system_default">Как в системе</string>
     <string name="settings_notification_title">Уведомление</string>
     <string name="settings_customize_service_notification">Изменить уведомление службы</string>
+    <string name="settings_notification_permission_unavailable">Уведомления недоступны</string>
+    <string name="settings_notification_permission_unavailable_description">Разрешите уведомления, чтобы видеть состояние подключения, сведения о трафике и ошибки</string>
+    <string name="settings_notification_permission_title">Разрешить уведомления MaterialXray?</string>
+    <string name="settings_notification_permission_message">Уведомления показывают состояние активного VPN, дополнительные сведения о трафике и ошибки подключения. Приложением можно пользоваться и без них.</string>
+    <string name="settings_allow_notifications">Разрешить уведомления</string>
+    <string name="settings_open_notification_settings">Открыть настройки уведомлений</string>
     <string name="settings_configure_notification_fields">Настроить поля</string>
     <string name="settings_notification_field_style">Стиль полей</string>
     <string name="settings_notification_update_frequency">Частота обновления</string>

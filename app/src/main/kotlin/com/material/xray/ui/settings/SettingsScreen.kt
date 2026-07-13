@@ -1,7 +1,9 @@
 package com.material.xray.ui.settings
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Resources
 import android.net.Uri
 import android.os.Build
@@ -52,6 +54,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -81,8 +84,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.core.locale.setAppLocales
@@ -675,55 +684,13 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     Switch(checked = sortOutboundsByLatency, onCheckedChange = null)
                 }
 
-                SettingsNestedSection(title = stringResource(R.string.settings_notification_title)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .toggleable(
-                                value = notificationSettings.enabled,
-                                role = Role.Switch,
-                                onValueChange = viewModel::setNotificationEnabled,
-                            )
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.settings_customize_service_notification),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        Switch(
-                            checked = notificationSettings.enabled,
-                            onCheckedChange = null,
-                        )
-                    }
-
-                    if (notificationSettings.enabled) {
-                        SettingsActionRow(
-                            title = stringResource(R.string.settings_configure_notification_fields),
-                            subtitle = notificationFieldSummary(notificationSettings),
-                            onClick = { showNotificationFieldsDialog = true },
-                        )
-                        SettingsActionRow(
-                            title = stringResource(R.string.settings_notification_field_style),
-                            subtitle = stringResource(notificationSettings.style.labelResource),
-                            onClick = { showFieldStyleDialog = true },
-                        )
-                        SettingsActionRow(
-                            title = stringResource(R.string.settings_notification_update_frequency),
-                            subtitle = pluralStringResource(
-                                R.plurals.settings_notification_update_frequency_summary,
-                                notificationSettings.updateIntervalMs,
-                                notificationSettings.updateIntervalMs,
-                            ),
-                            onClick = { showUpdateFrequencyDialog = true },
-                        )
-                    }
-                }
+                NotificationSettingsSection(
+                    settings = notificationSettings,
+                    onEnabledChange = viewModel::setNotificationEnabled,
+                    onConfigureFields = { showNotificationFieldsDialog = true },
+                    onConfigureStyle = { showFieldStyleDialog = true },
+                    onConfigureFrequency = { showUpdateFrequencyDialog = true },
+                )
 
                 SettingsNestedSection(title = stringResource(R.string.settings_app_icon_title)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1073,6 +1040,198 @@ private fun SettingsNestedSection(
         }
     }
 }
+
+@Composable
+private fun NotificationSettingsSection(
+    settings: NotificationSettings,
+    onEnabledChange: (Boolean) -> Unit,
+    onConfigureFields: () -> Unit,
+    onConfigureStyle: () -> Unit,
+    onConfigureFrequency: () -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var permissionRevision by remember { mutableStateOf(0) }
+    var showAccessDialog by remember { mutableStateOf(false) }
+    val access = remember(context, permissionRevision) { notificationAccess(context) }
+    val effectiveEnabled = settings.enabled && access == NotificationAccess.Available
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        context.recordNotificationPermissionRequest()
+        permissionRevision++
+        if (granted) onEnabledChange(true)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permissionRevision++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    SettingsNestedSection(title = stringResource(R.string.settings_notification_title)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .toggleable(
+                    value = effectiveEnabled,
+                    role = Role.Switch,
+                    onValueChange = { enabled ->
+                        when {
+                            !enabled -> onEnabledChange(false)
+                            access == NotificationAccess.Available -> onEnabledChange(true)
+                            else -> showAccessDialog = true
+                        }
+                    },
+                )
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.settings_customize_service_notification),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+            Switch(
+                checked = effectiveEnabled,
+                onCheckedChange = null,
+            )
+        }
+
+        if (access != NotificationAccess.Available) {
+            SettingsActionRow(
+                title = stringResource(R.string.settings_notification_permission_unavailable),
+                subtitle = stringResource(R.string.settings_notification_permission_unavailable_description),
+                onClick = { showAccessDialog = true },
+            )
+        }
+
+        if (settings.enabled) {
+            SettingsActionRow(
+                title = stringResource(R.string.settings_configure_notification_fields),
+                subtitle = notificationFieldSummary(settings),
+                onClick = onConfigureFields,
+            )
+            SettingsActionRow(
+                title = stringResource(R.string.settings_notification_field_style),
+                subtitle = stringResource(settings.style.labelResource),
+                onClick = onConfigureStyle,
+            )
+            SettingsActionRow(
+                title = stringResource(R.string.settings_notification_update_frequency),
+                subtitle = pluralStringResource(
+                    R.plurals.settings_notification_update_frequency_summary,
+                    settings.updateIntervalMs,
+                    settings.updateIntervalMs,
+                ),
+                onClick = onConfigureFrequency,
+            )
+        }
+    }
+
+    if (showAccessDialog) {
+        AlertDialog(
+            onDismissRequest = { showAccessDialog = false },
+            title = { Text(stringResource(R.string.settings_notification_permission_title)) },
+            text = { Text(stringResource(R.string.settings_notification_permission_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAccessDialog = false
+                        when (access) {
+                            NotificationAccess.Available -> onEnabledChange(true)
+                            NotificationAccess.Requestable,
+                            NotificationAccess.Rationale,
+                            -> permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+
+                            NotificationAccess.SystemSettings -> context.openNotificationSettings()
+                        }
+                    },
+                ) {
+                    Text(
+                        stringResource(
+                            if (access == NotificationAccess.SystemSettings) {
+                                R.string.settings_open_notification_settings
+                            } else {
+                                R.string.settings_allow_notifications
+                            },
+                        ),
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAccessDialog = false }) {
+                    Text(stringResource(R.string.settings_cancel))
+                }
+            },
+        )
+    }
+}
+
+private fun notificationAccess(context: android.content.Context): NotificationAccess {
+    val permissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val permissionGranted = !permissionRequired ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    val activity = context as? Activity
+    return resolveNotificationAccess(
+        permissionRequired = permissionRequired,
+        permissionGranted = permissionGranted,
+        notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),
+        shouldShowRationale = activity != null &&
+            ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS),
+        permissionRequested = context.wasNotificationPermissionRequested(),
+    )
+}
+
+internal fun resolveNotificationAccess(
+    permissionRequired: Boolean,
+    permissionGranted: Boolean,
+    notificationsEnabled: Boolean,
+    shouldShowRationale: Boolean,
+    permissionRequested: Boolean,
+): NotificationAccess = when {
+    !permissionRequired || permissionGranted -> {
+        if (notificationsEnabled) NotificationAccess.Available else NotificationAccess.SystemSettings
+    }
+    shouldShowRationale -> NotificationAccess.Rationale
+    permissionRequested -> NotificationAccess.SystemSettings
+    else -> NotificationAccess.Requestable
+}
+
+private fun android.content.Context.openNotificationSettings() {
+    startActivity(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+    )
+}
+
+private fun android.content.Context.recordNotificationPermissionRequest() {
+    getSharedPreferences(NOTIFICATION_PERMISSION_PREFS, android.content.Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(NOTIFICATION_PERMISSION_REQUESTED, true)
+        .apply()
+}
+
+private fun android.content.Context.wasNotificationPermissionRequested(): Boolean = getSharedPreferences(
+    NOTIFICATION_PERMISSION_PREFS,
+    android.content.Context.MODE_PRIVATE,
+).getBoolean(NOTIFICATION_PERMISSION_REQUESTED, false)
+
+internal enum class NotificationAccess {
+    Available,
+    Requestable,
+    Rationale,
+    SystemSettings,
+}
+
+private const val NOTIFICATION_PERMISSION_PREFS = "notification_permission"
+private const val NOTIFICATION_PERMISSION_REQUESTED = "requested"
 
 @Composable
 private fun SettingsDialogs(

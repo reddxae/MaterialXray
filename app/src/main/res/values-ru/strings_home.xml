@@ -154,11 +154,23 @@
     <string name="home_subscription_unlimited_traffic_downloaded">∞ трафика, ↓ %1$s</string>
     <string name="home_subscription_used_of_total">%1$s из %2$s</string>
     <string name="home_subscription_downloaded">↓ %1$s</string>
-    <string name="home_subscription_downloaded_expires_on">↓ %1$s, истекает %2$s</string>
+    <string name="home_subscription_downloaded_with_expiry">↓ %1$s, %2$s</string>
     <string name="home_subscription_downloaded_expired">↓ %1$s, срок истёк</string>
     <string name="home_subscription_expired_inline">срок истёк</string>
     <string name="home_subscription_expired_standalone">Срок истёк</string>
-    <string name="home_subscription_expires_on_inline">истекает %1$s</string>
-    <string name="home_subscription_expires_on_standalone">Истекает %1$s</string>
+    <string name="home_subscription_expires_today_inline">истекает сегодня</string>
+    <string name="home_subscription_expires_today_standalone">Истекает сегодня</string>
+    <plurals name="home_subscription_expires_in_days_inline">
+        <item quantity="one">истекает через %1$d день</item>
+        <item quantity="few">истекает через %1$d дня</item>
+        <item quantity="many">истекает через %1$d дней</item>
+        <item quantity="other">истекает через %1$d дня</item>
+    </plurals>
+    <plurals name="home_subscription_expires_in_days_standalone">
+        <item quantity="one">Истекает через %1$d день</item>
+        <item quantity="few">Истекает через %1$d дня</item>
+        <item quantity="many">Истекает через %1$d дней</item>
+        <item quantity="other">Истекает через %1$d дня</item>
+    </plurals>
     <string name="home_gigabytes">%1$s ГБ</string>
 </resources>

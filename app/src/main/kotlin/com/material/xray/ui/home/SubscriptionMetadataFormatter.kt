@@ -13,7 +13,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
-import java.time.format.FormatStyle
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 internal data class SubscriptionMetadataUiState(
@@ -40,7 +40,6 @@ internal data class SubscriptionTrafficUiState(
 internal data class SubscriptionExpiryUiState(
     val inlineText: String,
     val standaloneText: String,
-    val dateText: String? = null,
     val isExpired: Boolean = false,
 )
 
@@ -112,24 +111,32 @@ internal fun SubscriptionTrafficUiState.detailText(
     resources: Resources,
 ): String? = detailText(expiry, AndroidSubscriptionMetadataText(resources))
 
+internal fun SubscriptionMetadataUiState.headerDetailText(resources: Resources): String? = headerDetailText(
+    AndroidSubscriptionMetadataText(resources),
+)
+
+internal fun SubscriptionMetadataUiState.headerDetailText(text: SubscriptionMetadataText): String? {
+    if (traffic?.quotaText != null) return null
+    return traffic?.detailText(expiry, text) ?: expiry?.standaloneText
+}
+
 private fun SubscriptionTrafficUiState.detailText(
     expiry: SubscriptionExpiryUiState?,
     text: SubscriptionMetadataText,
 ): String? {
     val downloadedSize = downloadSizeText
     return when {
-        quotaText == null -> null
         downloadedSize != null && expiry?.isExpired == true -> text.getString(
             R.string.home_subscription_downloaded_expired,
             downloadedSize,
         )
-        downloadedSize != null && expiry?.dateText != null -> text.getString(
-            R.string.home_subscription_downloaded_expires_on,
+        downloadedSize != null && expiry != null -> text.getString(
+            R.string.home_subscription_downloaded_with_expiry,
             downloadedSize,
-            expiry.dateText,
+            expiry.inlineText,
         )
         downloadedSize != null -> downloadText
-        expiry != null -> expiry.inlineText
+        expiry != null -> expiry.standaloneText
         else -> null
     }
 }
@@ -214,16 +221,27 @@ internal fun formatSubscriptionExpiryUiState(
         )
     }
 
-    val formattedDate = DateTimeFormatter
-        .ofLocalizedDate(FormatStyle.MEDIUM)
-        .withLocale(text.locale)
-        .format(
-            expiresAt.atZone(zoneId).toLocalDate(),
+    val daysRemaining = ChronoUnit.DAYS.between(
+        now.atZone(zoneId).toLocalDate(),
+        expiresAt.atZone(zoneId).toLocalDate(),
+    ).toInt()
+    if (daysRemaining == 0) {
+        return SubscriptionExpiryUiState(
+            inlineText = text.getString(R.string.home_subscription_expires_today_inline),
+            standaloneText = text.getString(R.string.home_subscription_expires_today_standalone),
         )
+    }
     return SubscriptionExpiryUiState(
-        inlineText = text.getString(R.string.home_subscription_expires_on_inline, formattedDate),
-        standaloneText = text.getString(R.string.home_subscription_expires_on_standalone, formattedDate),
-        dateText = formattedDate,
+        inlineText = text.getQuantityString(
+            R.plurals.home_subscription_expires_in_days_inline,
+            daysRemaining,
+            daysRemaining,
+        ),
+        standaloneText = text.getQuantityString(
+            R.plurals.home_subscription_expires_in_days_standalone,
+            daysRemaining,
+            daysRemaining,
+        ),
     )
 }
 

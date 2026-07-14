@@ -145,11 +145,19 @@
     <string name="home_subscription_unlimited_traffic_downloaded">∞ traffic, ↓ %1$s</string>
     <string name="home_subscription_used_of_total">%1$s of %2$s</string>
     <string name="home_subscription_downloaded">↓ %1$s</string>
-    <string name="home_subscription_downloaded_expires_on">↓ %1$s, expires on %2$s</string>
+    <string name="home_subscription_downloaded_with_expiry">↓ %1$s, %2$s</string>
     <string name="home_subscription_downloaded_expired">↓ %1$s, expired</string>
     <string name="home_subscription_expired_inline">expired</string>
     <string name="home_subscription_expired_standalone">Expired</string>
-    <string name="home_subscription_expires_on_inline">expires on %1$s</string>
-    <string name="home_subscription_expires_on_standalone">Expires on %1$s</string>
+    <string name="home_subscription_expires_today_inline">expires today</string>
+    <string name="home_subscription_expires_today_standalone">Expires today</string>
+    <plurals name="home_subscription_expires_in_days_inline">
+        <item quantity="one">expires in %1$d day</item>
+        <item quantity="other">expires in %1$d days</item>
+    </plurals>
+    <plurals name="home_subscription_expires_in_days_standalone">
+        <item quantity="one">Expires in %1$d day</item>
+        <item quantity="other">Expires in %1$d days</item>
+    </plurals>
     <string name="home_gigabytes">%1$s GB</string>
 </resources>

@@ -1305,8 +1305,7 @@ private fun SubscriptionMetadataSection(
     val limitedTraffic = metadata.traffic?.takeUnless { it.quotaText == null }
 
     val hasVisibleMetadata = metadata.announcement.isNotEmpty() ||
-        limitedTraffic != null ||
-        metadata.expiry != null
+        limitedTraffic != null
     if (!hasVisibleMetadata) return
 
     Column(
@@ -1327,7 +1326,7 @@ private fun SubscriptionMetadataSection(
             }
         }
 
-        if (limitedTraffic != null || metadata.expiry != null) {
+        if (limitedTraffic != null) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
@@ -1352,10 +1351,6 @@ private fun SubscriptionMetadataSection(
                             modifier = Modifier.align(Alignment.CenterHorizontally),
                             textAlign = TextAlign.Center,
                         )
-                    } else if (metadata.traffic == null && metadata.expiry != null) {
-                        SubscriptionTrafficText(
-                            text = metadata.expiry.standaloneText,
-                        )
                     }
                 }
             }
@@ -1366,8 +1361,7 @@ private fun SubscriptionMetadataSection(
 private fun SubscriptionMetadataUiState.hasVisibleSubscriptionSection(): Boolean {
     val limitedTraffic = traffic?.takeUnless { it.quotaText == null }
     return announcement.isNotEmpty() ||
-        limitedTraffic != null ||
-        expiry != null
+        limitedTraffic != null
 }
 
 @Composable
@@ -1429,12 +1423,11 @@ private fun SubscriptionHeader(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showPingMethodDialog by remember { mutableStateOf(false) }
+    val resources = LocalResources.current
     val uriHandler = LocalUriHandler.current
     val supportUrl = subscription.supportUrl?.trim().orEmpty()
     val hasDescription = subscription.announce?.trim()?.isNotEmpty() == true
-    val consumedTrafficText = metadata.traffic
-        ?.takeIf { it.quotaText == null }
-        ?.downloadText
+    val headerDetailText = metadata.headerDetailText(resources)
     val expiredStatusText = stringResource(R.string.home_subscription_expired_inline)
 
     Row(
@@ -1464,10 +1457,10 @@ private fun SubscriptionHeader(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!consumedTrafficText.isNullOrBlank()) {
+            if (!headerDetailText.isNullOrBlank()) {
                 Text(
-                    text = remember(consumedTrafficText, expiredStatusText) {
-                        consumedTrafficText.withMetadataEmphasis(expiredStatusText)
+                    text = remember(headerDetailText, expiredStatusText) {
+                        headerDetailText.withMetadataEmphasis(expiredStatusText)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -37,7 +37,8 @@ class SubscriptionMetadataFormatterTest {
         assertEquals("5.0 GB of 10 GB", state.traffic?.summary)
         assertEquals("10 GB", state.traffic?.quotaText)
         assertEquals(0.5f, state.traffic?.progress)
-        assertEquals("expires on May 10, 2026", state.expiry?.inlineText)
+        assertEquals("expires in 8 days", state.expiry?.inlineText)
+        assertNull(state.headerDetailText(EnglishSubscriptionMetadataText))
         assertEquals("Auto update every day", state.updateIntervalText)
     }
 
@@ -49,6 +50,7 @@ class SubscriptionMetadataFormatterTest {
                 url = "https://example.com",
                 subscriptionDownloadBytes = 5L * GIB,
                 subscriptionTotalBytes = null,
+                subscriptionExpireAt = Instant.parse("2026-05-10T00:00:00Z").epochSecond,
             ),
             text = EnglishSubscriptionMetadataText,
             clock = clock,
@@ -57,6 +59,10 @@ class SubscriptionMetadataFormatterTest {
 
         assertEquals("∞ traffic, ↓ 5.0 GB", state.traffic?.summary)
         assertNull(state.traffic?.quotaText)
+        assertEquals(
+            "↓ 5.0 GB, expires in 8 days",
+            state.headerDetailText(EnglishSubscriptionMetadataText),
+        )
     }
 
     @Test
@@ -106,12 +112,12 @@ class SubscriptionMetadataFormatterTest {
                 R.string.home_subscription_unlimited_traffic_downloaded -> "∞ traffic, ↓ %1\$s"
                 R.string.home_subscription_used_of_total -> "%1\$s of %2\$s"
                 R.string.home_subscription_downloaded -> "↓ %1\$s"
-                R.string.home_subscription_downloaded_expires_on -> "↓ %1\$s, expires on %2\$s"
+                R.string.home_subscription_downloaded_with_expiry -> "↓ %1\$s, %2\$s"
                 R.string.home_subscription_downloaded_expired -> "↓ %1\$s, expired"
                 R.string.home_subscription_expired_inline -> "expired"
                 R.string.home_subscription_expired_standalone -> "Expired"
-                R.string.home_subscription_expires_on_inline -> "expires on %1\$s"
-                R.string.home_subscription_expires_on_standalone -> "Expires on %1\$s"
+                R.string.home_subscription_expires_today_inline -> "expires today"
+                R.string.home_subscription_expires_today_standalone -> "Expires today"
                 R.string.home_auto_update_manual -> "Manual update only"
                 R.string.home_gigabytes -> "%1\$s GB"
                 else -> error("Unexpected string resource: $resourceId")
@@ -130,6 +136,16 @@ class SubscriptionMetadataFormatterTest {
                     "Auto update every day"
                 } else {
                     "Auto update every %1\$d days"
+                }
+                R.plurals.home_subscription_expires_in_days_inline -> if (quantity == 1) {
+                    "expires in %1\$d day"
+                } else {
+                    "expires in %1\$d days"
+                }
+                R.plurals.home_subscription_expires_in_days_standalone -> if (quantity == 1) {
+                    "Expires in %1\$d day"
+                } else {
+                    "Expires in %1\$d days"
                 }
                 else -> error("Unexpected plurals resource: $resourceId")
             }

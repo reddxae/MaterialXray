@@ -1,9 +1,13 @@
 package com.material.xray.core.xray
 
 import com.material.xray.model.XrayRuntimeSettings
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 internal const val XRAY_API_SOCKET_NAME_PREFIX = "material-xray-api"
@@ -12,11 +16,14 @@ internal const val XRAY_API_TIMEOUT_MS = 2_000L
 internal const val XRAY_API_TAG = "api"
 
 internal fun buildStatsApi(
-    socketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+    endpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
     enableObservatory: Boolean = false,
 ) = buildJsonObject {
     put("tag", XRAY_API_TAG)
-    put("listen", "@$socketName")
+    when (endpoint) {
+        is XrayApiEndpoint.UnixSocket -> put("listen", "@${endpoint.name}")
+        is XrayApiEndpoint.LoopbackTcp -> put("listen", "$XRAY_API_LOOPBACK_ADDRESS:${endpoint.port}")
+    }
     put(
         "services",
         buildJsonArray {
@@ -53,3 +60,24 @@ internal fun buildStatsPolicy(
 }
 
 internal fun buildStatsConfig() = buildJsonObject { }
+
+internal fun parseXrayApiEndpoint(configJson: String): XrayApiEndpoint? = runCatching {
+    val root = Json.parseToJsonElement(configJson) as? JsonObject
+    val api = root?.get("api") as? JsonObject
+    val listen = api
+        ?.get("listen")
+        ?.jsonPrimitive
+        ?.contentOrNull
+    when {
+        listen?.startsWith('@') == true -> listen.drop(1)
+            .takeIf { it.isNotBlank() }
+            ?.let { XrayApiEndpoint.UnixSocket(it) }
+        listen?.startsWith("$XRAY_API_LOOPBACK_ADDRESS:") == true ->
+            listen
+                .removePrefix("$XRAY_API_LOOPBACK_ADDRESS:")
+                .toIntOrNull()
+                ?.takeIf { it in 1..65_535 }
+                ?.let { XrayApiEndpoint.LoopbackTcp(it) }
+        else -> null
+    }
+}.getOrNull()

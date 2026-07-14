@@ -1,22 +1,19 @@
 package com.material.xray.core.xray
 
-import android.net.LocalSocketAddress
 import android.util.Log
 import com.material.xray.model.ActiveBalancerSelection
 import com.xray.app.router.command.GetBalancerInfoRequest
 import com.xray.app.router.command.RoutingServiceGrpc
 import com.xray.core.app.observatory.command.GetOutboundStatusRequest
 import com.xray.core.app.observatory.command.ObservatoryServiceGrpc
-import io.grpc.InsecureChannelCredentials
 import io.grpc.ManagedChannel
 import io.grpc.StatusRuntimeException
-import io.grpc.okhttp.OkHttpChannelBuilder
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal class XrayRoutingClient(
-    private val socketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+    private val endpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
     private val timeoutMs: Long = XRAY_API_TIMEOUT_MS,
 ) : AutoCloseable {
     private val channelDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED, ::buildChannel)
@@ -69,12 +66,7 @@ internal class XrayRoutingClient(
         if (channelDelegate.isInitialized()) channel.shutdownNow()
     }
 
-    private fun buildChannel(): ManagedChannel = OkHttpChannelBuilder
-        .forTarget(UNUSED_XRAY_API_GRPC_TARGET, InsecureChannelCredentials.create())
-        .socketFactory(AndroidLocalSocketFactory(socketName, LocalSocketAddress.Namespace.ABSTRACT))
-        .proxyDetector { null }
-        .build()
+    private fun buildChannel(): ManagedChannel = buildXrayApiChannel(endpoint)
 }
 
-private const val UNUSED_XRAY_API_GRPC_TARGET = "dns:///127.0.0.1"
 private const val TAG = "XrayRoutingClient"

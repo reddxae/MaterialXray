@@ -65,6 +65,18 @@ class ConfigGeneratorTest {
     }
 
     @Test
+    fun `configures root control API on IPv4 loopback`() {
+        val config = generator.generate(
+            vlessReality,
+            xrayApiEndpoint = XrayApiEndpoint.LoopbackTcp(48_123),
+        )
+        val api = Json.parseToJsonElement(config).jsonObject.getValue("api").jsonObject
+
+        assertEquals("127.0.0.1:48123", api.getValue("listen").jsonPrimitive.content)
+        assertNull(api["port"])
+    }
+
+    @Test
     fun `enables sniffing on the TUN inbound for routing`() {
         val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255)
         val json = Json.parseToJsonElement(config).jsonObject

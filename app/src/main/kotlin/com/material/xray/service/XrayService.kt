@@ -556,6 +556,21 @@ class XrayService : VpnService() {
         if (activeConfig == null) {
             logBuffer.append(LogSource.APP, "Restored running status without selected server config")
         }
+        if (!connectionManager.restoreRootApiClients()) {
+            val config = activeConfig
+            if (config != null) {
+                logBuffer.append(LogSource.APP, "Restarting Xray to migrate its control API")
+                connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+                connectWithCurrentSettings(config, cleanStateFirst = false)
+                return
+            }
+            logBuffer.append(LogSource.APP, "Could not secure the restored Xray API; stopping Xray")
+            connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+            connectionStateCoordinator.markDisconnected()
+            updateNotification()
+            stopSelf()
+            return
+        }
         connectionStateCoordinator.restoreConnected(restoredState)
         activePhysicalNetwork = currentPhysicalNetworkSnapshot()
         handleStateSideEffects(restoredState)

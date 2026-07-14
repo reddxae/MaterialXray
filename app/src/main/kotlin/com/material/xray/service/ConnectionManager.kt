@@ -5,7 +5,9 @@ import com.material.xray.R
 import com.material.xray.core.xray.ConfigGenerator
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XRAY_API_SOCKET_NAME_PREFIX
+import com.material.xray.core.xray.XrayApiEndpoint
 import com.material.xray.core.xray.XrayState
+import com.material.xray.core.xray.parseXrayApiEndpoint
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
@@ -83,14 +85,11 @@ internal class ConnectionManager(
                 logAppRoutingPlan(appRoutingPlan)
             }
 
-            val xrayApiSocketName = nextXrayApiSocketName()
-            closeXrayApiClients()
-            apiClientFactory.create(xrayApiSocketName).also { clients ->
-                xrayStatsClient = clients.stats
-                xrayRoutingClient = clients.routing
-            }
+            val xrayApiEndpoint = nextXrayApiEndpoint(useRootService)
+            if (!prepareRootApiAccess(xrayApiEndpoint)) return
+            replaceXrayApiClients(xrayApiEndpoint)
 
-            writeXrayConfig(xrayServer, runtimeSettings, useRootService, appRoutingPlan, physicalRouteResult.route, xrayApiSocketName)
+            writeXrayConfig(xrayServer, runtimeSettings, useRootService, appRoutingPlan, physicalRouteResult.route, xrayApiEndpoint)
             val pid = startXrayProcess(useRootService, vpnInterface)
 
             if (pid <= 0) {
@@ -110,6 +109,7 @@ internal class ConnectionManager(
                 appRoutingPlan = appRoutingPlan,
                 physicalRoute = physicalRouteResult.route,
                 ipRulesApplied = false,
+                xrayApiEndpoint = xrayApiEndpoint,
             )
 
             if (!finishRuntimeSetup(useRootService, tunName, fwmark, routeTable, bypassTable, physicalRouteResult.route, appRoutingPlan, pid)) return
@@ -126,6 +126,7 @@ internal class ConnectionManager(
                 physicalRoute = physicalRouteResult.route,
                 ipRulesApplied = useRootService,
                 connectStartedAt = connectStartedAt,
+                xrayApiEndpoint = xrayApiEndpoint,
             )
         } catch (e: IOException) {
             fail(e.message ?: environment.localizedString(R.string.error_unknown))
@@ -203,6 +204,13 @@ internal class ConnectionManager(
         cleanOrphanedVpnServiceRuntime()
         userProcessSupervisor.stop()
         return true
+    }
+
+    private suspend fun prepareRootApiAccess(endpoint: XrayApiEndpoint): Boolean {
+        if (endpoint !is XrayApiEndpoint.LoopbackTcp) return true
+        if (rootRuntime.protectLoopbackApi(endpoint.port, environment.appUid)) return true
+        fail(environment.localizedString(R.string.connection_error_secure_xray_api))
+        return false
     }
 
     private suspend fun cleanOrphanedVpnServiceRuntime() {
@@ -317,7 +325,7 @@ internal class ConnectionManager(
         useRootService: Boolean,
         appRoutingPlan: AppRoutingPlan,
         physicalRoute: TunManager.PhysicalRoute?,
-        xrayApiSocketName: String,
+        xrayApiEndpoint: XrayApiEndpoint,
     ) {
         val configJson = configGenerator.generate(
             server = xrayServer,
@@ -335,7 +343,7 @@ internal class ConnectionManager(
             routingFallbackOutbound = runtimeSettings.routingFallbackOutbound,
             appProxyRoutes = appRoutingPlan.proxyRoutes,
             physicalInterface = physicalRoute?.dev,
-            xrayApiSocketName = xrayApiSocketName,
+            xrayApiEndpoint = xrayApiEndpoint,
             xrayBufferSizeKiB = runtimeSettings.xrayBufferSizeKiB,
             tunMtu = runtimeSettings.tunMtu,
         )
@@ -378,10 +386,12 @@ internal class ConnectionManager(
         appRoutingPlan: AppRoutingPlan,
         physicalRoute: TunManager.PhysicalRoute?,
         ipRulesApplied: Boolean,
+        xrayApiEndpoint: XrayApiEndpoint,
     ) {
         stateStore.write(
             XrayState(
                 xrayPid = pid,
+                xrayApiPort = (xrayApiEndpoint as? XrayApiEndpoint.LoopbackTcp)?.port,
                 tunName = tunName,
                 serverName = serverName,
                 nftTableCreated = false,
@@ -521,6 +531,7 @@ internal class ConnectionManager(
         physicalRoute: TunManager.PhysicalRoute?,
         ipRulesApplied: Boolean,
         connectStartedAt: Long,
+        xrayApiEndpoint: XrayApiEndpoint,
     ) {
         writeConnectionStateFile(
             pid = pid,
@@ -533,6 +544,7 @@ internal class ConnectionManager(
             appRoutingPlan = appRoutingPlan,
             physicalRoute = physicalRoute,
             ipRulesApplied = ipRulesApplied,
+            xrayApiEndpoint = xrayApiEndpoint,
         )
 
         log.append(LogSource.APP, "Connected to ${server.name}")
@@ -583,6 +595,23 @@ internal class ConnectionManager(
     }
 
     suspend fun detectPhysicalInterface(tunName: String): String? = detectPhysicalRoute(tunName)?.dev
+
+    suspend fun restoreRootApiClients(): Boolean {
+        val configuredEndpoint = xrayBinary.readConfig()?.let(::parseXrayApiEndpoint)
+        val endpoint = when (configuredEndpoint) {
+            is XrayApiEndpoint.LoopbackTcp -> configuredEndpoint
+            is XrayApiEndpoint.UnixSocket -> return false
+            null -> stateStore.read()
+                ?.xrayApiPort
+                ?.takeIf { it in 1..65_535 }
+                ?.let { XrayApiEndpoint.LoopbackTcp(it) }
+                ?: return false
+        }
+        if (!rootRuntime.protectLoopbackApi(endpoint.port, environment.appUid)) return false
+        runningViaVpnService = false
+        replaceXrayApiClients(endpoint)
+        return true
+    }
 
     suspend fun disconnect() {
         disconnect(updateState = true, fastRootCleanup = true)
@@ -675,6 +704,14 @@ internal class ConnectionManager(
 
     internal suspend fun readBalancerSelection(balancerTag: String) = xrayRoutingClient?.queryBalancerSelection(balancerTag)
 
+    private fun replaceXrayApiClients(endpoint: XrayApiEndpoint) {
+        closeXrayApiClients()
+        apiClientFactory.create(endpoint).also { clients ->
+            xrayStatsClient = clients.stats
+            xrayRoutingClient = clients.routing
+        }
+    }
+
     private fun closeXrayApiClients() {
         xrayStatsClient?.close()
         xrayStatsClient = null
@@ -687,7 +724,11 @@ internal class ConnectionManager(
         return if (appUid > 0) directUids + appUid else directUids
     }
 
-    private fun nextXrayApiSocketName(): String = "$XRAY_API_SOCKET_NAME_PREFIX-${environment.processId}-${environment.elapsedRealtime()}"
+    private fun nextXrayApiEndpoint(useRootService: Boolean): XrayApiEndpoint = if (useRootService) {
+        XrayApiEndpoint.LoopbackTcp(environment.allocateLoopbackApiPort())
+    } else {
+        XrayApiEndpoint.UnixSocket("$XRAY_API_SOCKET_NAME_PREFIX-${environment.processId}-${environment.elapsedRealtime()}")
+    }
 
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
         val startedAt = environment.elapsedRealtime()

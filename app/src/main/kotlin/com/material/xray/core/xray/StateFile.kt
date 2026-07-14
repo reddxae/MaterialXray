@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class XrayState(
     val xrayPid: Int = -1,
+    val xrayApiPort: Int? = null,
     val tunName: String = "xray0",
     val serverName: String = "",
     val nftTableCreated: Boolean = false,

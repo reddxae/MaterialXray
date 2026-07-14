@@ -31,7 +31,7 @@ class ConfigGenerator {
         routingFallbackOutbound: XrayOutbound? = null,
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
-        xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+        xrayApiEndpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
         xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
         tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
     ): String {
@@ -52,7 +52,7 @@ class ConfigGenerator {
                 routingFallbackOutbound = routingFallbackOutbound,
                 appProxyRoutes = appProxyRoutes,
                 physicalInterface = physicalInterface,
-                xrayApiSocketName = xrayApiSocketName,
+                xrayApiEndpoint = xrayApiEndpoint,
                 xrayBufferSizeKiB = xrayBufferSizeKiB,
                 tunMtu = tunMtu,
             )
@@ -85,7 +85,7 @@ class ConfigGenerator {
                     ).forEach { add(it) }
                 },
             )
-            put("api", buildStatsApi(xrayApiSocketName))
+            put("api", buildStatsApi(xrayApiEndpoint))
             put("stats", buildStatsConfig())
             put("policy", buildStatsPolicy(xrayBufferSizeKiB))
             put(
@@ -120,7 +120,7 @@ class ConfigGenerator {
         routingFallbackOutbound: XrayOutbound? = null,
         appProxyRoutes: List<AppProxyRoute> = emptyList(),
         physicalInterface: String? = null,
-        xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+        xrayApiEndpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
         xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
         tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
     ): String = RawConfigTunInjector(json).inject(
@@ -138,7 +138,7 @@ class ConfigGenerator {
         routingDomainMatcher = routingDomainMatcher,
         appProxyRoutes = appProxyRoutes,
         physicalInterface = physicalInterface,
-        xrayApiSocketName = xrayApiSocketName,
+        xrayApiEndpoint = xrayApiEndpoint,
         xrayBufferSizeKiB = xrayBufferSizeKiB,
         tunMtu = tunMtu,
     )

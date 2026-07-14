@@ -52,6 +52,7 @@ class RawConfigTunInjectorTest {
                 ),
             ),
             physicalInterface = "wlan0",
+            xrayApiEndpoint = XrayApiEndpoint.LoopbackTcp(48_123),
             xrayBufferSizeKiB = 1024,
             tunMtu = 1400,
         )
@@ -61,6 +62,7 @@ class RawConfigTunInjectorTest {
             listOf("StatsService", "RoutingService"),
             root.getValue("api").jsonObject.getValue("services").jsonArray.map { it.jsonPrimitive.content },
         )
+        assertEquals("127.0.0.1:48123", root.getValue("api").jsonObject.getValue("listen").jsonPrimitive.content)
         val inbounds = root.getValue("inbounds").jsonArray
         assertEquals(listOf("tun-in", "app-in-7"), inbounds.map { it.jsonObject["tag"]!!.jsonPrimitive.content })
         assertTrue(inbounds.all { it.jsonObject["protocol"]!!.jsonPrimitive.content == "tun" })

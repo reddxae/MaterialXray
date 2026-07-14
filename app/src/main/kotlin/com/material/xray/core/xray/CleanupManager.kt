@@ -11,6 +11,8 @@ class CleanupManager(
     private val stateFile = StateFile(context)
     private val nftables = NftablesManager(shell)
     private val tunManager = TunManager(shell)
+    private val apiFirewall = XrayApiFirewall(shell)
+    private val appUid = context.applicationInfo.uid
     private val configPath = context.filesDir.resolve("config.json").absolutePath
 
     suspend fun ensureCleanState(fallbackTunName: String = "xray0") {
@@ -34,6 +36,7 @@ class CleanupManager(
     }
 
     private suspend fun removeRuntimeState(state: XrayState?, fallbackTunName: String) {
+        apiFirewall.remove(appUid)
         nftables.remove()
 
         val tunName = state?.tunName ?: fallbackTunName

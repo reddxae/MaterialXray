@@ -100,6 +100,10 @@ class XrayBinary internal constructor(
 
     fun configPath(): String = File(environment.filesDir, "config.json").absolutePath
 
+    fun readConfig(): String? = File(configPath())
+        .takeIf { it.isFile }
+        ?.let { config -> runCatching { config.readText() }.getOrNull() }
+
     fun writeConfig(configJson: String) {
         File(environment.filesDir, "config.json").writeText(configJson)
     }

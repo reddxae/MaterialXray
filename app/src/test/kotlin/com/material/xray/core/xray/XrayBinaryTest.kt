@@ -85,6 +85,7 @@ class XrayBinaryTest {
 
         assertEquals(File(dir, "config.json").absolutePath, xrayBinary.configPath())
         assertEquals("""{"log":{}}""", File(dir, "config.json").readText())
+        assertEquals("""{"log":{}}""", xrayBinary.readConfig())
     }
 
     @Test

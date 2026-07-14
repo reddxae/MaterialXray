@@ -13,6 +13,9 @@ import com.material.xray.core.xray.GeoDataStatus
 import com.material.xray.core.xray.ServerAddressResolver
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunManager
+import com.material.xray.core.xray.XRAY_API_LOOPBACK_ADDRESS
+import com.material.xray.core.xray.XrayApiEndpoint
+import com.material.xray.core.xray.XrayApiFirewall
 import com.material.xray.core.xray.XrayBinary
 import com.material.xray.core.xray.XrayRoutingClient
 import com.material.xray.core.xray.XrayStatsClient
@@ -21,6 +24,8 @@ import com.material.xray.data.repository.ServerRepository
 import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ServerConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.net.InetAddress
+import java.net.ServerSocket
 import javax.inject.Inject
 
 internal interface ConnectionEnvironment {
@@ -28,6 +33,7 @@ internal interface ConnectionEnvironment {
     val appUid: Int
     val processId: Int
 
+    fun allocateLoopbackApiPort(): Int
     fun elapsedRealtime(): Long
     fun localizedString(@StringRes resourceId: Int, vararg arguments: Any): String
 }
@@ -42,6 +48,12 @@ internal class AndroidConnectionEnvironment(
     override val processId: Int
         get() = android.os.Process.myPid()
 
+    override fun allocateLoopbackApiPort(): Int = ServerSocket(
+        0,
+        1,
+        InetAddress.getByName(XRAY_API_LOOPBACK_ADDRESS),
+    ).use { it.localPort }
+
     override fun elapsedRealtime(): Long = SystemClock.elapsedRealtime()
 
     override fun localizedString(resourceId: Int, vararg arguments: Any): String = context.localizedString(resourceId, *arguments)
@@ -50,15 +62,20 @@ internal class AndroidConnectionEnvironment(
 internal interface ConnectionRootRuntime {
     suspend fun open(): Boolean
     fun networkNamespaceName(): String
+    suspend fun protectLoopbackApi(port: Int, appUid: Int): Boolean
     suspend fun readActiveConnectionCount(pid: Int): Int?
 }
 
 internal class RootShellConnectionRuntime(
     private val shell: RootShell,
 ) : ConnectionRootRuntime {
+    private val apiFirewall = XrayApiFirewall(shell)
+
     override suspend fun open(): Boolean = shell.open()
 
     override fun networkNamespaceName(): String = shell.defaultNetworkNamespace().name.lowercase()
+
+    override suspend fun protectLoopbackApi(port: Int, appUid: Int): Boolean = apiFirewall.apply(port, appUid)
 
     override suspend fun readActiveConnectionCount(pid: Int): Int? = shell
         .execute("ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:'")
@@ -70,6 +87,7 @@ internal class RootShellConnectionRuntime(
 internal interface ConnectionXrayBinary : XrayProcessBinary {
     fun ensureRootBinaryExtracted(): Boolean
     fun ensureAndroidBinaryAvailable(): Boolean
+    fun readConfig(): String?
     fun writeConfig(configJson: String)
 }
 
@@ -84,6 +102,7 @@ internal class XrayBinaryConnectionAdapter(
     override fun configPath(): String = binary.configPath()
     override fun ensureRootBinaryExtracted(): Boolean = binary.ensureRootBinaryExtracted()
     override fun ensureAndroidBinaryAvailable(): Boolean = binary.ensureAndroidBinaryAvailable()
+    override fun readConfig(): String? = binary.readConfig()
     override fun writeConfig(configJson: String) = binary.writeConfig(configJson)
 }
 
@@ -152,13 +171,13 @@ internal data class ConnectionApiClients(
 )
 
 internal fun interface ConnectionApiClientFactory {
-    fun create(socketName: String): ConnectionApiClients
+    fun create(endpoint: XrayApiEndpoint): ConnectionApiClients
 }
 
 internal class AndroidConnectionApiClientFactory : ConnectionApiClientFactory {
-    override fun create(socketName: String): ConnectionApiClients = ConnectionApiClients(
-        stats = XrayStatsClientAdapter(XrayStatsClient(socketName)),
-        routing = XrayRoutingClientAdapter(XrayRoutingClient(socketName)),
+    override fun create(endpoint: XrayApiEndpoint): ConnectionApiClients = ConnectionApiClients(
+        stats = XrayStatsClientAdapter(XrayStatsClient(endpoint)),
+        routing = XrayRoutingClientAdapter(XrayRoutingClient(endpoint)),
     )
 }
 

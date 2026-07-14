@@ -12,4 +12,5 @@
     <string name="connection_error_xray_crashed">Сбой Xray: %1$s</string>
     <string name="connection_error_tun_timeout">Интерфейс TUN %1$s не запустился за отведённое время</string>
     <string name="connection_error_apply_ip_routing">Не удалось применить IP-маршрутизацию: %1$s</string>
+    <string name="connection_error_secure_xray_api">Не удалось защитить управляющий API Xray</string>
 </resources>

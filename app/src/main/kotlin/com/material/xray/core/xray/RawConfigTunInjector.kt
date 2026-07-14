@@ -31,7 +31,7 @@ internal class RawConfigTunInjector(
         routingDomainMatcher: String? = null,
         appProxyRoutes: List<AppProxyRoute>,
         physicalInterface: String?,
-        xrayApiSocketName: String = XRAY_API_SOCKET_NAME_PREFIX,
+        xrayApiEndpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
         xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
         tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
     ): String {
@@ -63,7 +63,7 @@ internal class RawConfigTunInjector(
         original["log"] = buildLogConfig(logLevel)
         original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6)
         original["api"] = buildStatsApi(
-            socketName = xrayApiSocketName,
+            endpoint = xrayApiEndpoint,
             enableObservatory = original["observatory"] is JsonObject || original["burstObservatory"] is JsonObject,
         )
         original["stats"] = buildStatsConfig()

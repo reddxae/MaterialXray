@@ -4,6 +4,7 @@ import com.material.xray.R
 import com.material.xray.core.xray.ConfigGenerator
 import com.material.xray.core.xray.GeoDataStatus
 import com.material.xray.core.xray.TunManager
+import com.material.xray.core.xray.XrayApiEndpoint
 import com.material.xray.core.xray.XrayState
 import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ConnectionState
@@ -14,6 +15,7 @@ import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -84,6 +86,72 @@ class ConnectionManagerTest {
         assertEquals(ConnectionState.Disconnected, harness.stateCoordinator.state.value)
     }
 
+    @Test
+    fun `successful root connection persists its protected loopback API port`() = runTest {
+        val harness = Harness()
+
+        harness.manager.connect(server(), runtimeSettings(), cleanStateFirst = false)
+
+        assertEquals(XrayApiEndpoint.LoopbackTcp(48_123), harness.createdApiEndpoints.single())
+        assertEquals(48_123, harness.stateStore.state?.xrayApiPort)
+        assertEquals(listOf(48_123 to harness.environment.appUid), harness.rootRuntime.protectedApis)
+    }
+
+    @Test
+    fun `restored root connection recreates stats and routing clients`() = runTest {
+        val harness = Harness()
+        val selection = ActiveBalancerSelection(outboundTag = "proxy-2", latencyMs = 45)
+        harness.apiClients.trafficStats = mapOf("outbound>>>proxy>>>traffic>>>uplink" to 1024L)
+        harness.apiClients.balancerSelection = selection
+        harness.stateStore.state = XrayState(xrayPid = 42, xrayApiPort = 49_321)
+
+        val restored = harness.manager.restoreRootApiClients()
+
+        assertTrue(restored)
+        assertEquals(listOf(XrayApiEndpoint.LoopbackTcp(49_321)), harness.createdApiEndpoints)
+        assertEquals(listOf(49_321 to harness.environment.appUid), harness.rootRuntime.protectedApis)
+        assertEquals(harness.apiClients.trafficStats, harness.manager.readOutboundTrafficStatsBytes())
+        assertEquals(selection, harness.manager.readBalancerSelection("primary"))
+    }
+
+    @Test
+    fun `root state restores missing core API port from config`() = runTest {
+        val harness = Harness().apply {
+            stateStore.state = XrayState(xrayPid = 42)
+            binary.configJson = """{"api":{"listen":"127.0.0.1:49322"}}"""
+        }
+
+        val restored = harness.manager.restoreRootApiClients()
+
+        assertTrue(restored)
+        assertEquals(listOf(XrayApiEndpoint.LoopbackTcp(49_322)), harness.createdApiEndpoints)
+    }
+
+    @Test
+    fun `legacy Unix API requests core restart instead of creating unusable clients`() = runTest {
+        val harness = Harness().apply {
+            stateStore.state = XrayState(xrayPid = 42)
+            binary.configJson = """{"api":{"listen":"@material-xray-api-legacy"}}"""
+        }
+
+        assertFalse(harness.manager.restoreRootApiClients())
+        assertTrue(harness.createdApiEndpoints.isEmpty())
+    }
+
+    @Test
+    fun `root connection fails closed when API firewall cannot be installed`() = runTest {
+        val harness = Harness().apply { rootRuntime.apiProtectionReady = false }
+
+        harness.manager.connect(server(), runtimeSettings(), cleanStateFirst = false)
+
+        assertEquals(0, harness.rootProcess.startCalls)
+        assertEquals(1, harness.cleanup.cleanCalls)
+        assertEquals(
+            ConnectionState.Error(harness.environment.message(R.string.connection_error_secure_xray_api)),
+            harness.stateCoordinator.state.value,
+        )
+    }
+
     private class Harness {
         val environment = FakeConnectionEnvironment()
         val rootRuntime = FakeRootRuntime()
@@ -95,7 +163,8 @@ class ConnectionManagerTest {
         val userProcess = FakeUserProcess()
         val diagnostics = FakeDiagnostics()
         val stateCoordinator = ConnectionStateCoordinator()
-        private val apiClients = FakeApiClients()
+        val apiClients = FakeApiClients()
+        val createdApiEndpoints = mutableListOf<XrayApiEndpoint>()
         var logReady = false
 
         val manager = ConnectionManager(
@@ -116,7 +185,10 @@ class ConnectionManagerTest {
                 diagnostics = diagnostics,
                 routingPlanBuilder = EmptyRoutingPlanBuilder(),
                 activeRouting = FakeActiveRoutingController(),
-                apiClientFactory = ConnectionApiClientFactory { apiClients.clients },
+                apiClientFactory = ConnectionApiClientFactory { endpoint ->
+                    createdApiEndpoints += endpoint
+                    apiClients.clients
+                },
             ),
             onXrayLogReady = { logReady = true },
         )
@@ -126,6 +198,7 @@ class ConnectionManagerTest {
         override val binDir = "/tmp/xray/bin"
         override val appUid = 10_123
         override val processId = 123
+        override fun allocateLoopbackApiPort(): Int = 48_123
         private var clock = 0L
 
         override fun elapsedRealtime(): Long = clock++
@@ -136,8 +209,15 @@ class ConnectionManagerTest {
     }
 
     private class FakeRootRuntime : ConnectionRootRuntime {
+        var apiProtectionReady = true
+        val protectedApis = mutableListOf<Pair<Int, Int>>()
+
         override suspend fun open(): Boolean = true
         override fun networkNamespaceName(): String = "init"
+        override suspend fun protectLoopbackApi(port: Int, appUid: Int): Boolean {
+            protectedApis += port to appUid
+            return apiProtectionReady
+        }
         override suspend fun readActiveConnectionCount(pid: Int): Int = 0
     }
 
@@ -145,11 +225,15 @@ class ConnectionManagerTest {
         override val rootBinaryPath = "/tmp/xray/bin/xray"
         override val androidBinaryPath = "/tmp/xray/libxray.so"
         var rootReady = true
+        var configJson: String? = null
 
         override fun configPath(): String = "/tmp/xray/config.json"
         override fun ensureRootBinaryExtracted(): Boolean = rootReady
         override fun ensureAndroidBinaryAvailable(): Boolean = true
-        override fun writeConfig(configJson: String) = Unit
+        override fun readConfig(): String? = configJson
+        override fun writeConfig(configJson: String) {
+            this.configJson = configJson
+        }
     }
 
     private class FakeRoutingData : ConnectionRoutingData {
@@ -312,12 +396,15 @@ class ConnectionManagerTest {
     }
 
     private class FakeApiClients {
+        var trafficStats: Map<String, Long> = emptyMap()
+        var balancerSelection: ActiveBalancerSelection? = null
+
         private val stats = object : ConnectionStatsClient {
-            override suspend fun queryOutboundTrafficStatsBytes(): Map<String, Long> = emptyMap()
+            override suspend fun queryOutboundTrafficStatsBytes(): Map<String, Long> = trafficStats
             override fun close() = Unit
         }
         private val routing = object : ConnectionRoutingClient {
-            override suspend fun queryBalancerSelection(balancerTag: String): ActiveBalancerSelection? = null
+            override suspend fun queryBalancerSelection(balancerTag: String): ActiveBalancerSelection? = balancerSelection
             override fun close() = Unit
         }
         val clients = ConnectionApiClients(stats, routing)

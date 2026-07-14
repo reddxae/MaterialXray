@@ -1312,18 +1312,15 @@ private fun SubscriptionMetadataSection(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize(animationSpec = tween(durationMillis = 180))
-            .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 0.dp),
-        verticalArrangement = Arrangement.spacedBy(SubscriptionBlockGap),
+            .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = SubscriptionMetadataGap),
+        verticalArrangement = Arrangement.spacedBy(SubscriptionMetadataGap),
     ) {
         AnimatedVisibility(
             visible = metadata.announcement.isNotEmpty() && !subscription.descriptionHidden,
             enter = fadeIn(animationSpec = tween(durationMillis = 120)),
             exit = fadeOut(animationSpec = tween(durationMillis = 90)),
         ) {
-            Column {
-                SubscriptionDescriptionText(description = metadata.announcement)
-                Spacer(modifier = Modifier.height(4.dp))
-            }
+            SubscriptionDescriptionText(description = metadata.announcement)
         }
 
         if (limitedTraffic != null) {
@@ -1896,6 +1893,7 @@ private val subscriptionUrlRegex = Regex(
 )
 private val trailingUrlPunctuation = setOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
 private val SubscriptionBlockGap = 6.dp
+private val SubscriptionMetadataGap = 10.dp
 private const val QR_SCANNER_TRANSITION_MS = 180
 private const val CAMERA_PERMISSION_PREFS = "camera_permission"
 private const val CAMERA_PERMISSION_REQUESTED = "requested"

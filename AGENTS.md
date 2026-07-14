@@ -36,6 +36,6 @@
 - If a required check cannot run, report that explicitly.
 
 ## Agent Workflow
-- After implementing a change, you should check whether a device is attached over ADB. If it is, you should install the *release build* of the app on the device to let the User verify the change.
+- After implementing a change, you should check whether a device is attached over ADB. If it is, you should install the debug build of the app on the device to let the User verify the change.
 - If a `review` subagent or similar is available to you and the change you made is significant/big, run it with the instruction to review your diff. If unsure about the significance - ask the User whether you should run the review.
 - When asked to commit your changes, follow conventional commits and try to keep your commits atomic - one commit is one 'thing done'.

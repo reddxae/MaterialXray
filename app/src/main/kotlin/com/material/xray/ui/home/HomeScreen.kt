@@ -1275,7 +1275,6 @@ private fun SubscriptionCard(
                                 Column(modifier = Modifier.animateBounds(this@LookaheadScope)) {
                                     if (index > 0) {
                                         HorizontalDivider(
-                                            modifier = Modifier.padding(start = 16.dp, end = 16.dp),
                                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
                                         )
                                     }

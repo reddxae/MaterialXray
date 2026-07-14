@@ -1300,7 +1300,6 @@ private fun SubscriptionMetadataSection(
     subscription: SubscriptionEntity,
     metadata: SubscriptionMetadataUiState,
 ) {
-    val resources = LocalResources.current
     val limitedTraffic = metadata.traffic?.takeUnless { it.quotaText == null }
 
     val hasVisibleMetadata = metadata.announcement.isNotEmpty() ||
@@ -1323,33 +1322,10 @@ private fun SubscriptionMetadataSection(
         }
 
         if (limitedTraffic != null) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                border = BorderStroke(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
-                ),
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    limitedTraffic?.let { trafficState ->
-                        SubscriptionTrafficProgress(state = trafficState)
-                    }
-
-                    val detailText = limitedTraffic?.detailText(metadata.expiry, resources)
-                    if (!detailText.isNullOrBlank()) {
-                        SubscriptionTrafficText(
-                            text = detailText,
-                            modifier = Modifier.align(Alignment.CenterHorizontally),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-            }
+            SubscriptionTrafficUsage(
+                state = limitedTraffic,
+                expiry = metadata.expiry,
+            )
         }
     }
 }
@@ -1361,44 +1337,37 @@ private fun SubscriptionMetadataUiState.hasVisibleSubscriptionSection(): Boolean
 }
 
 @Composable
-private fun SubscriptionTrafficText(
-    text: String,
-    modifier: Modifier = Modifier,
-    textAlign: TextAlign? = null,
+private fun SubscriptionTrafficUsage(
+    state: SubscriptionTrafficUiState,
+    expiry: SubscriptionExpiryUiState?,
 ) {
     val expiredStatusText = stringResource(R.string.home_subscription_expired_inline)
-    Text(
-        text = remember(text, expiredStatusText) { text.withMetadataEmphasis(expiredStatusText) },
-        modifier = modifier,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = textAlign,
-    )
-}
-
-@Composable
-private fun SubscriptionTrafficProgress(
-    state: SubscriptionTrafficUiState,
-) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Text(
-            text = stringResource(R.string.home_zero_gigabytes),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = state.summary,
+            modifier = Modifier.fillMaxWidth(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
         )
         LinearProgressIndicator(
             progress = { state.progress },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
         )
-        Text(
-            text = state.quotaText.orEmpty(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (expiry != null) {
+            Text(
+                text = remember(expiry.standaloneText, expiredStatusText) {
+                    expiry.standaloneText.withMetadataEmphasis(expiredStatusText)
+                },
+                modifier = Modifier.align(Alignment.End),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

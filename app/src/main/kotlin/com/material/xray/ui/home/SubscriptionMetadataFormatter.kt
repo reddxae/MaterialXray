@@ -106,11 +106,6 @@ internal fun buildSubscriptionMetadataUiState(
     updateIntervalText = formatAutoUpdateInterval(subscription.autoUpdateIntervalHours, text),
 )
 
-internal fun SubscriptionTrafficUiState.detailText(
-    expiry: SubscriptionExpiryUiState?,
-    resources: Resources,
-): String? = detailText(expiry, AndroidSubscriptionMetadataText(resources))
-
 internal fun SubscriptionMetadataUiState.headerDetailText(resources: Resources): String? = headerDetailText(
     AndroidSubscriptionMetadataText(resources),
 )

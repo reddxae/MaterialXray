@@ -7,6 +7,7 @@ import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XRAY_API_SOCKET_NAME_PREFIX
 import com.material.xray.core.xray.XrayApiEndpoint
 import com.material.xray.core.xray.XrayState
+import com.material.xray.core.xray.XraySysStats
 import com.material.xray.core.xray.parseXrayApiEndpoint
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
@@ -58,7 +59,7 @@ internal class ConnectionManager(
         val routeTable = runtimeSettings.routeTable
         val routeMark = routeTable
         val bypassTable = routeTable + 1
-        log.clear()
+        log.clear(LogSource.XRAY)
         log.append(LogSource.APP, "Connecting to ${server.name} (${server.address}:${server.port})")
         val useRootService = runtimeSettings.useRootService
         runningViaVpnService = !useRootService
@@ -701,6 +702,8 @@ internal class ConnectionManager(
     suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> = xrayStatsClient
         ?.queryOutboundTrafficStatsBytes()
         .orEmpty()
+
+    suspend fun readXraySysStats(): XraySysStats? = xrayStatsClient?.getSysStats()
 
     internal suspend fun readBalancerSelection(balancerTag: String) = xrayRoutingClient?.queryBalancerSelection(balancerTag)
 

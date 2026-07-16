@@ -6,6 +6,7 @@ import com.material.xray.core.xray.GeoDataStatus
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayApiEndpoint
 import com.material.xray.core.xray.XrayState
+import com.material.xray.core.xray.XraySysStats
 import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.Protocol
@@ -111,6 +112,7 @@ class ConnectionManagerTest {
         assertEquals(listOf(XrayApiEndpoint.LoopbackTcp(49_321)), harness.createdApiEndpoints)
         assertEquals(listOf(49_321 to harness.environment.appUid), harness.rootRuntime.protectedApis)
         assertEquals(harness.apiClients.trafficStats, harness.manager.readOutboundTrafficStatsBytes())
+        assertEquals(harness.apiClients.sysStats, harness.manager.readXraySysStats())
         assertEquals(selection, harness.manager.readBalancerSelection("primary"))
     }
 
@@ -398,9 +400,11 @@ class ConnectionManagerTest {
     private class FakeApiClients {
         var trafficStats: Map<String, Long> = emptyMap()
         var balancerSelection: ActiveBalancerSelection? = null
+        var sysStats = XraySysStats(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
 
         private val stats = object : ConnectionStatsClient {
             override suspend fun queryOutboundTrafficStatsBytes(): Map<String, Long> = trafficStats
+            override suspend fun getSysStats(): XraySysStats = sysStats
             override fun close() = Unit
         }
         private val routing = object : ConnectionRoutingClient {

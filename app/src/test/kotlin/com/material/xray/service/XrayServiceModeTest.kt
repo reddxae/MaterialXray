@@ -27,4 +27,44 @@ class XrayServiceModeTest {
             ),
         )
     }
+
+    @Test
+    fun `passive monitoring verifies stable root route`() {
+        assertTrue(
+            shouldVerifyRootRoute(
+                passiveHealthMonitoringEnabled = true,
+                networkChanged = false,
+                networkCallbacksAvailable = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `disabled passive monitoring retains network change fallback`() {
+        assertTrue(
+            shouldVerifyRootRoute(
+                passiveHealthMonitoringEnabled = false,
+                networkChanged = true,
+                networkCallbacksAvailable = true,
+            ),
+        )
+        assertTrue(
+            shouldVerifyRootRoute(
+                passiveHealthMonitoringEnabled = false,
+                networkChanged = false,
+                networkCallbacksAvailable = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `disabled passive monitoring skips stable periodic root verification`() {
+        assertFalse(
+            shouldVerifyRootRoute(
+                passiveHealthMonitoringEnabled = false,
+                networkChanged = false,
+                networkCallbacksAvailable = true,
+            ),
+        )
+    }
 }

@@ -48,6 +48,7 @@ import com.material.xray.model.primaryBalancerTag
 import dagger.hilt.android.AndroidEntryPoint
 import java.text.NumberFormat
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -99,12 +100,15 @@ class XrayService : VpnService() {
     private var networkCallbacksAvailable = false
     private var lastNetworkSafetyCheckAtMs = 0L
     private var processWatchdogJob: Job? = null
-    private var processWatchdogPid: Int? = null
+    private val watchdogSessions = WatchdogSessionTracker()
     private var processRecoveryJob: Job? = null
     private var alwaysOnRetryJob: Job? = null
 
     @Volatile
     private var xrayMemoryRestartThresholdMiB = XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB
+
+    @Volatile
+    private var passiveHealthMonitoringEnabled = SettingsRepository.DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED
     private var balancerSelectionJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var activeUseRootService = true
@@ -146,6 +150,9 @@ class XrayService : VpnService() {
             shouldHandle = { activeUseRootService && activeConfig != null },
             beforeBatch = ::acquireNetworkRetargetWakeLock,
             afterBatch = ::releaseNetworkRetargetWakeLock,
+            onFailure = { error ->
+                logBuffer.append(LogSource.APP, "Root network verification failed: ${error.message ?: error.javaClass.simpleName}")
+            },
             handle = ::retargetNetworkUntilStable,
         )
 
@@ -171,6 +178,20 @@ class XrayService : VpnService() {
         scope.launch {
             settingsRepo.xrayMemoryRestartThresholdMiB.collect { thresholdMiB ->
                 xrayMemoryRestartThresholdMiB = thresholdMiB
+            }
+        }
+
+        scope.launch {
+            settingsRepo.passiveHealthMonitoringEnabled.collect { enabled ->
+                if (passiveHealthMonitoringEnabled == enabled) return@collect
+                passiveHealthMonitoringEnabled = enabled
+                logBuffer.append(
+                    LogSource.APP,
+                    "Passive connection health monitoring ${if (enabled) "enabled" else "disabled"}",
+                )
+                if (connectionStateCoordinator.state.value !is ConnectionState.Connected) return@collect
+                stopProcessWatchdog()
+                (connectionStateCoordinator.state.value as? ConnectionState.Connected)?.let(::startProcessWatchdog)
             }
         }
 
@@ -649,46 +670,151 @@ class XrayService : VpnService() {
         connectionStateCoordinator.updateActiveBalancerSelection(null)
     }
 
+    @Suppress("TooGenericExceptionCaught")
     private fun startProcessWatchdog(state: ConnectionState.Connected) {
-        if (processWatchdogPid == state.corePid && processWatchdogJob?.isActive == true) return
+        if (watchdogSessions.isWatching(state.corePid) && processWatchdogJob?.isActive == true) return
 
         stopProcessWatchdog()
-        processWatchdogPid = state.corePid
+        val watchdogSession = watchdogSessions.start(state.corePid)
+        val localHealthMonitor = LocalXrayHealthMonitor(
+            apiProbeIntervalMs = LOCAL_API_HEALTH_PROBE_INTERVAL_MS,
+            snapshotIntervalMs = LOCAL_HEALTH_SNAPSHOT_INTERVAL_MS,
+            tunnelFailureThreshold = TUNNEL_FAILURE_THRESHOLD,
+            apiFailureThreshold = LOCAL_API_FAILURE_THRESHOLD,
+        )
         lastNetworkSafetyCheckAtMs = SystemClock.elapsedRealtime()
         processWatchdogJob = scope.launch(Dispatchers.IO) {
             var keepWatching = true
+            var consecutiveCheckFailures = 0
             while (isActive && keepWatching) {
                 delay(PROCESS_WATCHDOG_INTERVAL_MS)
-                keepWatching = checkXrayProcessHealth()
+                try {
+                    keepWatching = checkXrayProcessHealth(watchdogSession, localHealthMonitor)
+                    if (keepWatching && consecutiveCheckFailures > 0) {
+                        logBuffer.append(
+                            LogSource.APP,
+                            "Local Xray health monitoring recovered after $consecutiveCheckFailures failed check(s)",
+                        )
+                    }
+                    consecutiveCheckFailures = 0
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    consecutiveCheckFailures++
+                    if (consecutiveCheckFailures == 1 || consecutiveCheckFailures == HEALTH_CHECK_FAILURE_LOG_THRESHOLD) {
+                        logBuffer.append(
+                            LogSource.APP,
+                            "Local Xray health check failed ($consecutiveCheckFailures): " +
+                                (error.message ?: error.javaClass.simpleName),
+                        )
+                    }
+                }
             }
         }
     }
 
-    private suspend fun checkXrayProcessHealth(): Boolean {
+    private suspend fun checkXrayProcessHealth(
+        watchdogSession: WatchdogSession,
+        localHealthMonitor: LocalXrayHealthMonitor,
+    ): Boolean {
         val currentState = connectionStateCoordinator.state.value as? ConnectionState.Connected ?: return false
-        if (synchronizeAlwaysOnVpnMode()) return false
+        if (!watchdogSessions.matches(watchdogSession, currentState.corePid)) return false
+        if (synchronizeAlwaysOnVpnMode(watchdogSession)) return false
         val pid = currentState.corePid
-        if (!connectionManager.isProcessAlive(pid)) {
-            recoverNativeProcess(
+        val processAlive = connectionManager.isProcessAlive(pid)
+        if (!isCurrentWatchdogSession(watchdogSession)) return false
+        if (!processAlive) {
+            val recoveryScheduled = recoverNativeProcess(
                 reason = "xray process $pid exited unexpectedly; reconnecting...",
+                watchdogSession = watchdogSession,
             )
-            return false
+            return !recoveryScheduled
+        }
+
+        if (passiveHealthMonitoringEnabled) {
+            val tunnelAvailable = if (activeUseRootService) {
+                TunInterfaceDetector.isInterfaceUp(currentState.tunName)
+            } else {
+                vpnInterface?.fileDescriptor?.valid() == true
+            }
+            val tunnelTransition = localHealthMonitor.recordTunnelAvailability(tunnelAvailable)
+            when {
+                tunnelTransition.recovered -> logBuffer.append(
+                    LogSource.APP,
+                    "Xray tunnel became available again after ${tunnelTransition.consecutiveFailures} failed check(s)",
+                )
+                tunnelTransition.consecutiveFailures == 1 -> logBuffer.append(
+                    LogSource.APP,
+                    "Xray tunnel is unavailable; verifying before recovery",
+                )
+            }
+            if (tunnelTransition.consecutiveFailures >= TUNNEL_FAILURE_THRESHOLD) {
+                val recoveryScheduled = recoverNativeProcess(
+                    reason = "xray process $pid is alive but tunnel ${currentState.tunName} is unavailable; reconnecting...",
+                    watchdogSession = watchdogSession,
+                )
+                return !recoveryScheduled
+            }
         }
 
         val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid)
+        if (!isCurrentWatchdogSession(watchdogSession)) return false
         val thresholdMiB = xrayMemoryRestartThresholdMiB
         if (XrayRuntimeSettings.shouldRestartForMemory(residentMemoryMb, thresholdMiB)) {
-            recoverNativeProcess(
+            val recoveryScheduled = recoverNativeProcess(
                 reason = "xray process $pid exceeded $thresholdMiB MiB RSS ($residentMemoryMb MiB); restarting...",
                 pidToKill = pid,
+                watchdogSession = watchdogSession,
             )
-            return false
+            return !recoveryScheduled
+        }
+        if (passiveHealthMonitoringEnabled) {
+            checkLocalXrayApiHealth(watchdogSession, localHealthMonitor, residentMemoryMb)
+            if (!isCurrentWatchdogSession(watchdogSession)) return false
         }
         maybeScheduleNetworkSafetyCheck()
         return true
     }
 
-    private suspend fun synchronizeAlwaysOnVpnMode(): Boolean {
+    private suspend fun checkLocalXrayApiHealth(
+        watchdogSession: WatchdogSession,
+        localHealthMonitor: LocalXrayHealthMonitor,
+        residentMemoryMb: Long?,
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        if (!localHealthMonitor.shouldProbeApi(now)) return
+
+        val sysStats = connectionManager.readXraySysStats()
+        if (!isCurrentWatchdogSession(watchdogSession)) return
+        val transition = localHealthMonitor.recordApiResponsiveness(sysStats != null)
+        when {
+            transition.recovered -> logBuffer.append(
+                LogSource.APP,
+                "Local Xray API recovered after ${transition.consecutiveFailures} failed probe(s)",
+            )
+            transition.consecutiveFailures == 1 -> logBuffer.append(
+                LogSource.APP,
+                "Local Xray API did not respond; the core process is still alive",
+            )
+            transition.thresholdReached -> logBuffer.append(
+                LogSource.APP,
+                "Local Xray API is unresponsive after ${transition.consecutiveFailures} probes; " +
+                    "automatic restart was suppressed because forwarding may still be healthy",
+            )
+        }
+
+        if (sysStats != null && localHealthMonitor.shouldRecordSnapshot(now)) {
+            logBuffer.append(
+                LogSource.APP,
+                "Xray health: pid=${watchdogSession.pid}, rss=${residentMemoryMb?.let { "$it MiB" } ?: "unknown"}, " +
+                    "goAlloc=${sysStats.alloc.bytesToMiB()} MiB, goSys=${sysStats.sys.bytesToMiB()} MiB, " +
+                    "goroutines=${sysStats.numGoroutine}, liveObjects=${sysStats.liveObjects}, " +
+                    "uptime=${sysStats.uptimeSeconds}s",
+            )
+        }
+    }
+
+    private suspend fun synchronizeAlwaysOnVpnMode(watchdogSession: WatchdogSession): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
         val alwaysOnVpn = isAlwaysOn
         if (alwaysOnVpnState.active.value != alwaysOnVpn) {
@@ -702,14 +828,14 @@ class XrayService : VpnService() {
         val shouldRunRootService = rootServiceRequested && !alwaysOnVpn
         if (activeUseRootService == shouldRunRootService) return false
 
-        recoverNativeProcess(
+        return recoverNativeProcess(
             reason = if (alwaysOnVpn) {
                 "Always-on VPN enabled; switching to Android VpnService..."
             } else {
                 "Always-on VPN disabled; restoring the configured service mode..."
             },
+            watchdogSession = watchdogSession,
         )
-        return true
     }
 
     private suspend fun maybeScheduleNetworkSafetyCheck() {
@@ -722,19 +848,22 @@ class XrayService : VpnService() {
 
             val currentNetwork = currentPhysicalNetworkSnapshot() ?: return@withContext
             val networkChanged = activePhysicalNetwork?.sameNetwork(currentNetwork) != true
-            if (networkChanged || !networkCallbacksAvailable) {
-                scheduleNetworkRetarget(
-                    reason = if (networkChanged) "watchdog observed a new network" else "network callback fallback",
-                    settle = false,
-                )
+            if (!shouldVerifyRootRoute(passiveHealthMonitoringEnabled, networkChanged, networkCallbacksAvailable)) {
+                return@withContext
             }
+            val reason = when {
+                networkChanged -> "watchdog observed a new network"
+                !networkCallbacksAvailable -> "network callback fallback"
+                else -> PERIODIC_ROOT_ROUTE_VERIFICATION_REASON
+            }
+            scheduleNetworkRetarget(reason = reason, settle = false)
         }
     }
 
     private fun stopProcessWatchdog() {
         processWatchdogJob?.cancel()
         processWatchdogJob = null
-        processWatchdogPid = null
+        watchdogSessions.stop()
     }
 
     private fun updateNotificationMetricsJob() {
@@ -826,14 +955,18 @@ class XrayService : VpnService() {
         )
     }
 
+    @Synchronized
     private fun recoverNativeProcess(
         reason: String,
+        watchdogSession: WatchdogSession,
         pidToKill: Int? = null,
-    ) {
-        if (processRecoveryJob?.isActive == true) return
+    ): Boolean {
+        if (!isCurrentWatchdogSession(watchdogSession)) return false
+        if (processRecoveryJob?.isActive == true) return false
 
         processRecoveryJob = scope.launch {
             connectionCommandMutex.withLock {
+                if (!isCurrentWatchdogSession(watchdogSession)) return@withLock
                 val config = activeConfig ?: return@withLock
 
                 stopLogTail()
@@ -851,6 +984,12 @@ class XrayService : VpnService() {
                 connectWithCurrentSettings(config, cleanStateFirst = false)
             }
         }
+        return true
+    }
+
+    private fun isCurrentWatchdogSession(session: WatchdogSession): Boolean {
+        val currentPid = (connectionStateCoordinator.state.value as? ConnectionState.Connected)?.corePid
+        return watchdogSessions.matches(session, currentPid)
     }
 
     private fun registerNetworkCallback() {
@@ -933,13 +1072,23 @@ class XrayService : VpnService() {
     private fun scheduleNetworkRetarget(reason: String, settle: Boolean) {
         if (!activeUseRootService) return
         activeConfig ?: return
-        networkRetargetWorker.signal(reason, settle)
+        networkRetargetWorker.signal(
+            reason = reason,
+            settle = settle,
+            passive = reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON,
+        )
     }
 
     private suspend fun retargetNetworkUntilStable(reason: String) {
+        val requiresPassiveMonitoring = reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON
+        if (requiresPassiveMonitoring && !passiveHealthMonitoringEnabled) return
         val outcome = retryNetworkRetarget(
             retryDelaysMs = NETWORK_RETARGET_RETRY_DELAYS_MS,
-            shouldContinue = { activeUseRootService && activeConfig != null },
+            shouldContinue = {
+                activeUseRootService &&
+                    activeConfig != null &&
+                    (!requiresPassiveMonitoring || passiveHealthMonitoringEnabled)
+            },
         ) { attempt ->
             retargetNetwork(reason, attempt)
         }
@@ -954,6 +1103,9 @@ class XrayService : VpnService() {
     }
 
     private suspend fun retargetNetwork(reason: String, attempt: Int): NetworkRetargetResult = connectionCommandMutex.withLock {
+        if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
+            return@withLock NetworkRetargetResult.Done
+        }
         if (!activeUseRootService) return@withLock NetworkRetargetResult.Done
         val latestConfig = activeConfig ?: return@withLock NetworkRetargetResult.Done
         val latestState = connectionStateCoordinator.state.value as? ConnectionState.Connected
@@ -962,6 +1114,9 @@ class XrayService : VpnService() {
         val currentNetwork = currentPhysicalNetworkSnapshot()
         val currentRoute = withContext(Dispatchers.IO) {
             connectionManager.detectPhysicalRoute(latestState.tunName)
+        }
+        if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
+            return@withLock NetworkRetargetResult.Done
         }
 
         if (currentRoute == null) {
@@ -996,20 +1151,37 @@ class XrayService : VpnService() {
             return@withLock NetworkRetargetResult.Done
         }
 
+        refreshPhysicalRoutingForNetworkChange(
+            reason = reason,
+            latestConfig = latestConfig,
+            latestState = latestState,
+            currentRoute = currentRoute,
+            currentNetwork = currentNetwork,
+            previousNetwork = previousNetwork,
+        )
+    }
+
+    private suspend fun refreshPhysicalRoutingForNetworkChange(
+        reason: String,
+        latestConfig: ServerConfig,
+        latestState: ConnectionState.Connected,
+        currentRoute: TunManager.PhysicalRoute,
+        currentNetwork: PhysicalNetworkSnapshot?,
+        previousNetwork: PhysicalNetworkSnapshot?,
+    ): NetworkRetargetResult {
         logBuffer.append(
             LogSource.APP,
             "Network route changed ($reason): ${latestState.describePhysicalRoute()} -> " +
                 "${currentRoute.describe()}, refreshing routing...",
         )
         updateNotification(localizedString(R.string.notification_status_refreshing_physical_route))
-        when (
-            val result = withContext(Dispatchers.IO) {
-                connectionManager.reapplyPhysicalRoutingForNetworkChange(
-                    connectedState = latestState,
-                    runtimeSettings = settingsRepo.runtimeSettingsSnapshot(),
-                )
-            }
-        ) {
+        val result = withContext(Dispatchers.IO) {
+            connectionManager.reapplyPhysicalRoutingForNetworkChange(
+                connectedState = latestState,
+                runtimeSettings = settingsRepo.runtimeSettingsSnapshot(),
+            )
+        }
+        return when (result) {
             is PhysicalRouteUpdateResult.Applied -> {
                 connectionStateCoordinator.markConnected(
                     latestState.copy(
@@ -1023,10 +1195,18 @@ class XrayService : VpnService() {
                 NetworkRetargetResult.Done
             }
             PhysicalRouteUpdateResult.RouteUnavailable -> {
+                if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
+                    updateNotification()
+                    return NetworkRetargetResult.Done
+                }
                 updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
                 NetworkRetargetResult.Retry
             }
             PhysicalRouteUpdateResult.RequiresReconnect -> {
+                if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
+                    updateNotification()
+                    return NetworkRetargetResult.Done
+                }
                 reconnectForPhysicalRouteChange(latestConfig, latestState, currentRoute)
                 NetworkRetargetResult.Done
             }
@@ -1554,7 +1734,13 @@ class XrayService : VpnService() {
         private const val NETWORK_RETARGET_SETTLE_DELAY_MS = 250L
         private const val NETWORK_RETARGET_WAKE_LOCK_TIMEOUT_MS = 30_000L
         private const val NETWORK_SAFETY_CHECK_INTERVAL_MS = 60_000L
+        private const val PERIODIC_ROOT_ROUTE_VERIFICATION_REASON = "periodic root route verification"
         private val NETWORK_RETARGET_RETRY_DELAYS_MS = listOf(250L, 500L, 1_000L, 2_000L, 4_000L, 8_000L)
+        private const val LOCAL_API_HEALTH_PROBE_INTERVAL_MS = 60_000L
+        private const val LOCAL_HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60_000L
+        private const val TUNNEL_FAILURE_THRESHOLD = 2
+        private const val LOCAL_API_FAILURE_THRESHOLD = 3
+        private const val HEALTH_CHECK_FAILURE_LOG_THRESHOLD = 3
         private const val CONNECTION_MAX_ATTEMPTS = 3
         private const val CONNECTION_RETRY_DELAY_MS = 1_500L
         private const val ALWAYS_ON_RETRY_DELAY_MS = 30_000L
@@ -1618,6 +1804,16 @@ internal fun shouldUseRootService(
     available: Boolean,
     alwaysOnVpn: Boolean,
 ): Boolean = requested && available && !alwaysOnVpn
+
+internal fun shouldVerifyRootRoute(
+    passiveHealthMonitoringEnabled: Boolean,
+    networkChanged: Boolean,
+    networkCallbacksAvailable: Boolean,
+): Boolean = passiveHealthMonitoringEnabled || networkChanged || !networkCallbacksAvailable
+
+private const val BYTES_PER_MIB = 1024L * 1024L
+
+private fun Long.bytesToMiB(): Long = this / BYTES_PER_MIB
 
 internal fun selectRestoredPhysicalRoute(
     state: XrayState,

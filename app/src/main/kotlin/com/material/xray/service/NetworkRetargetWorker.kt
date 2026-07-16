@@ -1,5 +1,6 @@
 package com.material.xray.service
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -11,6 +12,7 @@ import kotlinx.coroutines.launch
 internal data class NetworkRetargetSignal(
     val reason: String,
     val settle: Boolean,
+    val passive: Boolean,
 )
 
 internal enum class NetworkRetargetResult {
@@ -24,42 +26,73 @@ internal enum class NetworkRetargetRetryOutcome {
     Stopped,
 }
 
+@Suppress("TooGenericExceptionCaught")
 internal class NetworkRetargetWorker(
     scope: CoroutineScope,
     private val settleDelayMs: Long,
     private val shouldHandle: () -> Boolean,
     private val beforeBatch: () -> Unit,
     private val afterBatch: () -> Unit,
+    private val onFailure: (Throwable) -> Unit = {},
     private val handle: suspend (String) -> Unit,
 ) {
-    private val signals = Channel<NetworkRetargetSignal>(Channel.CONFLATED)
+    private val wakeups = Channel<Unit>(Channel.CONFLATED)
+    private val pendingLock = Any()
+    private var pendingSignal: NetworkRetargetSignal? = null
     private val job: Job = scope.launch {
-        for (initialSignal in signals) {
-            if (!shouldHandle()) continue
-
-            beforeBatch()
-            try {
-                var latestSignal = initialSignal
-                if (latestSignal.settle) delay(settleDelayMs)
-
-                while (true) {
-                    latestSignal = signals.tryReceive().getOrNull() ?: break
-                }
-
-                if (shouldHandle()) handle(latestSignal.reason)
-            } finally {
-                afterBatch()
-            }
+        for (ignored in wakeups) {
+            val initialSignal = takePendingSignal() ?: continue
+            if (shouldHandle()) handleBatch(initialSignal)
         }
     }
 
-    fun signal(reason: String, settle: Boolean) {
-        signals.trySend(NetworkRetargetSignal(reason, settle))
+    fun signal(reason: String, settle: Boolean, passive: Boolean = false) {
+        val candidate = NetworkRetargetSignal(reason, settle, passive)
+        synchronized(pendingLock) {
+            pendingSignal = pendingSignal?.let { current -> preferredSignal(current, candidate) } ?: candidate
+        }
+        wakeups.trySend(Unit)
     }
 
     fun close() {
-        signals.close()
+        wakeups.close()
         job.cancel()
+    }
+
+    private fun takePendingSignal(): NetworkRetargetSignal? = synchronized(pendingLock) {
+        pendingSignal.also { pendingSignal = null }
+    }
+
+    private suspend fun handleBatch(initialSignal: NetworkRetargetSignal) {
+        beforeBatch()
+        try {
+            var latestSignal = initialSignal
+            takePendingSignal()?.let { pending ->
+                latestSignal = preferredSignal(latestSignal, pending)
+            }
+            if (latestSignal.settle) {
+                delay(settleDelayMs)
+                takePendingSignal()?.let { pending ->
+                    latestSignal = preferredSignal(latestSignal, pending)
+                }
+            }
+            if (shouldHandle()) handle(latestSignal.reason)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            onFailure(error)
+        } finally {
+            afterBatch()
+        }
+    }
+
+    private fun preferredSignal(
+        current: NetworkRetargetSignal,
+        candidate: NetworkRetargetSignal,
+    ): NetworkRetargetSignal = when {
+        current.passive && !candidate.passive -> candidate
+        !current.passive && candidate.passive -> current
+        else -> candidate
     }
 }
 

@@ -49,6 +49,7 @@ class BackupDataTest {
             "xray_buffer_size_kib" to "1024",
             "tun_mtu" to "1400",
             "xray_memory_restart_threshold_mib" to "256",
+            "passive_health_monitoring_enabled" to "false",
         )
         val backup = BackupData(
             subscriptions = emptyList(),

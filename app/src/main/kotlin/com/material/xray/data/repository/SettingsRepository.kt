@@ -50,6 +50,7 @@ class SettingsRepository @Inject constructor(
         val XRAY_BUFFER_SIZE_KIB = intPreferencesKey("xray_buffer_size_kib")
         val TUN_MTU = intPreferencesKey("tun_mtu")
         val XRAY_MEMORY_RESTART_THRESHOLD_MIB = intPreferencesKey("xray_memory_restart_threshold_mib")
+        val PASSIVE_HEALTH_MONITORING_ENABLED = booleanPreferencesKey("passive_health_monitoring_enabled")
         val AUTO_CONNECT = booleanPreferencesKey("auto_connect")
         val BYPASS_LAN = booleanPreferencesKey("bypass_lan")
         val ALLOW_IPV6 = booleanPreferencesKey("allow_ipv6")
@@ -95,6 +96,7 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_DNS_SERVERS = "1.1.1.1,1.0.0.1"
         const val DEFAULT_DOMESTIC_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         const val DEFAULT_LATENCY_DNS_SERVERS = "77.88.8.8,77.88.8.1"
+        const val DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED = true
     }
 
     val tunName: Flow<String> = store.data.map { it[TUN_NAME] ?: "xray0" }
@@ -113,6 +115,9 @@ class SettingsRepository @Inject constructor(
     }
     val xrayMemoryRestartThresholdMiB: Flow<Int> = store.data.map { prefs ->
         XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(prefs[XRAY_MEMORY_RESTART_THRESHOLD_MIB])
+    }
+    val passiveHealthMonitoringEnabled: Flow<Boolean> = store.data.map { prefs ->
+        prefs[PASSIVE_HEALTH_MONITORING_ENABLED] ?: DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED
     }
     val autoConnect: Flow<Boolean> = store.data.map { it[AUTO_CONNECT] ?: false }
     val bypassLan: Flow<Boolean> = store.data.map { it[BYPASS_LAN] ?: true }
@@ -236,6 +241,9 @@ class SettingsRepository @Inject constructor(
     suspend fun setXrayMemoryRestartThresholdMiB(thresholdMiB: Int) {
         require(XrayRuntimeSettings.isValidXrayMemoryRestartThresholdMiB(thresholdMiB))
         store.edit { it[XRAY_MEMORY_RESTART_THRESHOLD_MIB] = thresholdMiB }
+    }
+    suspend fun setPassiveHealthMonitoringEnabled(enabled: Boolean) = store.edit {
+        it[PASSIVE_HEALTH_MONITORING_ENABLED] = enabled
     }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
     suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
@@ -378,6 +386,11 @@ class SettingsRepository @Inject constructor(
             prefs[XRAY_MEMORY_RESTART_THRESHOLD_MIB] = XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(
                 map["xray_memory_restart_threshold_mib"]?.toIntOrNull(),
             )
+            prefs[PASSIVE_HEALTH_MONITORING_ENABLED] =
+                map.booleanSetting(
+                    "passive_health_monitoring_enabled",
+                    default = DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED,
+                )
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
             prefs[BYPASS_LAN] = map["bypass_lan"]?.toBooleanStrictOrNull() ?: true
             prefs[ALLOW_IPV6] = map["allow_ipv6"]?.toBooleanStrictOrNull() ?: false

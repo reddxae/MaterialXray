@@ -270,14 +270,14 @@ internal class UserXrayProcessSupervisor(
     }
 
     override suspend fun readResidentMemoryMb(pid: Int): Long? {
-        val rssKb = File("/proc/$pid/status")
-            .takeIf { it.isFile }
-            ?.readLines()
-            ?.firstOrNull { it.startsWith("VmRSS:") }
-            ?.split(Regex("\\s+"))
-            ?.getOrNull(1)
-            ?.toLongOrNull()
-            ?: return null
+        val rssKb = runCatching {
+            File("/proc/$pid/status")
+                .takeIf { it.isFile }
+                ?.useLines { lines -> lines.firstOrNull { it.startsWith("VmRSS:") } }
+                ?.split(Regex("\\s+"))
+                ?.getOrNull(1)
+                ?.toLongOrNull()
+        }.getOrNull() ?: return null
         return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
     }
 

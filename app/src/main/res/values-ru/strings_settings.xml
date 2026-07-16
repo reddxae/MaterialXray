@@ -25,6 +25,8 @@
     <string name="settings_tun_mtu_supporting_text">MTU пакетов для Xray и Android VPN. Диапазон: %1$d–%2$d байт. По умолчанию: %3$d байт.</string>
     <string name="settings_xray_memory_restart_threshold_label">Порог ОЗУ для перезапуска ядра</string>
     <string name="settings_xray_memory_restart_threshold_supporting_text">Принудительно перезапускать туннель, когда xray-core превышает этот объём ОЗУ. Диапазон: %1$d–%2$d МиБ. По умолчанию: %3$d МиБ.</string>
+    <string name="settings_passive_health_monitoring_title">Контроль состояния соединения</string>
+    <string name="settings_passive_health_monitoring_description">Проверяет локальный API Xray, состояние туннеля и root-маршрутизацию без отправки внешних запросов</string>
     <string name="settings_default_value">По умолчанию: %1$s</string>
     <string name="settings_geoip_url_label">URL-адрес GeoIP</string>
     <string name="settings_geoip_url_supporting_text">Прямая ссылка для скачивания geoip.dat</string>

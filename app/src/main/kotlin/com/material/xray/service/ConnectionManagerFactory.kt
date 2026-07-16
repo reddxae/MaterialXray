@@ -19,6 +19,7 @@ import com.material.xray.core.xray.XrayApiFirewall
 import com.material.xray.core.xray.XrayBinary
 import com.material.xray.core.xray.XrayRoutingClient
 import com.material.xray.core.xray.XrayStatsClient
+import com.material.xray.core.xray.XraySysStats
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.model.ActiveBalancerSelection
@@ -159,6 +160,7 @@ internal class GeoDataConnectionRoutingData(
 
 internal interface ConnectionStatsClient : AutoCloseable {
     suspend fun queryOutboundTrafficStatsBytes(): Map<String, Long>
+    suspend fun getSysStats(): XraySysStats?
 }
 
 internal interface ConnectionRoutingClient : AutoCloseable {
@@ -185,6 +187,7 @@ private class XrayStatsClientAdapter(
     private val client: XrayStatsClient,
 ) : ConnectionStatsClient {
     override suspend fun queryOutboundTrafficStatsBytes(): Map<String, Long> = client.queryOutboundTrafficStatsBytes()
+    override suspend fun getSysStats(): XraySysStats? = client.getSysStats()
     override fun close() = client.close()
 }
 

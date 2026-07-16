@@ -114,6 +114,11 @@ class SettingsViewModel @Inject constructor(
         SharingStarted.WhileSubscribed(5000),
         XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
     )
+    val passiveHealthMonitoringEnabled = settingsRepo.passiveHealthMonitoringEnabled.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        SettingsRepository.DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED,
+    )
     val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -247,6 +252,10 @@ class SettingsViewModel @Inject constructor(
             return@launch
         }
         settingsRepo.setXrayMemoryRestartThresholdMiB(thresholdMiB)
+    }
+    fun setPassiveHealthMonitoringEnabled(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == passiveHealthMonitoringEnabled.value) return@launch
+        settingsRepo.setPassiveHealthMonitoringEnabled(enabled)
     }
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {
         if (level == xrayLogLevel.value) return@launch

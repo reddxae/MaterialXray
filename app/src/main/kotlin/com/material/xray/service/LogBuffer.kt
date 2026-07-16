@@ -61,6 +61,14 @@ class LogBuffer @Inject constructor() {
         _entries.value = emptyList()
     }
 
+    @Synchronized
+    fun clear(source: LogSource) {
+        val retained = buffer.filterNot { it.source == source }
+        buffer.clear()
+        buffer.addAll(retained)
+        _entries.value = buffer.toList()
+    }
+
     fun formatAll(): String = _entries.value.joinToString("\n") { entry ->
         val time = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
             .format(java.util.Date(entry.timestamp))

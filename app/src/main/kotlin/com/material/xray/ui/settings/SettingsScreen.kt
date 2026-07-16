@@ -127,6 +127,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val xrayBufferSizeKiB by viewModel.xrayBufferSizeKiB.collectAsStateWithLifecycle()
     val tunMtu by viewModel.tunMtu.collectAsStateWithLifecycle()
     val xrayMemoryRestartThresholdMiB by viewModel.xrayMemoryRestartThresholdMiB.collectAsStateWithLifecycle()
+    val passiveHealthMonitoringEnabled by viewModel.passiveHealthMonitoringEnabled.collectAsStateWithLifecycle()
     val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
     val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
     val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
@@ -454,6 +455,33 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                             ?.let(viewModel::setXrayMemoryRestartThresholdMiB)
                     },
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .toggleable(
+                            value = passiveHealthMonitoringEnabled,
+                            role = Role.Switch,
+                            onValueChange = viewModel::setPassiveHealthMonitoringEnabled,
+                        )
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.settings_passive_health_monitoring_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            stringResource(R.string.settings_passive_health_monitoring_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = passiveHealthMonitoringEnabled, onCheckedChange = null)
+                }
                 ExposedDropdownMenuBox(
                     expanded = defaultOutboundExpanded,
                     onExpandedChange = { defaultOutboundExpanded = it },

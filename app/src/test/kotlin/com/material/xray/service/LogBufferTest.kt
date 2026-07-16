@@ -16,4 +16,15 @@ class LogBufferTest {
         assertEquals("line-2499", entries.last().message)
         assertEquals((500L..2_499L).toList(), entries.map { it.id })
     }
+
+    @Test
+    fun `source clear preserves diagnostic entries from other sources`() {
+        val buffer = LogBuffer()
+        buffer.append(LogSource.APP, "recovery reason")
+        buffer.append(LogSource.XRAY, "old core output")
+
+        buffer.clear(LogSource.XRAY)
+
+        assertEquals(listOf("recovery reason"), buffer.entries.value.map { it.message })
+    }
 }

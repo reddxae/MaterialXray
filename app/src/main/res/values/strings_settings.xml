@@ -25,6 +25,8 @@
     <string name="settings_tun_mtu_supporting_text">Packet MTU used by Xray and Android VPN. Range: %1$d-%2$d bytes. Default: %3$d bytes.</string>
     <string name="settings_xray_memory_restart_threshold_label">Core RAM restart threshold</string>
     <string name="settings_xray_memory_restart_threshold_supporting_text">Force-restart the tunnel when xray-core exceeds this RAM usage. Range: %1$d-%2$d MiB. Default: %3$d MiB.</string>
+    <string name="settings_passive_health_monitoring_title">Connection health watchdog</string>
+    <string name="settings_passive_health_monitoring_description">Check the local Xray API, tunnel state, and root routing for failures without sending external probes</string>
     <string name="settings_default_value">Default: %1$s</string>
     <string name="settings_geoip_url_label">GeoIP URL</string>
     <string name="settings_geoip_url_supporting_text">Direct URL for the geoip.dat download</string>

@@ -57,8 +57,8 @@ android {
         applicationId = "com.material.xray"
         minSdk = 28
         targetSdk = 36
-        versionCode = 530
-        versionName = "0.5.3"
+        versionCode = 540
+        versionName = "0.5.4"
 
         ndk {
             abiFilters += "arm64-v8a"

@@ -30,7 +30,10 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
-private val Context.dataStore by preferencesDataStore(name = "settings")
+private val Context.dataStore by preferencesDataStore(
+    name = "settings",
+    produceMigrations = { listOf(SettingsDefaultMigration()) },
+)
 
 @Singleton
 @Suppress("TooManyFunctions")
@@ -370,7 +373,7 @@ class SettingsRepository @Inject constructor(
         return prefs.asMap().entries.associate { (k, v) -> k.name to v.toString() }
     }
 
-    suspend fun restoreFromMap(map: Map<String, String>) {
+    suspend fun restoreFromMap(map: Map<String, String>, sourceBackupVersion: Int? = null) {
         store.edit { prefs ->
             prefs.clear()
             map["tun_name"]?.let { prefs[TUN_NAME] = it }
@@ -379,60 +382,77 @@ class SettingsRepository @Inject constructor(
             map["latency_dns_servers"]?.let { prefs[LATENCY_DNS_SERVERS] = it }
             map["fwmark"]?.let { prefs[FWMARK] = it.toIntOrNull() ?: 255 }
             map["route_table"]?.let { prefs[ROUTE_TABLE] = it.toIntOrNull() ?: 100 }
-            prefs[XRAY_BUFFER_SIZE_KIB] = XrayRuntimeSettings.normalizeXrayBufferSizeKiB(
-                map["xray_buffer_size_kib"]?.toIntOrNull(),
-            )
-            prefs[TUN_MTU] = XrayRuntimeSettings.normalizeTunMtu(map["tun_mtu"]?.toIntOrNull())
-            prefs[XRAY_MEMORY_RESTART_THRESHOLD_MIB] = XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(
-                map["xray_memory_restart_threshold_mib"]?.toIntOrNull(),
-            )
-            prefs[PASSIVE_HEALTH_MONITORING_ENABLED] =
-                map.booleanSetting(
-                    "passive_health_monitoring_enabled",
-                    default = DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED,
-                )
+            map["xray_buffer_size_kib"]
+                ?.toIntOrNull()
+                ?.let(XrayRuntimeSettings::normalizeXrayBufferSizeKiB)
+                ?.let { prefs[XRAY_BUFFER_SIZE_KIB] = it }
+            map["tun_mtu"]
+                ?.toIntOrNull()
+                ?.let(XrayRuntimeSettings::normalizeTunMtu)
+                ?.let { prefs[TUN_MTU] = it }
+            map["xray_memory_restart_threshold_mib"]
+                ?.toIntOrNull()
+                ?.let(XrayRuntimeSettings::normalizeXrayMemoryRestartThresholdMiB)
+                ?.let { prefs[XRAY_MEMORY_RESTART_THRESHOLD_MIB] = it }
+            map["passive_health_monitoring_enabled"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[PASSIVE_HEALTH_MONITORING_ENABLED] = it }
             map["auto_connect"]?.let { prefs[AUTO_CONNECT] = it.toBooleanStrictOrNull() ?: false }
-            prefs[BYPASS_LAN] = map["bypass_lan"]?.toBooleanStrictOrNull() ?: true
-            prefs[ALLOW_IPV6] = map["allow_ipv6"]?.toBooleanStrictOrNull() ?: false
+            map["bypass_lan"]?.toBooleanStrictOrNull()?.let { prefs[BYPASS_LAN] = it }
+            map["allow_ipv6"]?.toBooleanStrictOrNull()?.let { prefs[ALLOW_IPV6] = it }
             map["last_server_id"]?.let { prefs[LAST_SERVER_ID] = it.toLongOrNull() ?: -1L }
-            val showAdvancedOptions = map["show_advanced_options"]?.toBooleanStrictOrNull() ?: false
-            val lastXrayLogLevel = XrayLogLevel.fromValue(map["last_xray_log_level"] ?: map["xray_log_level"])
-            prefs[LAST_XRAY_LOG_LEVEL] = lastXrayLogLevel.value
-            prefs[XRAY_LOG_LEVEL] = if (showAdvancedOptions) lastXrayLogLevel.value else XrayLogLevel.None.value
-            prefs[DEFAULT_OUTBOUND] = XrayOutbound.fromTag(map["default_outbound"]).tag
-            prefs[LAUNCHER_ICON] = LauncherIcon.fromValue(map["launcher_icon"]).value
-            prefs[SHOW_ADVANCED_OPTIONS] = showAdvancedOptions
-            prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] =
-                map["app_specific_server_note_shown"]?.toBooleanStrictOrNull() ?: false
-            prefs[ROUTING_POLICY_CONTROL] = RoutingPolicyControl.fromValue(map["routing_policy_control"]).value
-            prefs[USE_ROOT_SERVICE] = map["use_root_service"]?.toBooleanStrictOrNull() ?: false
-            prefs[NOTIFICATION_ENABLED] = map["notification_enabled"]?.toBooleanStrictOrNull() ?: true
-            prefs[NOTIFICATION_UPDATE_INTERVAL_MS] = map["notification_update_interval_ms"]
+            val showAdvancedOptions = map["show_advanced_options"]?.toBooleanStrictOrNull()
+            val lastXrayLogLevelValue = map["last_xray_log_level"] ?: map["xray_log_level"]
+            lastXrayLogLevelValue?.let { value ->
+                val lastXrayLogLevel = XrayLogLevel.fromValue(value)
+                prefs[LAST_XRAY_LOG_LEVEL] = lastXrayLogLevel.value
+                prefs[XRAY_LOG_LEVEL] = if (showAdvancedOptions == true) {
+                    lastXrayLogLevel.value
+                } else {
+                    XrayLogLevel.None.value
+                }
+            }
+            map["default_outbound"]?.let { prefs[DEFAULT_OUTBOUND] = XrayOutbound.fromTag(it).tag }
+            map["launcher_icon"]?.let { prefs[LAUNCHER_ICON] = LauncherIcon.fromValue(it).value }
+            showAdvancedOptions?.let { prefs[SHOW_ADVANCED_OPTIONS] = it }
+            map["app_specific_server_note_shown"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[APP_SPECIFIC_SERVER_NOTE_SHOWN] = it }
+            map["routing_policy_control"]
+                ?.let { prefs[ROUTING_POLICY_CONTROL] = RoutingPolicyControl.fromValue(it).value }
+            map["use_root_service"]?.toBooleanStrictOrNull()?.let { prefs[USE_ROOT_SERVICE] = it }
+            map["notification_enabled"]?.toBooleanStrictOrNull()?.let { prefs[NOTIFICATION_ENABLED] = it }
+            map["notification_update_interval_ms"]
                 ?.toIntOrNull()
                 ?.coerceIn(NotificationSettings.MIN_UPDATE_INTERVAL_MS, NotificationSettings.MAX_UPDATE_INTERVAL_MS)
-                ?: NotificationSettings.DEFAULT_UPDATE_INTERVAL_MS
-            prefs[NOTIFICATION_STYLE] = NotificationStyle.fromValue(map["notification_style"]).name
-            prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] =
-                map["notification_show_traffic_speed"]?.toBooleanStrictOrNull() ?: false
-            prefs[NOTIFICATION_SHOW_RAM_USAGE] =
-                map["notification_show_ram_usage"]?.toBooleanStrictOrNull() ?: false
-            prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] =
-                map["notification_show_connection_count"]?.toBooleanStrictOrNull() ?: false
-            prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(
-                decodeNotificationFieldOrder(map["notification_field_order"]),
-            )
-            prefs[SUBSCRIPTION_SEND_HWID] = map["subscription_send_hwid"]?.toBooleanStrictOrNull() ?: true
-            prefs[SUBSCRIPTION_PREFER_JSON] = map["subscription_prefer_json"]?.toBooleanStrictOrNull() ?: true
-            prefs[APP_UPDATE_CHECKS_ENABLED] = map.booleanSetting("app_update_checks_enabled", default = true)
+                ?.let { prefs[NOTIFICATION_UPDATE_INTERVAL_MS] = it }
+            map["notification_style"]?.let { prefs[NOTIFICATION_STYLE] = NotificationStyle.fromValue(it).name }
+            map["notification_show_traffic_speed"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] = it }
+            map["notification_show_ram_usage"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[NOTIFICATION_SHOW_RAM_USAGE] = it }
+            map["notification_show_connection_count"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] = it }
+            map["notification_field_order"]?.let { encoded ->
+                prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(decodeNotificationFieldOrder(encoded))
+            }
+            map["subscription_send_hwid"]?.toBooleanStrictOrNull()?.let { prefs[SUBSCRIPTION_SEND_HWID] = it }
+            map["subscription_prefer_json"]?.toBooleanStrictOrNull()?.let { prefs[SUBSCRIPTION_PREFER_JSON] = it }
+            map["app_update_checks_enabled"]?.toBooleanStrictOrNull()?.let { prefs[APP_UPDATE_CHECKS_ENABLED] = it }
             map["geoip_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOIP_URL] = it }
             map["geosite_url"]?.takeIf { it.isNotBlank() }?.let { prefs[GEOSITE_URL] = it }
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }
-            prefs[DEFAULT_PING_METHOD] = PingMethod.fromValue(map["default_ping_method"]).value
-            prefs[SORT_OUTBOUNDS_BY_LATENCY] = map["sort_outbounds_by_latency"].toBoolean()
+            map["default_ping_method"]?.let { prefs[DEFAULT_PING_METHOD] = PingMethod.fromValue(it).value }
+            map["sort_outbounds_by_latency"]?.toBooleanStrictOrNull()?.let { prefs[SORT_OUTBOUNDS_BY_LATENCY] = it }
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }
-            map["routing_rules_version"]?.let { prefs[ROUTING_RULES_VERSION] = it.toIntOrNull() ?: CURRENT_ROUTING_RULES_VERSION }
+            map["routing_rules_version"]?.toIntOrNull()?.let { prefs[ROUTING_RULES_VERSION] = it }
             map["routing_rule_states"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULE_STATES] = it }
-            prefs[ROUTING_DOMAIN_STRATEGY] = SubscriptionRouting.normalizeDomainStrategy(map["routing_domain_strategy"])
+            map["routing_domain_strategy"]
+                ?.let(SubscriptionRouting::normalizeDomainStrategy)
+                ?.let { prefs[ROUTING_DOMAIN_STRATEGY] = it }
             map["routing_domain_matcher"]
                 ?.let(SubscriptionRouting::normalizeDomainMatcher)
                 ?.let { prefs[ROUTING_DOMAIN_MATCHER] = it }
@@ -450,14 +470,14 @@ class SettingsRepository @Inject constructor(
                 prefs[GEOIP_URL] = appendLegacyFileName(legacyBaseUrl, "geoip.dat")
                 prefs[GEOSITE_URL] = appendLegacyFileName(legacyBaseUrl, "geosite.dat")
             }
+            applySettingsDefaultChanges(
+                preferences = prefs,
+                sourceRevision = settingsDefaultsRevisionFromBackup(map, sourceBackupVersion),
+            )
         }
     }
 
     private fun appendLegacyFileName(baseUrl: String, fileName: String): String = "${baseUrl.trim().trimEnd('/')}/$fileName"
-
-    private fun Map<String, String>.booleanSetting(key: String, default: Boolean): Boolean = this[key]
-        ?.toBooleanStrictOrNull()
-        ?: default
 
     private fun decodeNotificationFieldOrder(encoded: String?): List<NotificationField> {
         val savedFields = encoded

@@ -47,6 +47,9 @@ data class BackupData(
     )
 
     companion object {
-        const val CURRENT_VERSION = 3
+        const val STABLE_RELATIONSHIP_KEYS_VERSION = 3
+        const val APP_ROUTES_VERSION = 3
+        const val SPARSE_SETTINGS_VERSION = 4
+        const val CURRENT_VERSION = SPARSE_SETTINGS_VERSION
     }
 }

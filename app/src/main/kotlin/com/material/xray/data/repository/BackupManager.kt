@@ -222,6 +222,7 @@ class BackupManager @Inject constructor(
 
         settingsRepository.restoreFromMap(
             plan.source.settings + (LAST_SERVER_ID_SETTING to selectedServerId.toString()),
+            sourceBackupVersion = plan.source.version,
         )
     }
 

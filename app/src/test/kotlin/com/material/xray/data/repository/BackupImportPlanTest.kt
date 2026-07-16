@@ -12,7 +12,7 @@ class BackupImportPlanTest {
     @Test
     fun `version 3 preserves the complete relationship graph`() {
         val backup = BackupData(
-            version = BackupData.CURRENT_VERSION,
+            version = BackupData.STABLE_RELATIONSHIP_KEYS_VERSION,
             subscriptions = listOf(
                 BackupData.BackupSubscription(
                     key = "subscription-4",
@@ -66,7 +66,7 @@ class BackupImportPlanTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun `version 3 rejects a route to an unknown server`() {
+    fun `current version rejects a route to an unknown server`() {
         BackupImportPlanner.create(
             BackupData(
                 version = BackupData.CURRENT_VERSION,
@@ -81,6 +81,18 @@ class BackupImportPlanTest {
                         serverKey = "missing",
                     ),
                 ),
+            ),
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `import planning rejects newer settings defaults revision`() {
+        BackupImportPlanner.create(
+            BackupData(
+                version = BackupData.CURRENT_VERSION,
+                subscriptions = emptyList(),
+                bypassedApps = emptyList(),
+                settings = mapOf(SETTINGS_DEFAULTS_REVISION.name to "99"),
             ),
         )
     }

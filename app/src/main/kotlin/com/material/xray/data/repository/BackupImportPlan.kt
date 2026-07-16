@@ -55,9 +55,10 @@ internal object BackupImportPlanner {
         require(backup.version in 1..BackupData.CURRENT_VERSION) {
             "Unsupported backup version ${backup.version}"
         }
+        settingsDefaultsRevisionFromBackup(backup.settings, backup.version)
 
         val subscriptions = backup.subscriptions.mapIndexed { index, subscription ->
-            val key = if (backup.version >= BackupData.CURRENT_VERSION) {
+            val key = if (backup.version >= BackupData.STABLE_RELATIONSHIP_KEYS_VERSION) {
                 requireNotNull(subscription.key?.takeIf(String::isNotBlank)) {
                     "Subscription ${index + 1} has no stable key"
                 }
@@ -71,7 +72,7 @@ internal object BackupImportPlanner {
         val subscriptionsByUrl = subscriptions.groupBy { it.value.url }
         val serversPerSubscription = mutableMapOf<String, Int>()
         val servers = backup.servers.mapIndexed { index, server ->
-            val key = if (backup.version >= BackupData.CURRENT_VERSION) {
+            val key = if (backup.version >= BackupData.STABLE_RELATIONSHIP_KEYS_VERSION) {
                 requireNotNull(server.key?.takeIf(String::isNotBlank)) {
                     "Server ${index + 1} has no stable key"
                 }
@@ -96,7 +97,7 @@ internal object BackupImportPlanner {
         }
         requireUnique(servers.map { it.key }, "server key")
 
-        val routes = if (backup.version >= BackupData.CURRENT_VERSION || backup.appRoutes.isNotEmpty()) {
+        val routes = if (backup.version >= BackupData.APP_ROUTES_VERSION || backup.appRoutes.isNotEmpty()) {
             backup.appRoutes.mapIndexed { index, route ->
                 require(route.packageName.isNotBlank()) { "App route ${index + 1} has no package name" }
                 require(route.profileId >= 0) { "App route ${index + 1} has an invalid profile" }

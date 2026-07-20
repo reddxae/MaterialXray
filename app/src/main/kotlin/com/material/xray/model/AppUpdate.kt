@@ -5,6 +5,49 @@ data class AppUpdate(
     val apkDownloadUrl: String?,
 )
 
+sealed interface AppUpdateCheckStatus {
+    data object Starting : AppUpdateCheckStatus
+
+    data class Fetching(
+        val url: String,
+    ) : AppUpdateCheckStatus
+
+    data class RetryingAfterHttpError(
+        val url: String,
+        val statusCode: Int,
+        val nextUrl: String,
+    ) : AppUpdateCheckStatus
+
+    data class RetryingAfterConnectionFailure(
+        val url: String,
+        val nextUrl: String,
+    ) : AppUpdateCheckStatus
+
+    data class RetryingAfterInvalidResponse(
+        val url: String,
+        val statusCode: Int,
+        val nextUrl: String,
+    ) : AppUpdateCheckStatus
+
+    data class ReleaseReceived(
+        val url: String,
+        val statusCode: Int,
+    ) : AppUpdateCheckStatus
+
+    data object UpToDate : AppUpdateCheckStatus
+
+    data class UpdateAvailable(
+        val version: String,
+    ) : AppUpdateCheckStatus
+
+    data object Failed : AppUpdateCheckStatus
+}
+
+internal val AppUpdateCheckStatus.isInProgress: Boolean
+    get() = this !is AppUpdateCheckStatus.UpToDate &&
+        this !is AppUpdateCheckStatus.UpdateAvailable &&
+        this !is AppUpdateCheckStatus.Failed
+
 internal fun isReleaseNewer(latestTag: String, currentVersion: String): Boolean {
     val latest = latestTag.toReleaseVersion() ?: return false
     val current = currentVersion.toReleaseVersion() ?: return false

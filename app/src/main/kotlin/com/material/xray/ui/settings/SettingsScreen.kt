@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -96,6 +98,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.core.locale.setAppLocales
 import com.material.xray.data.repository.BackupSummary
+import com.material.xray.model.AppUpdateCheckStatus
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
@@ -104,6 +107,7 @@ import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
+import com.material.xray.model.isInProgress
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
@@ -145,6 +149,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val backupBusy by viewModel.backupBusy.collectAsStateWithLifecycle()
     val backupImportSummary by viewModel.backupImportSummary.collectAsStateWithLifecycle()
     val appUpdateChecksEnabled by viewModel.appUpdateChecksEnabled.collectAsStateWithLifecycle()
+    val appUpdateCheckStatus by viewModel.appUpdateCheckStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val resources = LocalResources.current
     val scrollState = rememberScrollState()
@@ -224,6 +229,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         derivedStateOf { editingLatencyCheckUrl.trim() != latencyCheckUrl }
     }
     val xrayCoreVersionText = xrayCoreVersionText(xrayCoreVersion)
+    val appUpdateCheckInProgress = appUpdateCheckStatus?.isInProgress == true
+    val appUpdateCheckDescription = appUpdateCheckStatus?.let { appUpdateCheckDescription(it) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -858,6 +865,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
             SettingsActionRow(
                 title = stringResource(R.string.settings_check_for_updates),
+                subtitle = appUpdateCheckDescription,
+                enabled = !appUpdateCheckInProgress,
+                inProgress = appUpdateCheckInProgress,
                 onClick = viewModel::checkForAppUpdate,
             )
             Text(
@@ -1430,13 +1440,15 @@ private fun SettingsActionRow(
     subtitle: String? = null,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    inProgress: Boolean = false,
 ) {
-    val titleColor = if (enabled) {
+    val contentEnabled = enabled || inProgress
+    val titleColor = if (contentEnabled) {
         MaterialTheme.colorScheme.onSurface
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     }
-    val subtitleColor = if (enabled) {
+    val subtitleColor = if (contentEnabled) {
         MaterialTheme.colorScheme.onSurfaceVariant
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
@@ -1460,12 +1472,53 @@ private fun SettingsActionRow(
                 )
             }
         }
-        Icon(
-            imageVector = Icons.Filled.ChevronRight,
-            contentDescription = null,
-            tint = subtitleColor,
-        )
+        if (inProgress) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = subtitleColor,
+            )
+        }
     }
+}
+
+@Composable
+private fun appUpdateCheckDescription(status: AppUpdateCheckStatus): String = when (status) {
+    AppUpdateCheckStatus.Starting -> stringResource(R.string.settings_update_check_starting)
+    is AppUpdateCheckStatus.Fetching -> stringResource(R.string.settings_update_check_fetching, status.url)
+    is AppUpdateCheckStatus.RetryingAfterHttpError -> stringResource(
+        R.string.settings_update_check_retry_http,
+        status.url,
+        status.statusCode,
+        status.nextUrl,
+    )
+    is AppUpdateCheckStatus.RetryingAfterConnectionFailure -> stringResource(
+        R.string.settings_update_check_retry_connection,
+        status.url,
+        status.nextUrl,
+    )
+    is AppUpdateCheckStatus.RetryingAfterInvalidResponse -> stringResource(
+        R.string.settings_update_check_retry_invalid_response,
+        status.url,
+        status.statusCode,
+        status.nextUrl,
+    )
+    is AppUpdateCheckStatus.ReleaseReceived -> stringResource(
+        R.string.settings_update_check_comparing,
+        status.url,
+        status.statusCode,
+    )
+    AppUpdateCheckStatus.UpToDate -> stringResource(R.string.settings_update_check_up_to_date)
+    is AppUpdateCheckStatus.UpdateAvailable -> stringResource(
+        R.string.settings_update_check_available,
+        status.version,
+    )
+    AppUpdateCheckStatus.Failed -> stringResource(R.string.settings_update_check_failed)
 }
 
 @Composable

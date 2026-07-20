@@ -2,6 +2,7 @@ package com.material.xray.ui.settings
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -12,6 +13,7 @@ import com.material.xray.data.repository.BackupSummary
 import com.material.xray.data.repository.PreparedBackupImport
 import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.model.AppUpdateCheckStatus
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
@@ -20,6 +22,7 @@ import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
+import com.material.xray.model.isInProgress
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.DatabaseResetManager
@@ -30,6 +33,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -50,6 +54,8 @@ data class BackupOperationMessage(
     @param:StringRes val messageResId: Int,
     val detail: String? = null,
 )
+
+private const val APP_UPDATE_CHECK_STATUS_MINIMUM_DURATION_MILLIS = 750L
 
 @HiltViewModel
 @Suppress("TooManyFunctions")
@@ -74,6 +80,7 @@ class SettingsViewModel @Inject constructor(
     private val _backupEvents = MutableSharedFlow<BackupOperationMessage>()
     private val _rootAvailable = MutableStateFlow<Boolean?>(null)
     private val _xrayCoreVersion = MutableStateFlow<String?>(null)
+    private val _appUpdateCheckStatus = MutableStateFlow<AppUpdateCheckStatus?>(null)
     private var preparedBackupImport: PreparedBackupImport? = null
 
     val tunName = settingsRepo.tunName.stateIn(
@@ -188,6 +195,7 @@ class SettingsViewModel @Inject constructor(
     val backupEvents: SharedFlow<BackupOperationMessage> = _backupEvents.asSharedFlow()
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
     val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
+    val appUpdateCheckStatus: StateFlow<AppUpdateCheckStatus?> = _appUpdateCheckStatus.asStateFlow()
 
     init {
         checkRootAvailability()
@@ -308,13 +316,32 @@ class SettingsViewModel @Inject constructor(
         if (enabled == appUpdateChecksEnabled.value) return@launch
         settingsRuntimeManager.setAppUpdateChecksEnabled(enabled)
     }
-    fun checkForAppUpdate() = viewModelScope.launch {
-        try {
-            appUpdateChecker.check(manual = true)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            // Manual checks also fail silently; the user can try again later.
+    fun checkForAppUpdate() {
+        if (_appUpdateCheckStatus.value?.isInProgress == true) return
+        _appUpdateCheckStatus.value = AppUpdateCheckStatus.Starting
+        viewModelScope.launch {
+            var statusShownAtMillis: Long? = null
+            val showStatus: suspend (AppUpdateCheckStatus) -> Unit = { status ->
+                statusShownAtMillis?.let { shownAtMillis ->
+                    val elapsedMillis = SystemClock.elapsedRealtime() - shownAtMillis
+                    delay((APP_UPDATE_CHECK_STATUS_MINIMUM_DURATION_MILLIS - elapsedMillis).coerceAtLeast(0L))
+                }
+                _appUpdateCheckStatus.value = status
+                statusShownAtMillis = SystemClock.elapsedRealtime()
+            }
+            try {
+                val update = appUpdateChecker.check(manual = true, onStatus = showStatus)
+                showStatus(
+                    update?.let {
+                        AppUpdateCheckStatus.UpdateAvailable(it.tagName)
+                    } ?: AppUpdateCheckStatus.UpToDate,
+                )
+            } catch (error: CancellationException) {
+                _appUpdateCheckStatus.value = null
+                throw error
+            } catch (_: Exception) {
+                showStatus(AppUpdateCheckStatus.Failed)
+            }
         }
     }
     fun setRoutingPolicyControl(policy: RoutingPolicyControl) = viewModelScope.launch {

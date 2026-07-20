@@ -16,6 +16,7 @@ import com.material.xray.core.locale.localizedString
 import com.material.xray.data.repository.AppUpdateRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.AppUpdate
+import com.material.xray.model.AppUpdateCheckStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,20 +32,24 @@ class AppUpdateChecker @Inject constructor(
 ) {
     private val checkMutex = Mutex()
 
-    suspend fun check(manual: Boolean = false) = checkMutex.withLock {
-        if (!manual && !settingsRepository.appUpdateChecksEnabled.first()) return@withLock
+    suspend fun check(
+        manual: Boolean = false,
+        onStatus: suspend (AppUpdateCheckStatus) -> Unit = {},
+    ): AppUpdate? = checkMutex.withLock {
+        if (!manual && !settingsRepository.appUpdateChecksEnabled.first()) return@withLock null
         val minimumIntervalMillis = if (manual) 0L else MINIMUM_AUTOMATIC_CHECK_INTERVAL_MILLIS
-        if (!repository.claimUpdateCheck(System.currentTimeMillis(), minimumIntervalMillis)) return@withLock
-        val update = repository.checkForUpdate()
+        if (!repository.claimUpdateCheck(System.currentTimeMillis(), minimumIntervalMillis)) return@withLock null
+        val update = repository.checkForUpdate(onStatus)
         if (!manual && !settingsRepository.appUpdateChecksEnabled.first()) {
             repository.clearAvailableUpdate()
-            return@withLock
+            return@withLock null
         }
         if (update == null) {
             notifier.dismiss()
         } else if (!repository.wasNotified(update.tagName) && notifier.show(update)) {
             repository.markNotified(update.tagName)
         }
+        update
     }
 
     private companion object {

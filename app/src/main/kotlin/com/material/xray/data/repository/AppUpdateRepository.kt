@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.material.xray.model.AppUpdate
+import com.material.xray.model.AppUpdateCheckStatus
 import com.material.xray.model.isReleaseNewer
 import com.material.xray.model.isUpdateCheckDue
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,8 +34,8 @@ class AppUpdateRepository @Inject constructor(
             ?.let { tag -> appUpdate(tag, preferences[AVAILABLE_APK_DOWNLOAD_URL]) }
     }
 
-    suspend fun checkForUpdate(): AppUpdate? {
-        val release = releaseFetcher.fetchLatestRelease(currentVersionName)
+    suspend fun checkForUpdate(onStatus: suspend (AppUpdateCheckStatus) -> Unit = {}): AppUpdate? {
+        val release = releaseFetcher.fetchLatestRelease(currentVersionName, onStatus)
         val update = release.tagName
             .takeIf { tag -> isReleaseNewer(tag, currentVersionName) }
             ?.let { tag -> appUpdate(tag, release.apkDownloadUrl.takeIf(String::isNotEmpty)) }

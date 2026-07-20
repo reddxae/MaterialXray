@@ -81,6 +81,15 @@
     <string name="settings_app_update_checks_title">Automatically check for updates</string>
     <string name="settings_app_update_checks_description">Check GitHub for new releases every 8 hours</string>
     <string name="settings_check_for_updates">Check for updates</string>
+    <string name="settings_update_check_starting">Preparing update check&#8230;</string>
+    <string name="settings_update_check_fetching">Requesting release details from %1$s&#8230;</string>
+    <string name="settings_update_check_retry_http">%1$s returned HTTP %2$d. Trying %3$s&#8230;</string>
+    <string name="settings_update_check_retry_connection">Couldn\'t reach %1$s. Trying %2$s&#8230;</string>
+    <string name="settings_update_check_retry_invalid_response">%1$s returned HTTP %2$d with invalid release data. Trying %3$s&#8230;</string>
+    <string name="settings_update_check_comparing">Received release details from %1$s (HTTP %2$d). Comparing versions&#8230;</string>
+    <string name="settings_update_check_up_to_date">You\'re running the latest version.</string>
+    <string name="settings_update_check_available">Version %1$s is available.</string>
+    <string name="settings_update_check_failed">Couldn\'t finish checking for updates. Try again later.</string>
     <string name="settings_app_version">%1$s v%2$s</string>
     <string name="settings_app_version_unknown">%1$s version unknown</string>
     <string name="settings_section_service">Service</string>

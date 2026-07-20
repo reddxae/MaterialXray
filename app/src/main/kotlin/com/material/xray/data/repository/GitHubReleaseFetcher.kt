@@ -1,5 +1,6 @@
 package com.material.xray.data.repository
 
+import com.material.xray.model.AppUpdateCheckStatus
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,23 +28,47 @@ class GitHubReleaseFetcher @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    internal suspend fun fetchLatestRelease(currentVersionName: String): GitHubRelease = withContext(Dispatchers.IO) {
+    internal suspend fun fetchLatestRelease(
+        currentVersionName: String,
+        onStatus: suspend (AppUpdateCheckStatus) -> Unit = {},
+    ): GitHubRelease = withContext(Dispatchers.IO) {
         var lastFailure: Exception? = null
-        for (url in githubMirrorUrls(GITHUB_API_URL)) {
+        val urls = githubMirrorUrls(GITHUB_API_URL)
+        onStatus(AppUpdateCheckStatus.Fetching(urls.first()))
+        for ((index, url) in urls.withIndex()) {
             try {
-                return@withContext fetchRelease(url, currentVersionName)
+                val response = fetchRelease(url, currentVersionName)
+                onStatus(AppUpdateCheckStatus.ReleaseReceived(url, response.statusCode))
+                return@withContext response.release
             } catch (error: CancellationException) {
                 throw error
+            } catch (error: HttpStatusException) {
+                lastFailure = error
+                urls.getOrNull(index + 1)?.let { nextUrl ->
+                    onStatus(AppUpdateCheckStatus.RetryingAfterHttpError(url, error.statusCode, nextUrl))
+                }
+            } catch (error: InvalidReleaseResponseException) {
+                lastFailure = error
+                urls.getOrNull(index + 1)?.let { nextUrl ->
+                    onStatus(
+                        AppUpdateCheckStatus.RetryingAfterInvalidResponse(
+                            url = url,
+                            statusCode = error.statusCode,
+                            nextUrl = nextUrl,
+                        ),
+                    )
+                }
             } catch (error: IOException) {
                 lastFailure = error
-            } catch (error: IllegalArgumentException) {
-                lastFailure = error
+                urls.getOrNull(index + 1)?.let { nextUrl ->
+                    onStatus(AppUpdateCheckStatus.RetryingAfterConnectionFailure(url, nextUrl))
+                }
             }
         }
         throw IOException("All GitHub release endpoints failed", lastFailure)
     }
 
-    private fun fetchRelease(url: String, currentVersionName: String): GitHubRelease {
+    private fun fetchRelease(url: String, currentVersionName: String): ReleaseResponse {
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
@@ -53,19 +78,36 @@ class GitHubReleaseFetcher @Inject constructor(
 
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("GitHub release request failed with HTTP ${response.code}")
+                throw HttpStatusException(response.code)
             }
-            parseRelease(json.parseToJsonElement(response.body.string()).jsonObject)
+            try {
+                ReleaseResponse(
+                    release = parseRelease(
+                        release = json.parseToJsonElement(response.body.string()).jsonObject,
+                        statusCode = response.code,
+                    ),
+                    statusCode = response.code,
+                )
+            } catch (error: IllegalArgumentException) {
+                throw InvalidReleaseResponseException(
+                    message = "GitHub release response was not valid JSON",
+                    statusCode = response.code,
+                    cause = error,
+                )
+            }
         }
     }
 
-    private fun parseRelease(release: JsonObject): GitHubRelease {
+    private fun parseRelease(release: JsonObject, statusCode: Int): GitHubRelease {
         val tagName = release["tag_name"]
             ?.jsonPrimitive
             ?.contentOrNull
             ?.trim()
             ?.takeIf(String::isNotEmpty)
-            ?: throw IOException("GitHub release response did not include a tag")
+            ?: throw InvalidReleaseResponseException(
+                message = "GitHub release response did not include a tag",
+                statusCode = statusCode,
+            )
         val apkDownloadUrl = release["assets"]
             ?.jsonArray
             ?.asSequence()
@@ -76,7 +118,10 @@ class GitHubReleaseFetcher @Inject constructor(
                     ?.takeIf(::isOfficialApkUrl)
             }
             ?.firstOrNull()
-            ?: throw IOException("GitHub release response did not include an APK")
+            ?: throw InvalidReleaseResponseException(
+                message = "GitHub release response did not include an APK",
+                statusCode = statusCode,
+            )
         return GitHubRelease(tagName = tagName, apkDownloadUrl = apkDownloadUrl)
     }
 
@@ -91,6 +136,21 @@ class GitHubReleaseFetcher @Inject constructor(
     private companion object {
         const val GITHUB_API_URL = "https://api.github.com/repos/reddxae/MaterialXray/releases/latest"
     }
+
+    private data class ReleaseResponse(
+        val release: GitHubRelease,
+        val statusCode: Int,
+    )
+
+    private class HttpStatusException(
+        val statusCode: Int,
+    ) : IOException("GitHub release request failed with HTTP $statusCode")
+
+    private class InvalidReleaseResponseException(
+        message: String,
+        val statusCode: Int,
+        cause: Throwable? = null,
+    ) : IOException(message, cause)
 }
 
 internal fun githubMirrorUrls(officialUrl: String): List<String> = listOf(

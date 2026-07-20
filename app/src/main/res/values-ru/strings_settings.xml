@@ -83,6 +83,15 @@
     <string name="settings_app_update_checks_title">Автоматически проверять обновления</string>
     <string name="settings_app_update_checks_description">Проверять новые выпуски на GitHub каждые 8 часов</string>
     <string name="settings_check_for_updates">Проверить обновления</string>
+    <string name="settings_update_check_starting">Подготовка проверки обновлений&#8230;</string>
+    <string name="settings_update_check_fetching">Запрос данных о выпуске с %1$s&#8230;</string>
+    <string name="settings_update_check_retry_http">Источник %1$s вернул HTTP %2$d. Попытка через %3$s&#8230;</string>
+    <string name="settings_update_check_retry_connection">Не удалось подключиться к %1$s. Попытка через %2$s&#8230;</string>
+    <string name="settings_update_check_retry_invalid_response">Источник %1$s вернул HTTP %2$d с некорректными данными о выпуске. Попытка через %3$s&#8230;</string>
+    <string name="settings_update_check_comparing">Данные о выпуске получены с %1$s (HTTP %2$d). Сравнение версий&#8230;</string>
+    <string name="settings_update_check_up_to_date">Установлена последняя версия.</string>
+    <string name="settings_update_check_available">Доступна версия %1$s.</string>
+    <string name="settings_update_check_failed">Не удалось завершить проверку обновлений. Повторите попытку позже.</string>
     <string name="settings_app_version">%1$s, версия %2$s</string>
     <string name="settings_app_version_unknown">Версия %1$s неизвестна</string>
     <string name="settings_section_service">Служба</string>

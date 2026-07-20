@@ -84,6 +84,7 @@ internal class XrayProcessSupervisor(
     private val environment: XrayRuntimeEnvironment,
     private val commandRunner: RootCommandRunner,
     private val xrayBinary: XrayProcessBinary,
+    private val certificateBundle: RootCertificateBundle,
     private val log: LogBuffer,
 ) : RootXrayProcessController {
     val logFile: String
@@ -95,11 +96,13 @@ internal class XrayProcessSupervisor(
     }
 
     override suspend fun start(binDir: String): Int {
+        val certificateBundleFile = environment.filesDir.resolve(ROOT_CERTIFICATE_BUNDLE_FILE)
+        certificateBundle.update(certificateBundleFile)
         val command = buildString {
             append("config=${shellQuote(xrayBinary.configPath())}; ")
             append("cd ${shellQuote(binDir)} && ")
             append("env ")
-            xrayAssetEnvironment(binDir).forEach { (key, value) ->
+            rootXrayEnvironment(binDir, certificateBundleFile.absolutePath).forEach { (key, value) ->
                 append("${shellQuote("$key=$value")} ")
             }
             append("sh -c 'exec \"\$@\"' xray ")
@@ -214,6 +217,7 @@ internal class XrayProcessSupervisor(
     private companion object {
         private const val DEFAULT_MEMORY_PAGE_KB = 4L
         private const val KILOBYTES_PER_MEGABYTE = 1024L
+        private const val ROOT_CERTIFICATE_BUNDLE_FILE = "xray-ca-certificates.pem"
     }
 }
 
@@ -378,6 +382,11 @@ class AndroidUserXrayProcessLauncher : UserXrayProcessLauncher {
 private fun xrayAssetEnvironment(assetDir: String): Map<String, String> = mapOf(
     "xray.location.asset" to assetDir,
     "XRAY_LOCATION_ASSET" to assetDir,
+)
+
+private fun rootXrayEnvironment(assetDir: String, certificateBundlePath: String): Map<String, String> = xrayAssetEnvironment(assetDir) + mapOf(
+    // Root mode uses a Linux build, so Go does not discover Android's CA store itself.
+    "SSL_CERT_FILE" to certificateBundlePath,
 )
 
 internal fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"

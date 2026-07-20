@@ -236,6 +236,7 @@ class ConnectionManagerFactory @Inject constructor(
             environment = runtimeEnvironment,
             commandRunner = RootShellCommandRunner(shell),
             xrayBinary = xrayBinary,
+            certificateBundle = AndroidRootCertificateBundle(),
             log = log,
         )
         val userProcess = UserXrayProcessSupervisor(

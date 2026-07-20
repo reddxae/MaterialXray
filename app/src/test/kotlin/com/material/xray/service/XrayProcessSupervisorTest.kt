@@ -16,6 +16,11 @@ class XrayProcessSupervisorTest {
             resultForCommand = { command ->
                 assertTrue(command.contains("cd '/tmp/xray bin'"))
                 assertTrue(command.contains("env 'xray.location.asset=/tmp/xray bin' 'XRAY_LOCATION_ASSET=/tmp/xray bin'"))
+                assertTrue(
+                    command.contains(
+                        "'SSL_CERT_FILE=/tmp/runtime dir/xray-ca-certificates.pem'",
+                    ),
+                )
                 assertTrue(command.contains("sh -c 'exec \"\$@\"' xray"))
                 assertTrue(command.contains("config='/tmp/config dir/config.json'"))
                 assertTrue(command.contains("'/tmp/xray bin/xray' run -c \"\$config\""))
@@ -30,6 +35,20 @@ class XrayProcessSupervisorTest {
         val pid = supervisor.start("/tmp/xray bin")
 
         assertEquals(1234, pid)
+    }
+
+    @Test
+    fun `start aborts before root launch when certificate bundle update fails`() = runTest {
+        val commands = FakeRootCommandRunner()
+        val supervisor = supervisor(
+            commandRunner = commands,
+            certificateBundle = RootCertificateBundle { throw IllegalStateException("no certificates") },
+        )
+
+        val failure = runCatching { supervisor.start("/tmp/xray bin") }.exceptionOrNull()
+
+        assertEquals("no certificates", failure?.message)
+        assertTrue(commands.commands.isEmpty())
     }
 
     @Test
@@ -148,11 +167,13 @@ class XrayProcessSupervisorTest {
     private fun supervisor(
         environment: XrayRuntimeEnvironment = FakeRuntimeEnvironment(),
         commandRunner: FakeRootCommandRunner = FakeRootCommandRunner(),
+        certificateBundle: RootCertificateBundle = RootCertificateBundle { },
         log: LogBuffer = LogBuffer(),
     ) = XrayProcessSupervisor(
         environment = environment,
         commandRunner = commandRunner,
         xrayBinary = FakeXrayProcessBinary(),
+        certificateBundle = certificateBundle,
         log = log,
     )
 

@@ -36,9 +36,10 @@ class ActiveRoutingUpdaterTest {
             tunGateway = tunGateway,
         )
 
-        val applied = updater.applyAppRoutingChanges(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE)
+        val applied = updater.applyAppRoutingChanges(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE, allowIpv6 = false)
 
         assertTrue(applied)
+        assertFalse(tunGateway.lastAllowIpv6)
         assertEquals(setOf(DIRECT_UID, APP_UID), tunGateway.lastBypassUids)
         assertEquals(plan.tunRoutes, tunGateway.lastAppTunRoutes)
         assertEquals(plan.routeProfileIds, tunGateway.lastRouteProfileIds)
@@ -67,7 +68,7 @@ class ActiveRoutingUpdaterTest {
             tunGateway = tunGateway,
         )
 
-        val applied = updater.applyAppRoutingChanges(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE)
+        val applied = updater.applyAppRoutingChanges(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE, allowIpv6 = false)
 
         assertFalse(applied)
         assertEquals(0, tunGateway.applyRoutingCalls)
@@ -88,9 +89,39 @@ class ActiveRoutingUpdaterTest {
             stateStore = stateStore,
             routingPlanBuilder = FakeRoutingPlanBuilder(emptyPlan(proxyServerIds = listOf(PROXY_SERVER_ID))),
             tunGateway = FakeTunGateway(physicalRoute = null),
-        ).reapplyPhysicalRoutingForNetworkChange(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE)
+        ).reapplyPhysicalRoutingForNetworkChange(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE, allowIpv6 = false)
 
         assertEquals(PhysicalRouteUpdateResult.RouteUnavailable, result)
+        assertEquals(originalState, stateStore.state)
+    }
+
+    @Test
+    fun `reapplyPhysicalRoutingForNetworkChange applies enabled IPv6 policy`() = runTest {
+        val stateStore = FakeStateStore(activeState())
+        val tunGateway = FakeTunGateway()
+
+        val result = updater(
+            stateStore = stateStore,
+            routingPlanBuilder = FakeRoutingPlanBuilder(emptyPlan(proxyServerIds = listOf(PROXY_SERVER_ID))),
+            tunGateway = tunGateway,
+        ).reapplyPhysicalRoutingForNetworkChange(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE, allowIpv6 = true)
+
+        assertTrue(result is PhysicalRouteUpdateResult.Applied)
+        assertTrue(tunGateway.lastAllowIpv6)
+    }
+
+    @Test
+    fun `reapplyPhysicalRoutingForNetworkChange requires reconnect after routing failure`() = runTest {
+        val originalState = activeState()
+        val stateStore = FakeStateStore(originalState)
+
+        val result = updater(
+            stateStore = stateStore,
+            routingPlanBuilder = FakeRoutingPlanBuilder(emptyPlan(proxyServerIds = listOf(PROXY_SERVER_ID))),
+            tunGateway = FakeTunGateway(routingResult = TunManager.RoutingResult(success = false)),
+        ).reapplyPhysicalRoutingForNetworkChange(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE, allowIpv6 = true)
+
+        assertEquals(PhysicalRouteUpdateResult.RequiresReconnect, result)
         assertEquals(originalState, stateStore.state)
     }
 
@@ -147,8 +178,10 @@ class ActiveRoutingUpdaterTest {
             gateway = "10.0.0.1",
             table = "main",
         ),
+        private val routingResult: TunManager.RoutingResult = TunManager.RoutingResult(success = true),
     ) : TunRoutingGateway {
         var applyRoutingCalls = 0
+        var lastAllowIpv6 = true
         var lastBypassUids: Set<Int> = emptySet()
         var lastAppTunRoutes: List<TunManager.AppTunRoute> = emptyList()
         var lastManagedAppRouteCount: Int? = null
@@ -170,17 +203,19 @@ class ActiveRoutingUpdaterTest {
             routeTable: Int,
             bypassTable: Int,
             physicalRoute: TunManager.PhysicalRoute,
+            allowIpv6: Boolean,
             bypassUids: Set<Int>,
             appTunRoutes: List<TunManager.AppTunRoute>,
             managedAppRouteCount: Int,
             routeProfileIds: Set<Int>,
         ): TunManager.RoutingResult {
             applyRoutingCalls += 1
+            lastAllowIpv6 = allowIpv6
             lastBypassUids = bypassUids
             lastAppTunRoutes = appTunRoutes
             lastManagedAppRouteCount = managedAppRouteCount
             lastRouteProfileIds = routeProfileIds
-            return TunManager.RoutingResult(success = true)
+            return routingResult
         }
     }
 
@@ -200,6 +235,15 @@ class ActiveRoutingUpdaterTest {
             corePid = CORE_PID,
             tunName = BASE_TUN,
             physicalInterface = "wlan0",
+        )
+
+        fun activeState() = XrayState(
+            xrayPid = CORE_PID,
+            tunName = BASE_TUN,
+            fwmark = FWMARK,
+            routeTable = ROUTE_TABLE,
+            appProxyServerIds = listOf(PROXY_SERVER_ID),
+            physicalInterface = "rmnet0",
         )
 
         fun emptyPlan(proxyServerIds: List<Long> = emptyList()) = AppRoutingPlan(

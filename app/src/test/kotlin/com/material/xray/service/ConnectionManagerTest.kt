@@ -185,6 +185,19 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `root connection applies configured IPv6 policy`() = runTest {
+        val harness = Harness()
+
+        harness.manager.connect(
+            server(),
+            runtimeSettings().copy(allowIpv6 = true),
+            cleanStateFirst = false,
+        )
+
+        assertTrue(harness.tunGateway.lastAllowIpv6)
+    }
+
+    @Test
     fun `active routing uses resolved TUN name instead of empty setting`() = runTest {
         val harness = Harness()
         val connectedState = ConnectionState.Connected(
@@ -312,6 +325,7 @@ class ConnectionManagerTest {
         var applyCalls = 0
         var availableWlanName: String? = "wlan0"
         var nameDetectionCalls = 0
+        var lastAllowIpv6 = false
         val detectedRouteTunNames = mutableListOf<String>()
 
         override suspend fun findAvailableWlanName(): String? {
@@ -340,12 +354,14 @@ class ConnectionManagerTest {
             routeTable: Int,
             bypassTable: Int,
             physicalRoute: TunManager.PhysicalRoute,
+            allowIpv6: Boolean,
             bypassUids: Set<Int>,
             appTunRoutes: List<TunManager.AppTunRoute>,
             managedAppRouteCount: Int,
             routeProfileIds: Set<Int>,
         ): TunManager.RoutingResult {
             applyCalls += 1
+            lastAllowIpv6 = allowIpv6
             return routingResult
         }
     }
@@ -449,6 +465,7 @@ class ConnectionManagerTest {
             tunName: String,
             fwmark: Int,
             routeTable: Int,
+            allowIpv6: Boolean,
         ): Boolean {
             lastTunName = tunName
             return false
@@ -459,6 +476,7 @@ class ConnectionManagerTest {
             tunName: String,
             fwmark: Int,
             routeTable: Int,
+            allowIpv6: Boolean,
         ): PhysicalRouteUpdateResult = PhysicalRouteUpdateResult.RequiresReconnect
     }
 

@@ -27,6 +27,7 @@ internal interface ActiveRoutingController {
         tunName: String,
         fwmark: Int,
         routeTable: Int,
+        allowIpv6: Boolean,
     ): Boolean
 
     suspend fun reapplyPhysicalRoutingForNetworkChange(
@@ -34,6 +35,7 @@ internal interface ActiveRoutingController {
         tunName: String,
         fwmark: Int,
         routeTable: Int,
+        allowIpv6: Boolean,
     ): PhysicalRouteUpdateResult
 }
 
@@ -54,6 +56,7 @@ internal interface TunRoutingGateway {
         routeTable: Int,
         bypassTable: Int,
         physicalRoute: TunManager.PhysicalRoute,
+        allowIpv6: Boolean,
         bypassUids: Set<Int>,
         appTunRoutes: List<TunManager.AppTunRoute>,
         managedAppRouteCount: Int,
@@ -94,6 +97,7 @@ internal class TunManagerRoutingGateway(
         routeTable: Int,
         bypassTable: Int,
         physicalRoute: TunManager.PhysicalRoute,
+        allowIpv6: Boolean,
         bypassUids: Set<Int>,
         appTunRoutes: List<TunManager.AppTunRoute>,
         managedAppRouteCount: Int,
@@ -104,6 +108,7 @@ internal class TunManagerRoutingGateway(
         routeTable = routeTable,
         bypassTable = bypassTable,
         physicalRoute = physicalRoute,
+        allowIpv6 = allowIpv6,
         bypassUids = bypassUids,
         appTunRoutes = appTunRoutes,
         managedAppRouteCount = managedAppRouteCount,
@@ -125,6 +130,7 @@ internal class ActiveRoutingUpdater(
         tunName: String,
         fwmark: Int,
         routeTable: Int,
+        allowIpv6: Boolean,
     ): Boolean {
         val startedAt = elapsedRealtime()
         val persistedState = stateStore.read()
@@ -185,6 +191,7 @@ internal class ActiveRoutingUpdater(
                 routeTable = routeTable,
                 bypassTable = bypassTable,
                 physicalRoute = physicalRoute,
+                allowIpv6 = allowIpv6,
                 bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
                 appTunRoutes = appRoutingPlan.tunRoutes,
                 managedAppRouteCount = persistedState.appProxyServerIds.size,
@@ -214,6 +221,7 @@ internal class ActiveRoutingUpdater(
         tunName: String,
         fwmark: Int,
         routeTable: Int,
+        allowIpv6: Boolean,
     ): PhysicalRouteUpdateResult {
         val startedAt = elapsedRealtime()
         val persistedState = stateStore.read()
@@ -269,6 +277,7 @@ internal class ActiveRoutingUpdater(
                 routeTable = routeTable,
                 bypassTable = bypassTable,
                 physicalRoute = physicalRoute,
+                allowIpv6 = allowIpv6,
                 bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
                 appTunRoutes = appRoutingPlan.tunRoutes,
                 managedAppRouteCount = persistedState.appProxyServerIds.size,

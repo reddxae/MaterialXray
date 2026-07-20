@@ -126,7 +126,21 @@ internal class ConnectionManager(
                 xrayApiEndpoint = xrayApiEndpoint,
             )
 
-            if (!finishRuntimeSetup(useRootService, tunName, fwmark, routeTable, bypassTable, physicalRouteResult.route, appRoutingPlan, pid)) return
+            if (
+                !finishRuntimeSetup(
+                    useRootService,
+                    tunName,
+                    fwmark,
+                    routeTable,
+                    bypassTable,
+                    physicalRouteResult.route,
+                    runtimeSettings.allowIpv6,
+                    appRoutingPlan,
+                    pid,
+                )
+            ) {
+                return
+            }
 
             finishSuccessfulConnection(
                 server = server,
@@ -464,12 +478,22 @@ internal class ConnectionManager(
         routeTable: Int,
         bypassTable: Int,
         physicalRoute: TunManager.PhysicalRoute?,
+        allowIpv6: Boolean,
         appRoutingPlan: AppRoutingPlan,
         pid: Int,
     ): Boolean {
         if (!waitForRootTun(useRootService, tunName, pid)) return false
         if (!waitForAppTuns(appRoutingPlan, pid)) return false
-        return applyRootRouting(useRootService, tunName, fwmark, routeTable, bypassTable, physicalRoute, appRoutingPlan)
+        return applyRootRouting(
+            useRootService,
+            tunName,
+            fwmark,
+            routeTable,
+            bypassTable,
+            physicalRoute,
+            allowIpv6,
+            appRoutingPlan,
+        )
     }
 
     private suspend fun waitForAppTuns(appRoutingPlan: AppRoutingPlan, pid: Int): Boolean {
@@ -515,6 +539,7 @@ internal class ConnectionManager(
         routeTable: Int,
         bypassTable: Int,
         physicalRoute: TunManager.PhysicalRoute?,
+        allowIpv6: Boolean,
         appRoutingPlan: AppRoutingPlan,
     ): Boolean {
         if (!useRootService) return true
@@ -531,6 +556,7 @@ internal class ConnectionManager(
                 routeTable = routeTable,
                 bypassTable = bypassTable,
                 physicalRoute = requireNotNull(physicalRoute),
+                allowIpv6 = allowIpv6,
                 bypassUids = bypassUids,
                 appTunRoutes = appRoutingPlan.tunRoutes,
                 managedAppRouteCount = appRoutingPlan.tunRoutes.size,
@@ -608,6 +634,7 @@ internal class ConnectionManager(
         tunName = connectedState.tunName,
         fwmark = runtimeSettings.fwmark,
         routeTable = runtimeSettings.routeTable,
+        allowIpv6 = runtimeSettings.allowIpv6,
     )
 
     suspend fun reapplyPhysicalRoutingForNetworkChange(
@@ -618,6 +645,7 @@ internal class ConnectionManager(
         tunName = connectedState.tunName,
         fwmark = runtimeSettings.fwmark,
         routeTable = runtimeSettings.routeTable,
+        allowIpv6 = runtimeSettings.allowIpv6,
     )
 
     suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? {

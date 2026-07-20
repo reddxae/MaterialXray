@@ -8,23 +8,23 @@ import org.junit.Test
 class DatabaseResetManagerTest {
     @Test
     fun `reset waits for active runtime states`() {
-        assertTrue(ConnectionState.Connecting.requiresRuntimeDisconnectForReset())
-        assertTrue(ConnectionState.ApplyingRoutingChanges.requiresRuntimeDisconnectForReset())
+        assertTrue(ConnectionState.Connecting.requiresRuntimeDisconnect())
+        assertTrue(ConnectionState.ApplyingRoutingChanges.requiresRuntimeDisconnect())
         assertTrue(
             ConnectionState.Connected(
                 serverName = "Server",
                 corePid = 42,
                 tunName = "xray0",
                 physicalInterface = "wlan0",
-            ).requiresRuntimeDisconnectForReset(),
+            ).requiresRuntimeDisconnect(),
         )
-        assertTrue(ConnectionState.Disconnecting.requiresRuntimeDisconnectForReset())
+        assertTrue(ConnectionState.Disconnecting.requiresRuntimeDisconnect())
     }
 
     @Test
     fun `reset can proceed from terminal states`() {
-        assertFalse(ConnectionState.Disconnected.requiresRuntimeDisconnectForReset())
-        assertFalse(ConnectionState.Error("failed").requiresRuntimeDisconnectForReset())
-        assertFalse(ConnectionState.InterfaceBusy("xray0").requiresRuntimeDisconnectForReset())
+        assertFalse(ConnectionState.Disconnected.requiresRuntimeDisconnect())
+        assertFalse(ConnectionState.Error("failed").requiresRuntimeDisconnect())
+        assertFalse(ConnectionState.InterfaceBusy("xray0").requiresRuntimeDisconnect())
     }
 }

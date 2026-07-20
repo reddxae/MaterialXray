@@ -22,11 +22,11 @@ class DatabaseResetManager @Inject constructor(
     private val stateCoordinator: ConnectionStateCoordinator,
 ) {
     suspend fun reset() {
-        if (stateCoordinator.state.value.requiresRuntimeDisconnectForReset()) {
+        if (stateCoordinator.state.value.requiresRuntimeDisconnect()) {
             XrayService.disconnect(context, force = true)
             check(
                 withTimeoutOrNull(DISCONNECT_TIMEOUT_MILLIS) {
-                    stateCoordinator.state.first { !it.requiresRuntimeDisconnectForReset() }
+                    stateCoordinator.state.first { !it.requiresRuntimeDisconnect() }
                 } != null,
             ) { "Timed out waiting for the active connection to stop" }
         }
@@ -43,7 +43,7 @@ class DatabaseResetManager @Inject constructor(
     }
 }
 
-internal fun ConnectionState.requiresRuntimeDisconnectForReset(): Boolean = when (this) {
+internal fun ConnectionState.requiresRuntimeDisconnect(): Boolean = when (this) {
     ConnectionState.Connecting,
     ConnectionState.ApplyingRoutingChanges,
     ConnectionState.UpdatingRoutingData,

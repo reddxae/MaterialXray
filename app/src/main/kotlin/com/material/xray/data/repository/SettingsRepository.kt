@@ -249,6 +249,16 @@ class SettingsRepository @Inject constructor(
     suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
     suspend fun setAllowIpv6(enabled: Boolean) = store.edit { it[ALLOW_IPV6] = enabled }
     suspend fun setLastServerId(id: Long) = store.edit { it[LAST_SERVER_ID] = id }
+    suspend fun compareAndSetLastServerId(expectedId: Long, id: Long): Boolean {
+        var updated = false
+        store.edit { preferences ->
+            if ((preferences[LAST_SERVER_ID] ?: -1L) == expectedId) {
+                preferences[LAST_SERVER_ID] = id
+                updated = true
+            }
+        }
+        return updated
+    }
     suspend fun setXrayLogLevel(level: XrayLogLevel) = store.edit { prefs ->
         prefs[XRAY_LOG_LEVEL] = level.value
         prefs[LAST_XRAY_LOG_LEVEL] = level.value

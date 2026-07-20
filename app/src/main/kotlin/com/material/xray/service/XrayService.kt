@@ -565,17 +565,24 @@ class XrayService : VpnService() {
         val restoredState = detectRestorableRunningConnection()
         if (restoredState == null) {
             logBuffer.append(LogSource.APP, "No restorable running Xray state was found")
-            if (connectionStateCoordinator.state.value !is ConnectionState.Connected) {
-                connectionStateCoordinator.markDisconnected()
-                updateNotification()
-                stopSelf()
-            }
+            connectionStateCoordinator.markDisconnected()
+            updateNotification()
+            stopSelf()
             return
         }
 
-        activeConfig = loadLastServerConfig()
+        val restoredServerId = settingsRepo.lastServerId.first()
+        activeConfig = loadServerConfig(restoredServerId)
         if (activeConfig == null) {
-            logBuffer.append(LogSource.APP, "Restored running status without selected server config")
+            logBuffer.append(LogSource.APP, "Stopping restored Xray runtime without selected server config")
+            connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+            if (restoredServerId >= 0) {
+                settingsRepo.compareAndSetLastServerId(restoredServerId, -1)
+            }
+            connectionStateCoordinator.markDisconnected()
+            updateNotification()
+            stopSelf()
+            return
         }
         if (!connectionManager.restoreRootApiClients()) {
             val config = activeConfig
@@ -631,8 +638,12 @@ class XrayService : VpnService() {
 
     private suspend fun loadLastServerConfig(): ServerConfig? {
         val lastServerId = settingsRepo.lastServerId.first()
-        if (lastServerId < 0) return null
-        val serverEntity = serverRepository.getById(lastServerId) ?: return null
+        return loadServerConfig(lastServerId)
+    }
+
+    private suspend fun loadServerConfig(serverId: Long): ServerConfig? {
+        if (serverId < 0) return null
+        val serverEntity = serverRepository.getById(serverId) ?: return null
         return runCatching { serverRepository.parseConfig(serverEntity) }.getOrNull()
     }
 

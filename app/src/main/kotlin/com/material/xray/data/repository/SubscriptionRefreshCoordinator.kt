@@ -3,9 +3,16 @@ package com.material.xray.data.repository
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
+import com.material.xray.service.ConnectionShutdownManager
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 @Singleton
 class SubscriptionRefreshCoordinator @Inject constructor(
@@ -14,50 +21,57 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val appBypassDao: AppBypassDao,
     private val providerRoutingCoordinator: ProviderRoutingCoordinator,
+    private val connectionShutdownManager: ConnectionShutdownManager,
+    private val serverSelectionCoordinator: ServerSelectionCoordinator,
 ) {
-    suspend fun refreshAll(): SubscriptionRepository.RefreshBatchResult {
-        val selectedBeforeRefresh = selectedServerEntity()
-        val result = subscriptionRepository.refreshAll()
-        syncAppRoutesAfterRefreshResults(result.successes)
-        syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, result.successes)
-        refreshProviderRoutingAfterRefreshResults(selectedBeforeRefresh, result.successes)
-        return result
+    private val operationMutex = Mutex()
+
+    suspend fun refreshAll(): SubscriptionRepository.RefreshBatchResult = operationMutex.withLock {
+        refreshSubscriptions(subscriptionRepository.getAllSubscriptions())
     }
 
     suspend fun refreshDueSubscriptions(
         nowMillis: Long = System.currentTimeMillis(),
-    ): SubscriptionRepository.RefreshBatchResult {
-        val selectedBeforeRefresh = selectedServerEntity()
-        val result = subscriptionRepository.refreshDueSubscriptions(nowMillis)
-        syncAppRoutesAfterRefreshResults(result.successes)
-        syncSelectedServerAfterRefreshResults(selectedBeforeRefresh, result.successes)
-        refreshProviderRoutingAfterRefreshResults(selectedBeforeRefresh, result.successes)
-        return result
+    ): SubscriptionRepository.RefreshBatchResult = operationMutex.withLock {
+        refreshSubscriptions(subscriptionRepository.getAllSubscriptions().filter { it.isDueForRefresh(nowMillis) })
     }
 
     suspend fun refreshSubscription(
         subId: Long,
         url: String,
-    ): SubscriptionRepository.RefreshResult? {
-        val selectedBeforeRefresh = selectedServerEntity()
-        val result = subscriptionRepository.refresh(subId, url)
-        syncAppRoutesAfterRefresh(result)
-        syncSelectedServerAfterRefresh(selectedBeforeRefresh, subId, result)
-        refreshProviderRoutingAfterRefresh(selectedBeforeRefresh, subId, result)
-        return result
+    ): SubscriptionRepository.RefreshResult? = operationMutex.withLock {
+        refreshSubscriptionLocked(subId, url)
     }
 
     suspend fun updateSubscription(
         sub: SubscriptionEntity,
         name: String,
         url: String,
-    ): SubscriptionRepository.RefreshResult? {
-        val selectedBeforeRefresh = selectedServerEntity()
-        val result = subscriptionRepository.update(sub, name, url)
-        syncAppRoutesAfterRefresh(result)
-        syncSelectedServerAfterRefresh(selectedBeforeRefresh, sub.id, result)
-        refreshProviderRoutingAfterRefresh(selectedBeforeRefresh, sub.id, result)
-        return result
+    ): SubscriptionRepository.RefreshResult? = operationMutex.withLock {
+        subscriptionRepository.withRefreshLock(sub.id) {
+            val updated = subscriptionRepository.updateBeforeRefresh(sub, name, url)
+            val prepared = subscriptionRepository.prepareRefresh(updated.id, updated.url) ?: return@withRefreshLock null
+            commitRefresh(prepared)
+        }
+    }
+
+    suspend fun deleteSubscription(subscription: SubscriptionEntity) = operationMutex.withLock {
+        serverSelectionCoordinator.withSelectionLock {
+            val selectedServer = selectedServerEntity()
+            val removedSelectedServerId = selectedServer
+                ?.takeIf { it.subscriptionId == subscription.id }
+                ?.id
+            if (removedSelectedServerId != null) {
+                connectionShutdownManager.disconnectIfRunning()
+            }
+
+            withContext(NonCancellable) {
+                subscriptionRepository.delete(subscription)
+                if (removedSelectedServerId != null) {
+                    settingsRepository.compareAndSetLastServerId(removedSelectedServerId, -1)
+                }
+            }
+        }
     }
 
     private suspend fun selectedServerEntity(): ServerEntity? {
@@ -66,26 +80,45 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         return serverRepository.getById(id)
     }
 
-    private suspend fun syncSelectedServerAfterRefreshResults(
-        selectedBeforeRefresh: ServerEntity?,
-        refreshResults: Map<Long, SubscriptionRepository.RefreshResult>,
-    ) {
-        selectedBeforeRefresh?.let { previousServer ->
-            refreshResults[previousServer.subscriptionId]?.let { refreshResult ->
-                syncSelectedServerAfterRefresh(
-                    selectedBeforeRefresh = previousServer,
-                    refreshedSubscriptionId = previousServer.subscriptionId,
-                    refreshResult = refreshResult,
-                )
+    private suspend fun refreshSubscriptions(
+        subscriptions: List<SubscriptionEntity>,
+    ): SubscriptionRepository.RefreshBatchResult {
+        val successes = mutableMapOf<Long, SubscriptionRepository.RefreshResult>()
+        val failures = mutableMapOf<Long, IOException>()
+        subscriptions.forEach { subscription ->
+            try {
+                refreshSubscriptionLocked(subscription.id, subscription.url)?.let { result ->
+                    successes[subscription.id] = result
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: IOException) {
+                failures[subscription.id] = error
             }
         }
+        return SubscriptionRepository.RefreshBatchResult(successes = successes, failures = failures)
     }
 
-    private suspend fun syncAppRoutesAfterRefreshResults(
-        refreshResults: Map<Long, SubscriptionRepository.RefreshResult>,
-    ) {
-        refreshResults.values.forEach { refreshResult ->
-            syncAppRoutesAfterRefresh(refreshResult)
+    private suspend fun refreshSubscriptionLocked(
+        subscriptionId: Long,
+        url: String,
+    ): SubscriptionRepository.RefreshResult? = subscriptionRepository.withRefreshLock(subscriptionId) {
+        val prepared = subscriptionRepository.prepareRefresh(subscriptionId, url) ?: return@withRefreshLock null
+        commitRefresh(prepared)
+    }
+
+    private suspend fun commitRefresh(
+        prepared: SubscriptionRepository.PreparedRefresh,
+    ): SubscriptionRepository.RefreshResult? = serverSelectionCoordinator.withSelectionLock {
+        val selectedBeforeRefresh = selectedServerEntity()
+        withContext(NonCancellable) {
+            val result = subscriptionRepository.commitRefresh(prepared) ?: return@withContext null
+            syncSelectedServerAfterRefresh(selectedBeforeRefresh, result)
+            syncAppRoutesAfterRefresh(result)
+            if (selectedBeforeRefresh?.subscriptionId == result.subscriptionId) {
+                providerRoutingCoordinator.refreshSelectedServer()
+            }
+            result
         }
     }
 
@@ -99,37 +132,48 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         }
     }
 
-    private suspend fun refreshProviderRoutingAfterRefreshResults(
-        selectedBeforeRefresh: ServerEntity?,
-        refreshResults: Map<Long, SubscriptionRepository.RefreshResult>,
-    ) {
-        val selectedSubscriptionId = selectedBeforeRefresh?.subscriptionId ?: return
-        if (selectedSubscriptionId in refreshResults) {
-            providerRoutingCoordinator.refreshSelectedServer()
-        }
-    }
-
-    private suspend fun refreshProviderRoutingAfterRefresh(
-        selectedBeforeRefresh: ServerEntity?,
-        refreshedSubscriptionId: Long,
-        refreshResult: SubscriptionRepository.RefreshResult?,
-    ) {
-        if (refreshResult != null && selectedBeforeRefresh?.subscriptionId == refreshedSubscriptionId) {
-            providerRoutingCoordinator.refreshSelectedServer()
-        }
-    }
-
     private suspend fun syncSelectedServerAfterRefresh(
         selectedBeforeRefresh: ServerEntity?,
-        refreshedSubscriptionId: Long,
-        refreshResult: SubscriptionRepository.RefreshResult?,
+        refreshResult: SubscriptionRepository.RefreshResult,
     ) {
-        if (selectedBeforeRefresh?.subscriptionId != refreshedSubscriptionId) return
+        val selectedServer = selectedBeforeRefresh ?: return
+        if (settingsRepository.lastServerId.first() != selectedServer.id) return
 
-        val replacementId = refreshResult?.serverIdReplacements?.get(selectedBeforeRefresh.id) ?: -1L
-
-        if (replacementId != selectedBeforeRefresh.id) {
-            settingsRepository.setLastServerId(replacementId)
+        when (val outcome = selectedServerRefreshOutcome(selectedServer, refreshResult.subscriptionId, refreshResult)) {
+            SelectedServerRefreshOutcome.Unchanged -> Unit
+            SelectedServerRefreshOutcome.Removed -> {
+                try {
+                    connectionShutdownManager.disconnectIfRunning()
+                } finally {
+                    settingsRepository.compareAndSetLastServerId(selectedServer.id, -1)
+                }
+            }
+            is SelectedServerRefreshOutcome.Replaced -> {
+                settingsRepository.compareAndSetLastServerId(selectedServer.id, outcome.serverId)
+            }
         }
+    }
+}
+
+internal sealed interface SelectedServerRefreshOutcome {
+    data object Unchanged : SelectedServerRefreshOutcome
+    data object Removed : SelectedServerRefreshOutcome
+    data class Replaced(val serverId: Long) : SelectedServerRefreshOutcome
+}
+
+internal fun selectedServerRefreshOutcome(
+    selectedServer: ServerEntity?,
+    refreshedSubscriptionId: Long,
+    refreshResult: SubscriptionRepository.RefreshResult?,
+): SelectedServerRefreshOutcome {
+    if (selectedServer?.subscriptionId != refreshedSubscriptionId) {
+        return SelectedServerRefreshOutcome.Unchanged
+    }
+    val replacementId = refreshResult?.serverIdReplacements?.get(selectedServer.id)
+        ?: return SelectedServerRefreshOutcome.Removed
+    return if (replacementId == selectedServer.id) {
+        SelectedServerRefreshOutcome.Unchanged
+    } else {
+        SelectedServerRefreshOutcome.Replaced(replacementId)
     }
 }

@@ -16,6 +16,7 @@ import com.material.xray.data.repository.AppUpdateRepository
 import com.material.xray.data.repository.ProviderRoutingActiveUpdate
 import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.ServerRepository
+import com.material.xray.data.repository.ServerSelectionCoordinator
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.data.repository.SubscriptionRefreshCoordinator
@@ -116,6 +117,7 @@ class HomeViewModel @Inject constructor(
     private val subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
     private val subscriptionRoutingRepository: SubscriptionRoutingRepository,
     private val subscriptionRefreshCoordinator: SubscriptionRefreshCoordinator,
+    private val serverSelectionCoordinator: ServerSelectionCoordinator,
     private val providerRoutingCoordinator: ProviderRoutingCoordinator,
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
     private val connectionStateCoordinator: ConnectionStateCoordinator,
@@ -290,20 +292,22 @@ class HomeViewModel @Inject constructor(
 
     fun selectServer(serverId: Long) {
         viewModelScope.launch {
-            if (serverId == selectedServerId.value) return@launch
-            settingsRepo.setLastServerId(serverId)
-            val serverEntity = allServers.value.find { it.id == serverId }
-            providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
+            serverSelectionCoordinator.withSelectionLock {
+                if (serverId == settingsRepo.lastServerId.first()) return@withSelectionLock
+                val serverEntity = serverRepo.getById(serverId) ?: return@withSelectionLock
+                val config = runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull()
+                    ?: return@withSelectionLock
+                settingsRepo.setLastServerId(serverId)
+                providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
 
-            val state = connectionState.value
-            if (state is ConnectionState.Connected || state is ConnectionState.Error) {
-                serverEntity ?: return@launch
-                val config = runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull() ?: return@launch
-                routingChangeManager.clearPendingChanges()
-                if (state is ConnectionState.Connected) {
-                    XrayService.switchServer(context, config)
-                } else {
-                    XrayService.connect(context, config)
+                val state = connectionState.value
+                if (state is ConnectionState.Connected || state is ConnectionState.Error) {
+                    routingChangeManager.clearPendingChanges()
+                    if (state is ConnectionState.Connected) {
+                        XrayService.switchServer(context, config)
+                    } else {
+                        XrayService.connect(context, config)
+                    }
                 }
             }
         }
@@ -353,7 +357,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun deleteSubscription(sub: SubscriptionEntity) {
-        viewModelScope.launch { subscriptionRepo.delete(sub) }
+        viewModelScope.launch { subscriptionRefreshCoordinator.deleteSubscription(sub) }
     }
 
     fun updateSubscription(

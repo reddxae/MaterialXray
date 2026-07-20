@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.material.xray.model.BackupData
 
 internal val SETTINGS_DEFAULTS_REVISION = intPreferencesKey("__settings_defaults_revision")
@@ -23,6 +24,17 @@ internal fun <T> settingDefaultChange(
 
     override fun apply(preferences: MutablePreferences) {
         if (preferences[key] == previousDefault) preferences.remove(key)
+    }
+}
+
+internal fun <T> removedSettingChange(
+    revision: Int,
+    key: Preferences.Key<T>,
+): SettingDefaultChange = object : SettingDefaultChange {
+    override val revision = revision
+
+    override fun apply(preferences: MutablePreferences) {
+        preferences.remove(key)
     }
 }
 
@@ -88,11 +100,11 @@ private fun validateSettingsDefaultsRevision(
     }
 }
 
-private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 2
+private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 3
 private const val PREVIOUS_XRAY_BUFFER_SIZE_KIB = 512
 private const val PREVIOUS_TUN_NAME = "xray0"
 
-// Increment the revision and record the previous value whenever a compiled default changes.
+// Increment the revision and append a change whenever a compiled default changes or a setting is retired.
 private val SETTINGS_DEFAULT_CHANGES = listOf(
     settingDefaultChange(
         revision = 1,
@@ -103,5 +115,9 @@ private val SETTINGS_DEFAULT_CHANGES = listOf(
         revision = 2,
         key = SettingsRepository.TUN_NAME,
         previousDefault = PREVIOUS_TUN_NAME,
+    ),
+    removedSettingChange(
+        revision = 3,
+        key = stringPreferencesKey("latency_dns_servers"),
     ),
 )

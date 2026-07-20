@@ -14,8 +14,6 @@
     <string name="settings_dns_servers_supporting_text">Comma-separated, e.g. 1.1.1.1,1.0.0.1</string>
     <string name="settings_domestic_dns_label">Domestic DNS</string>
     <string name="settings_domestic_dns_supporting_text">Used for direct domestic domains, e.g. 77.88.8.8,77.88.8.1</string>
-    <string name="settings_latency_dns_servers_label">Latency DNS Servers</string>
-    <string name="settings_latency_dns_servers_supporting_text">Used only for node latency checks, e.g. 77.88.8.8,77.88.8.1</string>
     <string name="settings_sort_outbounds_by_latency_title">Sort subscription servers by latency</string>
     <string name="settings_sort_outbounds_by_latency_description">List reachable servers from fastest to slowest and unavailable servers last</string>
     <string name="settings_xray_log_level_label">Xray Log Level</string>

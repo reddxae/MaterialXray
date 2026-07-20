@@ -47,7 +47,6 @@ class SettingsRepository @Inject constructor(
         val TUN_NAME = stringPreferencesKey("tun_name")
         val DNS_SERVERS = stringPreferencesKey("dns_servers")
         val DOMESTIC_DNS_SERVERS = stringPreferencesKey("domestic_dns_servers")
-        val LATENCY_DNS_SERVERS = stringPreferencesKey("latency_dns_servers")
         val FWMARK = intPreferencesKey("fwmark")
         val ROUTE_TABLE = intPreferencesKey("route_table")
         val XRAY_BUFFER_SIZE_KIB = intPreferencesKey("xray_buffer_size_kib")
@@ -98,7 +97,6 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_LATENCY_CHECK_URL = "https://gstatic.com/generate_204"
         const val DEFAULT_DNS_SERVERS = "1.1.1.1,1.0.0.1"
         const val DEFAULT_DOMESTIC_DNS_SERVERS = "77.88.8.8,77.88.8.1"
-        const val DEFAULT_LATENCY_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         const val DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED = true
         const val DEFAULT_TUN_NAME = ""
     }
@@ -108,7 +106,6 @@ class SettingsRepository @Inject constructor(
     val domesticDnsServers: Flow<String> = store.data.map {
         it[DOMESTIC_DNS_SERVERS] ?: DEFAULT_DOMESTIC_DNS_SERVERS
     }
-    val latencyDnsServers: Flow<String> = store.data.map { it[LATENCY_DNS_SERVERS] ?: DEFAULT_LATENCY_DNS_SERVERS }
     val fwmark: Flow<Int> = store.data.map { it[FWMARK] ?: 255 }
     val routeTable: Flow<Int> = store.data.map { it[ROUTE_TABLE] ?: 100 }
     val xrayBufferSizeKiB: Flow<Int> = store.data.map { prefs ->
@@ -233,7 +230,6 @@ class SettingsRepository @Inject constructor(
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
     suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }
     suspend fun setDomesticDnsServers(servers: String) = store.edit { it[DOMESTIC_DNS_SERVERS] = servers }
-    suspend fun setLatencyDnsServers(servers: String) = store.edit { it[LATENCY_DNS_SERVERS] = servers }
     suspend fun setXrayBufferSizeKiB(bufferSizeKiB: Int) {
         require(XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB))
         store.edit { it[XRAY_BUFFER_SIZE_KIB] = bufferSizeKiB }
@@ -380,7 +376,6 @@ class SettingsRepository @Inject constructor(
             map["tun_name"]?.let { prefs[TUN_NAME] = it }
             map["dns_servers"]?.let { prefs[DNS_SERVERS] = it }
             map["domestic_dns_servers"]?.let { prefs[DOMESTIC_DNS_SERVERS] = it }
-            map["latency_dns_servers"]?.let { prefs[LATENCY_DNS_SERVERS] = it }
             map["fwmark"]?.let { prefs[FWMARK] = it.toIntOrNull() ?: 255 }
             map["route_table"]?.let { prefs[ROUTE_TABLE] = it.toIntOrNull() ?: 100 }
             map["xray_buffer_size_kib"]

@@ -575,7 +575,8 @@ class HomeViewModel @Inject constructor(
             server = config,
             method = method,
             probeUrl = settingsRepo.latencyCheckUrl.first(),
-            dnsServers = settingsRepo.latencyDnsServers.first(),
+            dnsServers = settingsRepo.dnsServers.first(),
+            domesticDnsServers = settingsRepo.domesticDnsServers.first(),
             allowIpv6 = settingsRepo.allowIpv6.first(),
         ).toUiState()
     }

@@ -56,6 +56,16 @@ internal suspend fun measureBestHttpLatency(
     return best
 }
 
+internal fun mergeDnsServerSettings(
+    dnsServers: String,
+    domesticDnsServers: String,
+): String = sequenceOf(dnsServers, domesticDnsServers)
+    .flatMap { it.splitToSequence(',') }
+    .map(String::trim)
+    .filter(String::isNotEmpty)
+    .distinct()
+    .joinToString(",")
+
 private suspend fun executeTimedHttpProbe(
     client: OkHttpClient,
     request: Request,
@@ -106,6 +116,7 @@ class ServerLatencyTester @Inject constructor(
         method: PingMethod,
         probeUrl: String,
         dnsServers: String,
+        domesticDnsServers: String,
         allowIpv6: Boolean,
     ): LatencyProbeResult = withContext(Dispatchers.IO) {
         withTimeoutOrNull(TEST_TIMEOUT_MS) {
@@ -118,7 +129,7 @@ class ServerLatencyTester @Inject constructor(
                                 method = PingMethod.Httping,
                             ),
                         probeUrl = probeUrl.trim().ifBlank { DEFAULT_PROBE_URL },
-                        dnsServers = dnsServers.ifBlank { DEFAULT_DNS_SERVERS },
+                        dnsServers = mergeDnsServerSettings(dnsServers, domesticDnsServers),
                         allowIpv6 = allowIpv6,
                     )
                     LatencyProbeResult(
@@ -375,7 +386,6 @@ class ServerLatencyTester @Inject constructor(
 
     private companion object {
         const val DEFAULT_PROBE_URL = "https://gstatic.com/generate_204"
-        const val DEFAULT_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         const val TEST_TIMEOUT_MS = 12_000L
         const val HTTP_TIMEOUT_MS = 8_000L
         const val TCPING_ATTEMPTS = 2

@@ -39,11 +39,11 @@ class XrayConfigRoutingTest {
 
     @Test
     fun `buildDns tags configured default servers for routing`() {
-        val dns = buildDns(servers = "1.1.1.1, 8.8.8.8")
+        val dns = buildDns(servers = "1.1.1.1, 8.8.8.8, 77.88.8.8, 77.88.8.1")
 
         assertEquals("default-dns", dns.getValue("tag").jsonPrimitive.content)
         assertEquals(
-            listOf("1.1.1.1", "8.8.8.8"),
+            listOf("1.1.1.1", "8.8.8.8", "77.88.8.8", "77.88.8.1"),
             dns.getValue("servers").jsonArray.map { it.jsonPrimitive.content },
         )
     }

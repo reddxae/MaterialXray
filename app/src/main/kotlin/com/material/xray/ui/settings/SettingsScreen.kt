@@ -118,7 +118,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val tunName by viewModel.tunName.collectAsStateWithLifecycle()
     val dnsServers by viewModel.dnsServers.collectAsStateWithLifecycle()
     val domesticDnsServers by viewModel.domesticDnsServers.collectAsStateWithLifecycle()
-    val latencyDnsServers by viewModel.latencyDnsServers.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
     val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
     val rootAvailable by viewModel.rootAvailable.collectAsStateWithLifecycle()
@@ -175,7 +174,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     }
     var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
     var editingDomesticDns by remember(domesticDnsServers) { mutableStateOf(domesticDnsServers) }
-    var editingLatencyDns by remember(latencyDnsServers) { mutableStateOf(latencyDnsServers) }
     var editingGeoipUrl by remember(geoipUrl) { mutableStateOf(geoipUrl) }
     var editingGeositeUrl by remember(geositeUrl) { mutableStateOf(geositeUrl) }
     var editingLatencyCheckUrl by remember(latencyCheckUrl) { mutableStateOf(latencyCheckUrl) }
@@ -215,9 +213,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val hasDnsChanges by remember(editingDns, dnsServers) { derivedStateOf { editingDns != dnsServers } }
     val hasDomesticDnsChanges by remember(editingDomesticDns, domesticDnsServers) {
         derivedStateOf { editingDomesticDns != domesticDnsServers }
-    }
-    val hasLatencyDnsChanges by remember(editingLatencyDns, latencyDnsServers) {
-        derivedStateOf { editingLatencyDns != latencyDnsServers }
     }
     val hasGeoipUrlChanges by remember(editingGeoipUrl, geoipUrl) {
         derivedStateOf { editingGeoipUrl.trim() != geoipUrl }
@@ -549,21 +544,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
             if (hasDomesticDnsChanges) {
                 Button(onClick = { viewModel.setDomesticDnsServers(editingDomesticDns) }) {
-                    Text(stringResource(R.string.settings_save))
-                }
-            }
-
-            OutlinedTextField(
-                value = editingLatencyDns,
-                onValueChange = { editingLatencyDns = it },
-                label = { Text(stringResource(R.string.settings_latency_dns_servers_label)) },
-                placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text(stringResource(R.string.settings_latency_dns_servers_supporting_text)) },
-            )
-            if (hasLatencyDnsChanges) {
-                Button(onClick = { viewModel.setLatencyDnsServers(editingLatencyDns) }) {
                     Text(stringResource(R.string.settings_save))
                 }
             }

@@ -14,6 +14,32 @@ import org.junit.Test
 class ServerLatencyTesterTest {
 
     @Test
+    fun `latency DNS includes every configured primary and domestic server`() {
+        val servers = mergeDnsServerSettings(
+            dnsServers = "1.1.1.1, 1.0.0.1",
+            domesticDnsServers = "77.88.8.8,77.88.8.1,1.1.1.1",
+        )
+
+        assertEquals("1.1.1.1,1.0.0.1,77.88.8.8,77.88.8.1", servers)
+    }
+
+    @Test
+    fun `latency DNS uses domestic servers when primary servers are empty`() {
+        assertEquals(
+            "77.88.8.8,77.88.8.1",
+            mergeDnsServerSettings(
+                dnsServers = "",
+                domesticDnsServers = "77.88.8.8,77.88.8.1",
+            ),
+        )
+    }
+
+    @Test
+    fun `latency DNS leaves server list empty for system fallback`() {
+        assertEquals("", mergeDnsServerSettings(dnsServers = "", domesticDnsServers = ""))
+    }
+
+    @Test
     fun `HTTP probe returns fastest of two successful attempts`() = runTest {
         val responses = ArrayDeque(listOf(200, 204))
         var requestCount = 0

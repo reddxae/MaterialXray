@@ -93,12 +93,6 @@ class SettingsViewModel @Inject constructor(
             SharingStarted.WhileSubscribed(5000),
             SettingsRepository.DEFAULT_DOMESTIC_DNS_SERVERS,
         )
-    val latencyDnsServers =
-        settingsRepo.latencyDnsServers.stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            SettingsRepository.DEFAULT_LATENCY_DNS_SERVERS,
-        )
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val useRootService = settingsRepo.useRootService.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val bypassLan = settingsRepo.bypassLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
@@ -203,7 +197,6 @@ class SettingsViewModel @Inject constructor(
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
     fun setDnsServers(servers: String) = updateXrayConfigStringSetting(servers, dnsServers.value, settingsRepo::setDnsServers)
     fun setDomesticDnsServers(servers: String) = updateXrayConfigStringSetting(servers, domesticDnsServers.value, settingsRepo::setDomesticDnsServers)
-    fun setLatencyDnsServers(servers: String) = viewModelScope.launch { settingsRepo.setLatencyDnsServers(servers) }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
     fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
         if (enabled == useRootService.value) return@launch

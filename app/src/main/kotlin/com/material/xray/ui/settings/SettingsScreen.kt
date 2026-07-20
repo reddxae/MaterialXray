@@ -1408,7 +1408,7 @@ private fun RootTunNameSetting(
         label = { Text(stringResource(R.string.settings_tun_interface_name_label)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
-        supportingText = { Text(stringResource(R.string.settings_tun_interface_name_default, "xray0")) },
+        supportingText = { Text(stringResource(R.string.settings_tun_interface_name_automatic)) },
     )
     if (hasTunNameChanges) {
         Button(onClick = onSave) { Text(stringResource(R.string.settings_save)) }

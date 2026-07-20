@@ -76,7 +76,11 @@ class SettingsViewModel @Inject constructor(
     private val _xrayCoreVersion = MutableStateFlow<String?>(null)
     private var preparedBackupImport: PreparedBackupImport? = null
 
-    val tunName = settingsRepo.tunName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "xray0")
+    val tunName = settingsRepo.tunName.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        SettingsRepository.DEFAULT_TUN_NAME,
+    )
     val dnsServers =
         settingsRepo.dnsServers.stateIn(
             viewModelScope,

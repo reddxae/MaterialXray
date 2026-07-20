@@ -18,7 +18,7 @@ class SettingsDefaultMigrationTest {
         val migrated = migration.migrate(preferences)
 
         assertNull(migrated[SettingsRepository.XRAY_BUFFER_SIZE_KIB])
-        assertEquals(1, migrated[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(2, migrated[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
@@ -31,19 +31,29 @@ class SettingsDefaultMigrationTest {
     }
 
     @Test
+    fun `previous TUN name default is removed for automatic selection`() = runTest {
+        val preferences = mutablePreferencesOf(SettingsRepository.TUN_NAME to "xray0")
+
+        val migrated = SettingsDefaultMigration().migrate(preferences)
+
+        assertNull(migrated[SettingsRepository.TUN_NAME])
+        assertEquals(2, migrated[SETTINGS_DEFAULTS_REVISION])
+    }
+
+    @Test
     fun `future boolean default change migrates matching stored value`() = runTest {
         val change = settingDefaultChange(
-            revision = 2,
+            revision = 3,
             key = SettingsRepository.PASSIVE_HEALTH_MONITORING_ENABLED,
             previousDefault = true,
         )
-        val migration = SettingsDefaultMigration(currentRevision = 2, changes = listOf(change))
+        val migration = SettingsDefaultMigration(currentRevision = 3, changes = listOf(change))
         val matching = mutablePreferencesOf(
-            SETTINGS_DEFAULTS_REVISION to 1,
+            SETTINGS_DEFAULTS_REVISION to 2,
             SettingsRepository.PASSIVE_HEALTH_MONITORING_ENABLED to true,
         )
         val different = mutablePreferencesOf(
-            SETTINGS_DEFAULTS_REVISION to 1,
+            SETTINGS_DEFAULTS_REVISION to 2,
             SettingsRepository.PASSIVE_HEALTH_MONITORING_ENABLED to false,
         )
 
@@ -52,12 +62,12 @@ class SettingsDefaultMigrationTest {
 
         assertNull(migratedMatching[SettingsRepository.PASSIVE_HEALTH_MONITORING_ENABLED])
         assertFalse(requireNotNull(migratedDifferent[SettingsRepository.PASSIVE_HEALTH_MONITORING_ENABLED]))
-        assertEquals(2, migratedMatching[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(3, migratedMatching[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
     fun `current revision does not rerun migrations`() = runTest {
-        val preferences = mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 1)
+        val preferences = mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 2)
 
         assertFalse(SettingsDefaultMigration().shouldMigrate(preferences))
     }
@@ -75,7 +85,7 @@ class SettingsDefaultMigrationTest {
     @Test(expected = IllegalArgumentException::class)
     fun `DataStore lifecycle rejects newer settings revision`() = runTest {
         SettingsDefaultMigration().shouldMigrate(
-            mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 2),
+            mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 3),
         )
     }
 

@@ -38,6 +38,8 @@ internal interface ActiveRoutingController {
 }
 
 internal interface TunRoutingGateway {
+    suspend fun findAvailableWlanName(): String?
+
     suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute?
 
     suspend fun configureTun(
@@ -76,6 +78,8 @@ internal class StateFileRoutingStateStore(
 internal class TunManagerRoutingGateway(
     private val tunManager: TunManager,
 ) : TunRoutingGateway {
+    override suspend fun findAvailableWlanName(): String? = tunManager.findAvailableWlanName()
+
     override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? = tunManager.detectPhysicalRoute(tunName)
 
     override suspend fun configureTun(

@@ -3,6 +3,7 @@
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="connection_error_missing_process_id">Не удалось определить идентификатор процесса Xray после запуска</string>
     <string name="connection_error_root_access_denied">В root-доступе отказано</string>
+    <string name="connection_error_tun_name_detection">Не удалось проверить сетевые интерфейсы для выбора имени интерфейса TUN</string>
     <string name="connection_error_vpn_permission_required">Требуется разрешение на использование VPN</string>
     <string name="connection_error_vpn_interface">Не удалось создать интерфейс VPN</string>
     <string name="connection_error_no_server_selected">Выберите сервер перед использованием постоянной VPN</string>

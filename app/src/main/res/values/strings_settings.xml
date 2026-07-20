@@ -95,7 +95,7 @@
     <string name="settings_xray_core_version_unknown">xray-core version unknown</string>
     <string name="settings_xray_core_version">xray-core v%1$s</string>
     <string name="settings_tun_interface_name_label">TUN Interface Name</string>
-    <string name="settings_tun_interface_name_default">Default: %1$s</string>
+    <string name="settings_tun_interface_name_automatic">Leave empty to use the first available wlan interface name</string>
     <string name="settings_done">Done</string>
     <string name="settings_milliseconds_abbreviation" translatable="false">ms</string>
     <string name="settings_kib_abbreviation" translatable="false">KiB</string>

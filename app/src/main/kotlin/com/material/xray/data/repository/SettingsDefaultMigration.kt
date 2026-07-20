@@ -88,8 +88,9 @@ private fun validateSettingsDefaultsRevision(
     }
 }
 
-private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 1
+private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 2
 private const val PREVIOUS_XRAY_BUFFER_SIZE_KIB = 512
+private const val PREVIOUS_TUN_NAME = "xray0"
 
 // Increment the revision and record the previous value whenever a compiled default changes.
 private val SETTINGS_DEFAULT_CHANGES = listOf(
@@ -97,5 +98,10 @@ private val SETTINGS_DEFAULT_CHANGES = listOf(
         revision = 1,
         key = SettingsRepository.XRAY_BUFFER_SIZE_KIB,
         previousDefault = PREVIOUS_XRAY_BUFFER_SIZE_KIB,
+    ),
+    settingDefaultChange(
+        revision = 2,
+        key = SettingsRepository.TUN_NAME,
+        previousDefault = PREVIOUS_TUN_NAME,
     ),
 )

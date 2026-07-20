@@ -3,6 +3,7 @@
     <string name="error_unknown">Unknown error</string>
     <string name="connection_error_missing_process_id">Could not determine Xray process ID after launch</string>
     <string name="connection_error_root_access_denied">Root access denied</string>
+    <string name="connection_error_tun_name_detection">Could not inspect network interfaces to choose a TUN interface name</string>
     <string name="connection_error_vpn_permission_required">VPN permission is required</string>
     <string name="connection_error_vpn_interface">Could not establish VPN interface</string>
     <string name="connection_error_no_server_selected">Select a server before using always-on VPN</string>

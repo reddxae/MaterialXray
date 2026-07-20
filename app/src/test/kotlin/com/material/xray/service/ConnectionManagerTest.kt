@@ -154,6 +154,54 @@ class ConnectionManagerTest {
         )
     }
 
+    @Test
+    fun `root connection resolves an empty TUN name to an available wlan name`() = runTest {
+        val harness = Harness().apply { tunGateway.availableWlanName = "wlan2" }
+
+        harness.manager.connect(
+            server(),
+            runtimeSettings().copy(tunName = ""),
+            cleanStateFirst = false,
+        )
+
+        assertEquals(1, harness.tunGateway.nameDetectionCalls)
+        assertEquals(listOf("wlan2"), harness.tunGateway.detectedRouteTunNames)
+        assertEquals("wlan2", harness.stateStore.state?.tunName)
+        assertEquals("wlan2", (harness.stateCoordinator.state.value as ConnectionState.Connected).tunName)
+    }
+
+    @Test
+    fun `root connection preserves a custom TUN name`() = runTest {
+        val harness = Harness()
+
+        harness.manager.connect(
+            server(),
+            runtimeSettings().copy(tunName = "custom0"),
+            cleanStateFirst = false,
+        )
+
+        assertEquals(0, harness.tunGateway.nameDetectionCalls)
+        assertEquals("custom0", harness.stateStore.state?.tunName)
+    }
+
+    @Test
+    fun `active routing uses resolved TUN name instead of empty setting`() = runTest {
+        val harness = Harness()
+        val connectedState = ConnectionState.Connected(
+            serverName = "Test",
+            corePid = 42,
+            tunName = "wlan2",
+            physicalInterface = "wlan0",
+        )
+
+        harness.manager.applyAppRoutingChanges(
+            connectedState,
+            runtimeSettings().copy(tunName = ""),
+        )
+
+        assertEquals("wlan2", harness.activeRouting.lastTunName)
+    }
+
     private class Harness {
         val environment = FakeConnectionEnvironment()
         val rootRuntime = FakeRootRuntime()
@@ -164,6 +212,7 @@ class ConnectionManagerTest {
         val rootProcess = FakeRootProcess()
         val userProcess = FakeUserProcess()
         val diagnostics = FakeDiagnostics()
+        val activeRouting = FakeActiveRoutingController()
         val stateCoordinator = ConnectionStateCoordinator()
         val apiClients = FakeApiClients()
         val createdApiEndpoints = mutableListOf<XrayApiEndpoint>()
@@ -186,7 +235,7 @@ class ConnectionManagerTest {
                 userProcess = userProcess,
                 diagnostics = diagnostics,
                 routingPlanBuilder = EmptyRoutingPlanBuilder(),
-                activeRouting = FakeActiveRoutingController(),
+                activeRouting = activeRouting,
                 apiClientFactory = ConnectionApiClientFactory { endpoint ->
                     createdApiEndpoints += endpoint
                     apiClients.clients
@@ -261,12 +310,23 @@ class ConnectionManagerTest {
         var configureResult = TunManager.TunSetupResult(success = true)
         var routingResult = TunManager.RoutingResult(success = true)
         var applyCalls = 0
+        var availableWlanName: String? = "wlan0"
+        var nameDetectionCalls = 0
+        val detectedRouteTunNames = mutableListOf<String>()
 
-        override suspend fun detectPhysicalRoute(tunName: String) = TunManager.PhysicalRoute(
-            dev = "wlan0",
-            gateway = "192.0.2.1",
-            table = "main",
-        )
+        override suspend fun findAvailableWlanName(): String? {
+            nameDetectionCalls += 1
+            return availableWlanName
+        }
+
+        override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute {
+            detectedRouteTunNames += tunName
+            return TunManager.PhysicalRoute(
+                dev = "wlan0",
+                gateway = "192.0.2.1",
+                table = "main",
+            )
+        }
 
         override suspend fun configureTun(
             tunName: String,
@@ -382,12 +442,17 @@ class ConnectionManagerTest {
     }
 
     private class FakeActiveRoutingController : ActiveRoutingController {
+        var lastTunName: String? = null
+
         override suspend fun applyAppRoutingChanges(
             connectedState: ConnectionState.Connected,
             tunName: String,
             fwmark: Int,
             routeTable: Int,
-        ): Boolean = false
+        ): Boolean {
+            lastTunName = tunName
+            return false
+        }
 
         override suspend fun reapplyPhysicalRoutingForNetworkChange(
             connectedState: ConnectionState.Connected,

@@ -154,6 +154,8 @@ class ActiveRoutingUpdaterTest {
         var lastManagedAppRouteCount: Int? = null
         var lastRouteProfileIds: Set<Int> = emptySet()
 
+        override suspend fun findAvailableWlanName(): String = "wlan0"
+
         override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? = physicalRoute
 
         override suspend fun configureTun(

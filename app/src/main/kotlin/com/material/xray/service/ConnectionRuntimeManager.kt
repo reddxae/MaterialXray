@@ -43,7 +43,11 @@ class ConnectionRuntimeManager @Inject constructor(
         if (!settingsRepository.useRootService.first()) return@withContext null
 
         val persistedState = stateFile.read()
-        val activeTunName = settingsRepository.tunName.first().trim().ifBlank { DEFAULT_TUN_NAME }
+        val activeTunName = persistedState
+            ?.tunName
+            ?.takeIf { it.isNotBlank() }
+            ?: settingsRepository.tunName.first().trim().takeIf { it.isNotEmpty() }
+            ?: return@withContext null
         if (!TunInterfaceDetector.isInterfaceUp(activeTunName)) return@withContext null
         if (activeTunName == AMBIGUOUS_TUN_NAME && TunInterfaceDetector.isVpnServiceActive(context)) {
             return@withContext ConnectionState.InterfaceBusy(activeTunName)
@@ -68,7 +72,6 @@ class ConnectionRuntimeManager @Inject constructor(
     }
 
     private companion object {
-        const val DEFAULT_TUN_NAME = "xray0"
         const val AMBIGUOUS_TUN_NAME = "tun0"
     }
 }

@@ -54,7 +54,6 @@ internal class ConnectionManager(
     ) {
         stateCoordinator.startConnection(transitionState)
         val connectStartedAt = environment.elapsedRealtime()
-        val tunName = runtimeSettings.tunName
         val fwmark = runtimeSettings.fwmark
         val routeTable = runtimeSettings.routeTable
         val routeMark = routeTable
@@ -65,7 +64,14 @@ internal class ConnectionManager(
         runningViaVpnService = !useRootService
 
         try {
-            if (!prepareRuntime(useRootService, vpnInterface, cleanStateFirst, fastReconnect, tunName)) return
+            val tunName = prepareRuntime(
+                useRootService = useRootService,
+                vpnInterface = vpnInterface,
+                cleanStateFirst = cleanStateFirst,
+                fastReconnect = fastReconnect,
+                configuredTunName = runtimeSettings.tunName,
+            ) ?: return
+            val effectiveRuntimeSettings = runtimeSettings.copy(tunName = tunName)
             if (prepareXrayBinary(useRootService, fastReconnect) == null) return
             prepareRoutingData(fastReconnect, transitionState)
 
@@ -90,7 +96,14 @@ internal class ConnectionManager(
             if (!prepareRootApiAccess(xrayApiEndpoint)) return
             replaceXrayApiClients(xrayApiEndpoint)
 
-            writeXrayConfig(xrayServer, runtimeSettings, useRootService, appRoutingPlan, physicalRouteResult.route, xrayApiEndpoint)
+            writeXrayConfig(
+                xrayServer,
+                effectiveRuntimeSettings,
+                useRootService,
+                appRoutingPlan,
+                physicalRouteResult.route,
+                xrayApiEndpoint,
+            )
             val pid = startXrayProcess(useRootService, vpnInterface)
 
             if (pid <= 0) {
@@ -147,12 +160,13 @@ internal class ConnectionManager(
         vpnInterface: ParcelFileDescriptor?,
         cleanStateFirst: Boolean,
         fastReconnect: Boolean,
-        tunName: String,
-    ): Boolean {
+        configuredTunName: String,
+    ): String? {
+        val customTunName = configuredTunName.trim()
         if (cleanStateFirst && useRootService) {
             log.append(LogSource.APP, "Cleaning up previous state...")
             timedStep("Cleanup") {
-                cleanup.ensureCleanState(fallbackTunName = tunName)
+                cleanup.ensureCleanState(fallbackTunName = customTunName.ifEmpty { LEGACY_DEFAULT_TUN_NAME })
             }
         }
 
@@ -161,7 +175,23 @@ internal class ConnectionManager(
         } else {
             prepareVpnServiceRuntime(vpnInterface)
         }
-        if (!ready) return false
+        if (!ready) return null
+
+        val tunName = if (useRootService && customTunName.isEmpty()) {
+            timedStep("TUN interface name detection") {
+                tunGateway.findAvailableWlanName()
+            }?.also { selectedName ->
+                log.append(LogSource.APP, "Selected available TUN interface name $selectedName")
+            } ?: run {
+                fail(
+                    environment.localizedString(R.string.connection_error_tun_name_detection),
+                    cleanState = false,
+                )
+                return null
+            }
+        } else {
+            customTunName
+        }
 
         if (useRootService) {
             processSupervisor.prepareLogFile()
@@ -169,7 +199,7 @@ internal class ConnectionManager(
             userProcessSupervisor.prepareLogFile()
         }
         onXrayLogReady()
-        return true
+        return tunName
     }
 
     private suspend fun prepareRootRuntime(fastReconnect: Boolean): Boolean {
@@ -575,7 +605,7 @@ internal class ConnectionManager(
         runtimeSettings: XrayRuntimeSettings,
     ): Boolean = activeRouting.applyAppRoutingChanges(
         connectedState = connectedState,
-        tunName = runtimeSettings.tunName,
+        tunName = connectedState.tunName,
         fwmark = runtimeSettings.fwmark,
         routeTable = runtimeSettings.routeTable,
     )
@@ -585,7 +615,7 @@ internal class ConnectionManager(
         runtimeSettings: XrayRuntimeSettings,
     ): PhysicalRouteUpdateResult = activeRouting.reapplyPhysicalRoutingForNetworkChange(
         connectedState = connectedState,
-        tunName = runtimeSettings.tunName,
+        tunName = connectedState.tunName,
         fwmark = runtimeSettings.fwmark,
         routeTable = runtimeSettings.routeTable,
     )
@@ -744,3 +774,4 @@ internal class ConnectionManager(
 }
 
 private const val VPN_SERVICE_INTERFACE_LABEL = "VpnService"
+private const val LEGACY_DEFAULT_TUN_NAME = "xray0"

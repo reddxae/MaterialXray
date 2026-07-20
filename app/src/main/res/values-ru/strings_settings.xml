@@ -97,7 +97,7 @@
     <string name="settings_xray_core_version_unknown">Версия xray-core неизвестна</string>
     <string name="settings_xray_core_version">xray-core, версия %1$s</string>
     <string name="settings_tun_interface_name_label">Имя интерфейса TUN</string>
-    <string name="settings_tun_interface_name_default">По умолчанию: %1$s</string>
+    <string name="settings_tun_interface_name_automatic">Оставьте пустым, чтобы использовать первое свободное имя интерфейса wlan</string>
     <string name="settings_done">Готово</string>
     <string name="settings_update_frequency_range">Диапазон: %1$d–%2$d %4$s. По умолчанию: %3$d %4$s.</string>
     <string name="settings_cancel">Отмена</string>

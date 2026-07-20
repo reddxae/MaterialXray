@@ -100,9 +100,10 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_DOMESTIC_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         const val DEFAULT_LATENCY_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         const val DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED = true
+        const val DEFAULT_TUN_NAME = ""
     }
 
-    val tunName: Flow<String> = store.data.map { it[TUN_NAME] ?: "xray0" }
+    val tunName: Flow<String> = store.data.map { it[TUN_NAME] ?: DEFAULT_TUN_NAME }
     val dnsServers: Flow<String> = store.data.map { it[DNS_SERVERS] ?: DEFAULT_DNS_SERVERS }
     val domesticDnsServers: Flow<String> = store.data.map {
         it[DOMESTIC_DNS_SERVERS] ?: DEFAULT_DOMESTIC_DNS_SERVERS

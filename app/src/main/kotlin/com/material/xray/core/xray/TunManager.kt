@@ -30,6 +30,14 @@ class TunManager(private val shell: RootShell) {
         val uids: Set<Int>,
     )
 
+    suspend fun findAvailableWlanName(): String? {
+        val result = shell.execute("ip -o link show 2>/dev/null")
+        if (!result.isSuccess) return null
+
+        val interfaceNames = result.output.lineSequence().mapNotNull(::parseLinkInterfaceName)
+        return nextAvailableWlanName(interfaceNames)
+    }
+
     suspend fun configureTun(
         tunName: String,
         addressCidr: String = DEFAULT_TUN_ADDRESS_CIDR,
@@ -71,7 +79,7 @@ class TunManager(private val shell: RootShell) {
             .mapNotNull { parseDefaultRoute(it) }
             .sortedWith(compareByDescending<PhysicalRoute> { it.gateway != null }.thenBy { it.dev })
             .firstOrNull { route ->
-                route.dev != tunName &&
+                !isManagedTunName(route.dev, tunName) &&
                     !route.dev.startsWith("tun") &&
                     !route.dev.startsWith("xray") &&
                     route.dev != "dummy0"
@@ -86,7 +94,7 @@ class TunManager(private val shell: RootShell) {
             .lineSequence()
             .mapNotNull { parseDefaultRoute(it) }
             .firstOrNull { route ->
-                route.dev != tunName &&
+                !isManagedTunName(route.dev, tunName) &&
                     !route.dev.startsWith("tun") &&
                     !route.dev.startsWith("xray") &&
                     route.dev != "dummy0"
@@ -355,6 +363,24 @@ class TunManager(private val shell: RootShell) {
         fun appRouteTable(baseRouteTable: Int, index: Int): Int = baseRouteTable + APP_ROUTE_TABLE_OFFSET + index - 1
 
         fun appTunAddressCidr(index: Int): String = "10.0.${index.coerceIn(1, 254)}.1/30"
+
+        internal fun nextAvailableWlanName(interfaceNames: Sequence<String>): String {
+            val occupiedNames = interfaceNames.toSet()
+            return (0..occupiedNames.size)
+                .asSequence()
+                .map { index -> "wlan$index" }
+                .first { candidate -> candidate !in occupiedNames }
+        }
+
+        internal fun parseLinkInterfaceName(line: String): String? = line
+            .substringAfter(": ", missingDelimiterValue = "")
+            .substringBefore(':')
+            .substringBefore('@')
+            .trim()
+            .takeIf { it.isNotEmpty() }
+
+        internal fun isManagedTunName(interfaceName: String, baseTunName: String): Boolean = interfaceName == baseTunName ||
+            (1..MAX_APP_TUN_ROUTES).any { index -> interfaceName == appTunName(baseTunName, index) }
 
         private fun appRouteTables(baseRouteTable: Int, count: Int): List<Int> = (1..count.coerceIn(0, MAX_APP_TUN_ROUTES)).map { appRouteTable(baseRouteTable, it) }
     }

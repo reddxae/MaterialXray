@@ -11,8 +11,10 @@
     <string name="connection_error_physical_route_not_found">Не удалось определить маршрут физической сети для обхода Xray</string>
     <string name="connection_error_server_address_unresolved">Не удалось определить адрес %1$s перед запуском Xray</string>
     <string name="connection_error_xray_crashed">Сбой Xray: %1$s</string>
+    <string name="connection_error_xray_api_not_ready">Управляющий API Xray не перешёл в состояние готовности</string>
     <string name="connection_error_tun_timeout">Интерфейс TUN %1$s не запустился за отведённое время</string>
     <string name="connection_error_apply_ip_routing">Не удалось применить IP-маршрутизацию: %1$s</string>
     <string name="connection_error_secure_xray_api">Не удалось защитить управляющий API Xray</string>
+    <string name="connection_error_cleanup_failed">Не удалось полностью остановить предыдущую среду Xray</string>
     <string name="connection_error_stop_runtime">Не удалось остановить активное подключение Xray</string>
 </resources>

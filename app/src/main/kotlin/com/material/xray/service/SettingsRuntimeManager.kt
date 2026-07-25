@@ -42,7 +42,7 @@ class SettingsRuntimeManager @Inject constructor(
             reloadActiveConnectionIfConnected()
             return true
         }
-        val available = withContext(Dispatchers.IO) { rootShell.open() }
+        val available = withContext(Dispatchers.IO) { rootShell.open(RootShell.NetworkNamespace.INIT) }
         if (!available) return false
         settingsRepository.setUseRootService(true)
         reloadActiveConnectionIfConnected()
@@ -59,7 +59,7 @@ class SettingsRuntimeManager @Inject constructor(
     }
 
     suspend fun checkRootAvailability(): Boolean {
-        val available = withContext(Dispatchers.IO) { rootShell.open() }
+        val available = withContext(Dispatchers.IO) { rootShell.open(RootShell.NetworkNamespace.INIT) }
         if (!available && settingsRepository.useRootService.first()) {
             settingsRepository.setUseRootService(false)
             reloadActiveConnectionIfConnected()

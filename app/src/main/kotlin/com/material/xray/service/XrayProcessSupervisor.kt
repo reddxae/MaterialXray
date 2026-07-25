@@ -128,7 +128,13 @@ internal class XrayProcessSupervisor(
 
     override suspend fun isAlive(pid: Int): Boolean {
         if (pid <= 0) return false
-        return commandRunner.execute("kill -0 $pid 2>/dev/null").isSuccess
+        val configPath = shellQuote(xrayBinary.configPath())
+        val command = "config=$configPath; " +
+            "kill -0 $pid 2>/dev/null && " +
+            "[ \"\$(awk '/^State:/ { print \$2 }' /proc/$pid/status 2>/dev/null)\" != Z ] && " +
+            "cmdline=\$(tr '\\0' ' ' < /proc/$pid/cmdline 2>/dev/null) && " +
+            "case \"\$cmdline\" in *\"\$config\"*) true;; *) false;; esac"
+        return commandRunner.execute(command).isSuccess
     }
 
     override suspend fun kill(pid: Int, signal: Int): Boolean {
@@ -285,11 +291,12 @@ internal class UserXrayProcessSupervisor(
         return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
     }
 
-    override suspend fun readCrashReason(lines: Int): String = logFile.takeIf { it.isFile }
-        ?.readLines()
-        ?.takeLast(lines)
-        ?.lastOrNull { it.isNotBlank() }
-        ?: "xray process exited"
+    override suspend fun readCrashReason(lines: Int): String = runCatching {
+        logFile.takeIf { it.isFile }
+            ?.readLines()
+            ?.takeLast(lines)
+            ?.lastOrNull { it.isNotBlank() }
+    }.getOrNull() ?: "xray process exited"
 
     override fun readActiveConnectionCount(pid: Int): Int? = File("/proc/$pid/fd")
         .takeIf { it.isDirectory }

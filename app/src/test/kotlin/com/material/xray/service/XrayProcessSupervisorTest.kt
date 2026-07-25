@@ -62,6 +62,20 @@ class XrayProcessSupervisorTest {
     }
 
     @Test
+    fun `root liveness verifies process state and active config identity`() = runTest {
+        val commands = FakeRootCommandRunner()
+
+        assertTrue(supervisor(commandRunner = commands).isAlive(42))
+
+        val command = commands.commands.single()
+        assertTrue(command.contains("kill -0 42"))
+        assertTrue(command.contains("/^State:/"))
+        assertTrue(command.contains("!= Z"))
+        assertTrue(command.contains("config='/tmp/config dir/config.json'"))
+        assertTrue(command.contains("/proc/42/cmdline"))
+    }
+
+    @Test
     fun `readResidentMemoryMb rounds VmRSS kilobytes up to megabytes`() = runTest {
         val supervisor = supervisor(
             commandRunner = FakeRootCommandRunner(

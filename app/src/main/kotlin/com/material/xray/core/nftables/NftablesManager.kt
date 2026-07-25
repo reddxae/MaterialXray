@@ -35,12 +35,16 @@ class NftablesManager(private val shell: RootShell) {
         shell.execute("nft delete table inet xray 2>/dev/null; printf '%s' '${ruleset.replace("'", "'\\''")}' | nft -f -")
     }
 
-    suspend fun remove() {
-        shell.execute("nft delete table inet xray 2>/dev/null")
-    }
+    suspend fun remove(required: Boolean = false): Boolean = shell.execute(nftablesRemovalCommand(required)).isSuccess
 
     suspend fun exists(): Boolean {
         val result = shell.execute("nft list tables 2>/dev/null")
         return result.output.contains("inet xray")
     }
 }
+
+internal fun nftablesRemovalCommand(required: Boolean): String = "if ! command -v nft >/dev/null 2>&1; then exit ${if (required) 1 else 0}; fi; " +
+    "tables=\$(nft list tables 2>/dev/null) || exit 1; " +
+    "printf '%s\\n' \"\$tables\" | grep -Fqx 'table inet xray'; status=\$?; " +
+    "if [ \$status -eq 0 ]; then nft delete table inet xray; " +
+    "elif [ \$status -eq 1 ]; then true; else exit \$status; fi"

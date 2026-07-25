@@ -48,13 +48,11 @@ import com.material.xray.model.primaryBalancerTag
 import dagger.hilt.android.AndroidEntryPoint
 import java.text.NumberFormat
 import javax.inject.Inject
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -62,8 +60,6 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
@@ -89,18 +85,21 @@ class XrayService : VpnService() {
 
     @Inject lateinit var providerRoutingCoordinator: ProviderRoutingCoordinator
 
+    @Inject lateinit var startupDiagnosticsLogger: StartupDiagnosticsLogger
+
     private lateinit var connectionManager: ConnectionManager
+    private lateinit var connectionLifecycle: ConnectionLifecycle
+    private lateinit var healthWatchdog: XrayHealthWatchdog
     private lateinit var xrayLogStreamer: XrayLogStreamer
     private val stateFile by lazy { StateFile(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var activeConfig: ServerConfig? = null
+    private val activeConfig: ServerConfig?
+        get() = connectionLifecycle.activeConfig
     private val networkCallbacks = mutableListOf<ConnectivityManager.NetworkCallback>()
     private lateinit var networkRetargetWorker: NetworkRetargetWorker
     private var activePhysicalNetwork: PhysicalNetworkSnapshot? = null
     private var networkCallbacksAvailable = false
     private var lastNetworkSafetyCheckAtMs = 0L
-    private var processWatchdogJob: Job? = null
-    private val watchdogSessions = WatchdogSessionTracker()
     private var processRecoveryJob: Job? = null
     private var alwaysOnRetryJob: Job? = null
 
@@ -109,20 +108,29 @@ class XrayService : VpnService() {
 
     @Volatile
     private var passiveHealthMonitoringEnabled = SettingsRepository.DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED
+
+    @Volatile
+    private var rootServiceRequested: Boolean? = null
     private var balancerSelectionJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var activeUseRootService = true
     private var notificationSettings = NotificationSettings()
     private var notificationMetrics = NotificationMetrics()
     private var previousTrafficSample: TrafficSample? = null
     private var notificationMetricsJob: Job? = null
     private var notificationMetricsIntervalMs = 0
     private var lastNotificationContent: NotificationContent? = null
-    private val connectionCommandMutex = Mutex()
     private val networkRetargetWakeLock by lazy {
         getSystemService(PowerManager::class.java).newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "$packageName:network-retarget",
+        ).apply {
+            setReferenceCounted(false)
+        }
+    }
+    private val connectionCommandWakeLock by lazy {
+        getSystemService(PowerManager::class.java).newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "$packageName:connection-command",
         ).apply {
             setReferenceCounted(false)
         }
@@ -144,10 +152,83 @@ class XrayService : VpnService() {
         connectionManager = connectionManagerFactory.create(
             onXrayLogReady = { startLogTail() },
         )
+        connectionLifecycle = ConnectionLifecycle(
+            scope = scope,
+            maxAttempts = CONNECTION_MAX_ATTEMPTS,
+            retryDelayMs = CONNECTION_RETRY_DELAY_MS,
+            beforeCommand = ::acquireConnectionCommandWakeLock,
+            afterCommand = ::releaseConnectionCommandWakeLock,
+            runAttempt = { request ->
+                connectOnceWithCurrentSettings(
+                    config = request.config,
+                    transitionState = request.transitionState,
+                    preparation = request.preparation,
+                )
+            },
+            currentFailure = {
+                val error = connectionStateCoordinator.state.value as? ConnectionState.Error
+                ConnectionFailure(
+                    message = error?.message ?: localizedString(R.string.notification_unknown_connection_error),
+                    retryable = error?.retryable != false,
+                )
+            },
+            onRetry = { attempt, maxAttempts, transitionState ->
+                logBuffer.append(LogSource.APP, "Retrying connection ($attempt/$maxAttempts)...")
+                connectionStateCoordinator.startConnection(transitionState)
+                updateNotification(
+                    localizedString(
+                        R.string.notification_status_retrying_connection,
+                        attempt,
+                        maxAttempts,
+                    ),
+                )
+            },
+            onConnected = {
+                alwaysOnRetryJob?.cancel()
+                alwaysOnRetryJob = null
+            },
+            onExhausted = { failure ->
+                closeVpnInterface()
+                if (isRunningAlwaysOnVpn() && failure.retryable) {
+                    scheduleAlwaysOnRetry()
+                } else {
+                    showConnectionFailureNotification(failure.message)
+                }
+            },
+        )
+        healthWatchdog = XrayHealthWatchdog(
+            scope = scope,
+            stateCoordinator = connectionStateCoordinator,
+            healthProbe = connectionManager,
+            log = logBuffer,
+            config = XrayHealthWatchdogConfig(
+                processIntervalMs = PROCESS_WATCHDOG_INTERVAL_MS,
+                apiProbeIntervalMs = LOCAL_API_HEALTH_PROBE_INTERVAL_MS,
+                snapshotIntervalMs = LOCAL_HEALTH_SNAPSHOT_INTERVAL_MS,
+                tunnelFailureThreshold = TUNNEL_FAILURE_THRESHOLD,
+                apiFailureThreshold = LOCAL_API_FAILURE_THRESHOLD,
+                checkFailureLogThreshold = HEALTH_CHECK_FAILURE_LOG_THRESHOLD,
+            ),
+            passiveMonitoringEnabled = { passiveHealthMonitoringEnabled },
+            memoryRestartThresholdMiB = { xrayMemoryRestartThresholdMiB },
+            elapsedRealtime = SystemClock::elapsedRealtime,
+            tunnelAvailable = { state ->
+                if (connectionManager.isUsingRootRuntime) {
+                    TunInterfaceDetector.isInterfaceUp(state.tunName)
+                } else {
+                    vpnInterface?.fileDescriptor?.valid() == true
+                }
+            },
+            runtimeModeRecoveryReason = ::runtimeModeRecoveryReason,
+            scheduleNetworkSafetyCheck = ::maybeScheduleNetworkSafetyCheck,
+            recover = { reason, watchedPid, pidToKill ->
+                recoverNativeProcess(reason, watchedPid, pidToKill)
+            },
+        )
         networkRetargetWorker = NetworkRetargetWorker(
             scope = scope,
             settleDelayMs = NETWORK_RETARGET_SETTLE_DELAY_MS,
-            shouldHandle = { activeUseRootService && activeConfig != null },
+            shouldHandle = { connectionManager.isUsingRootRuntime && activeConfig != null },
             beforeBatch = ::acquireNetworkRetargetWakeLock,
             afterBatch = ::releaseNetworkRetargetWakeLock,
             onFailure = { error ->
@@ -178,6 +259,12 @@ class XrayService : VpnService() {
         scope.launch {
             settingsRepo.xrayMemoryRestartThresholdMiB.collect { thresholdMiB ->
                 xrayMemoryRestartThresholdMiB = thresholdMiB
+            }
+        }
+
+        scope.launch {
+            settingsRepo.useRootService.collect { requested ->
+                rootServiceRequested = requested
             }
         }
 
@@ -220,7 +307,7 @@ class XrayService : VpnService() {
                 val configJson = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
                 launchConnectionCommand {
                     val config = Json.decodeFromString<ServerConfig>(configJson)
-                    activeConfig = config
+                    connectionLifecycle.updateActiveConfig(config)
                     stopLogTail()
                     connectWithCurrentSettings(config)
                 }
@@ -234,18 +321,19 @@ class XrayService : VpnService() {
                 val configJson = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
                 launchConnectionCommand {
                     val config = Json.decodeFromString<ServerConfig>(configJson)
-                    activeConfig = config
+                    connectionLifecycle.updateActiveConfig(config)
                     stopLogTail()
                     stopProcessWatchdog()
                     logBuffer.append(LogSource.APP, "Switching to ${config.name}...")
                     updateNotification(localizedString(R.string.notification_status_switching_server))
-                    connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+                    if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) {
+                        return@launchConnectionCommand
+                    }
                     closeVpnInterface()
                     connectWithCurrentSettings(
                         config = config,
                         transitionState = ConnectionState.ApplyingRoutingChanges,
-                        cleanStateFirst = false,
-                        fastReconnect = true,
+                        preparation = ConnectionPreparation.FastServerSwitch,
                     )
                 }
             }
@@ -294,7 +382,7 @@ class XrayService : VpnService() {
         alwaysOnRetryJob?.cancel()
         alwaysOnRetryJob = null
         launchConnectionCommand {
-            activeConfig = null
+            connectionLifecycle.updateActiveConfig(null)
             activePhysicalNetwork = null
             stopLogTail()
             stopProcessWatchdog()
@@ -306,10 +394,11 @@ class XrayService : VpnService() {
 
     override fun onDestroy() {
         unregisterNetworkCallback()
-        activeConfig = null
+        if (::connectionLifecycle.isInitialized) connectionLifecycle.updateActiveConfig(null)
         activePhysicalNetwork = null
         if (::networkRetargetWorker.isInitialized) networkRetargetWorker.close()
         releaseNetworkRetargetWakeLock()
+        releaseConnectionCommandWakeLock()
         processRecoveryJob?.cancel()
         stopBalancerSelectionTracker()
         stopProcessWatchdog()
@@ -317,7 +406,6 @@ class XrayService : VpnService() {
         if (::connectionManager.isInitialized) connectionManager.prepareForServiceDestruction()
         scope.cancel()
         closeVpnInterface()
-        rootShell.close()
         super.onDestroy()
     }
 
@@ -328,12 +416,10 @@ class XrayService : VpnService() {
     private fun stopLogTail() = xrayLogStreamer.stop()
 
     private fun launchConnectionCommand(block: suspend () -> Unit) {
-        scope.launch {
-            connectionCommandMutex.withLock {
-                block()
-            }
-        }
+        connectionLifecycle.launch(block)
     }
+
+    private suspend fun <T> runConnectionCommand(block: suspend () -> T): T = connectionLifecycle.serialized(block)
 
     private suspend fun connectWithCurrentSettings(config: ServerConfig) {
         connectWithCurrentSettings(config, ConnectionState.Connecting)
@@ -342,73 +428,40 @@ class XrayService : VpnService() {
     private suspend fun connectWithCurrentSettings(
         config: ServerConfig,
         transitionState: ConnectionState = ConnectionState.Connecting,
-        cleanStateFirst: Boolean = true,
-        fastReconnect: Boolean = false,
+        preparation: ConnectionPreparation = ConnectionPreparation.Full,
     ) {
+        startupDiagnosticsLogger.logIfMissing()
         getSystemService(NotificationManager::class.java).cancel(FAILURE_NOTIFICATION_ID)
-        var attempt = 1
-        var lastError: String? = null
-
-        while (attempt <= CONNECTION_MAX_ATTEMPTS && currentCoroutineContext().isActive) {
-            if (attempt > 1) {
-                val retryMessage = "Retrying connection ($attempt/$CONNECTION_MAX_ATTEMPTS)..."
-                logBuffer.append(LogSource.APP, retryMessage)
-                connectionStateCoordinator.startConnection(transitionState)
-                updateNotification(
-                    localizedString(
-                        R.string.notification_status_retrying_connection,
-                        attempt,
-                        CONNECTION_MAX_ATTEMPTS,
-                    ),
-                )
-            }
-
-            val connected = connectOnceWithCurrentSettings(
+        connectionLifecycle.connect(
+            ConnectionRequest(
                 config = config,
                 transitionState = transitionState,
-                cleanStateFirst = cleanStateFirst || attempt > 1,
-                fastReconnect = fastReconnect && attempt == 1,
-            )
-            if (connected) {
-                alwaysOnRetryJob?.cancel()
-                alwaysOnRetryJob = null
-                return
-            }
-
-            val errorState = connectionStateCoordinator.state.value as? ConnectionState.Error
-            lastError = errorState?.message ?: localizedString(R.string.notification_unknown_connection_error)
-            if (errorState?.retryable == false || attempt == CONNECTION_MAX_ATTEMPTS) break
-
-            delay(CONNECTION_RETRY_DELAY_MS)
-            attempt++
-        }
-
-        closeVpnInterface()
-        val failureMessage = lastError ?: localizedString(R.string.notification_unknown_connection_error)
-        val retryable = (connectionStateCoordinator.state.value as? ConnectionState.Error)?.retryable != false
-        if (isRunningAlwaysOnVpn() && retryable) {
-            scheduleAlwaysOnRetry()
-        } else {
-            showConnectionFailureNotification(failureMessage)
-        }
+                preparation = preparation,
+            ),
+        )
     }
 
     private suspend fun connectOnceWithCurrentSettings(
         config: ServerConfig,
         transitionState: ConnectionState = ConnectionState.Connecting,
-        cleanStateFirst: Boolean = true,
-        fastReconnect: Boolean = false,
+        preparation: ConnectionPreparation = ConnectionPreparation.Full,
     ): Boolean {
         providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
         val runtimeSettings = settingsRepo.runtimeSettingsSnapshot()
+        rootServiceRequested = runtimeSettings.useRootService
         val forceVpnService = isRunningAlwaysOnVpn()
         val rootServiceAvailable = if (runtimeSettings.useRootService && !forceVpnService) {
-            withContext(Dispatchers.IO) { rootShell.open() }
+            withContext(Dispatchers.IO) { rootShell.open(RootShell.NetworkNamespace.INIT) }
         } else {
             false
         }
         if (runtimeSettings.useRootService && !forceVpnService && !rootServiceAvailable) {
             settingsRepo.setUseRootService(false)
+            rootServiceRequested = false
+            logBuffer.append(
+                LogSource.APP,
+                "Root mode cannot access Android's init network namespace; using Android VpnService",
+            )
             connectionStateCoordinator.emitEvent(ConnectionEvent.RootUnavailableFallback)
         }
         val effectiveRuntimeSettings = if (
@@ -418,7 +471,6 @@ class XrayService : VpnService() {
         } else {
             runtimeSettings.copy(useRootService = false, tunName = ROOTLESS_TUN_NAME)
         }
-        activeUseRootService = effectiveRuntimeSettings.useRootService
         val activeVpnInterface = if (effectiveRuntimeSettings.useRootService) {
             closeVpnInterface()
             null
@@ -430,8 +482,7 @@ class XrayService : VpnService() {
             runtimeSettings = effectiveRuntimeSettings,
             vpnInterface = activeVpnInterface,
             transitionState = transitionState,
-            cleanStateFirst = cleanStateFirst,
-            fastReconnect = fastReconnect,
+            preparation = preparation,
         )
         if (connectionStateCoordinator.state.value is ConnectionState.Connected && effectiveRuntimeSettings.useRootService) {
             activePhysicalNetwork = currentPhysicalNetworkSnapshot()
@@ -443,7 +494,7 @@ class XrayService : VpnService() {
 
     private suspend fun connectAlwaysOnVpn() {
         val state = connectionStateCoordinator.state.value
-        if (state is ConnectionState.Connected && !activeUseRootService && activeConfig != null) return
+        if (state is ConnectionState.Connected && !connectionManager.isUsingRootRuntime && activeConfig != null) return
 
         stopLogTail()
         stopProcessWatchdog()
@@ -453,12 +504,12 @@ class XrayService : VpnService() {
         val rootModeConfigured = settingsRepo.useRootService.first()
         when {
             state is ConnectionState.Connected -> {
-                connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+                if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
             }
             rootModeConfigured ||
                 persistedState != null &&
                 persistedState.physicalInterface != VPN_SERVICE_INTERFACE_LABEL -> {
-                connectionManager.ensureCleanRootRuntime()
+                if (!connectionManager.ensureCleanRootRuntime()) return
             }
             else -> stateFile.delete()
         }
@@ -467,7 +518,7 @@ class XrayService : VpnService() {
         if (config == null) {
             alwaysOnRetryJob?.cancel()
             alwaysOnRetryJob = null
-            activeConfig = null
+            connectionLifecycle.updateActiveConfig(null)
             val message = localizedString(R.string.connection_error_no_server_selected)
             logBuffer.append(LogSource.APP, "Always-on VPN could not start: no server is selected")
             connectionStateCoordinator.markError(message, retryable = false)
@@ -476,7 +527,7 @@ class XrayService : VpnService() {
             return
         }
 
-        activeConfig = config
+        connectionLifecycle.updateActiveConfig(config)
         connectWithCurrentSettings(config)
     }
 
@@ -484,16 +535,16 @@ class XrayService : VpnService() {
         if (alwaysOnRetryJob?.isActive == true) return
         alwaysOnRetryJob = scope.launch {
             delay(ALWAYS_ON_RETRY_DELAY_MS)
-            connectionCommandMutex.withLock {
+            runConnectionCommand {
                 alwaysOnRetryJob = null
-                if (!isRunningAlwaysOnVpn()) return@withLock
-                if (connectionStateCoordinator.state.value is ConnectionState.Connected) return@withLock
+                if (!isRunningAlwaysOnVpn()) return@runConnectionCommand
+                if (connectionStateCoordinator.state.value is ConnectionState.Connected) return@runConnectionCommand
                 logBuffer.append(LogSource.APP, "Retrying always-on VPN connection...")
                 val config = loadLastServerConfig()
                 if (config == null) {
                     connectAlwaysOnVpn()
                 } else {
-                    activeConfig = config
+                    connectionLifecycle.updateActiveConfig(config)
                     connectWithCurrentSettings(config)
                 }
             }
@@ -513,9 +564,13 @@ class XrayService : VpnService() {
         logBuffer.append(LogSource.APP, "Applying routing changes...")
         connectionStateCoordinator.markApplyingRoutingChanges()
         updateNotification()
-        connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+        if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
         closeVpnInterface()
-        connectWithCurrentSettings(config, ConnectionState.ApplyingRoutingChanges, cleanStateFirst = false)
+        connectWithCurrentSettings(
+            config,
+            ConnectionState.ApplyingRoutingChanges,
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
+        )
     }
 
     private suspend fun reloadAppRouting() {
@@ -525,7 +580,7 @@ class XrayService : VpnService() {
             reloadActiveConnection()
             return
         }
-        if (!activeUseRootService) {
+        if (!connectionManager.isUsingRootRuntime) {
             reloadActiveConnection()
             return
         }
@@ -548,8 +603,12 @@ class XrayService : VpnService() {
         stopLogTail()
         stopProcessWatchdog()
         logBuffer.append(LogSource.APP, "Restarting Xray to apply app routing topology changes...")
-        connectionManager.disconnect(updateState = false, fastRootCleanup = true)
-        connectWithCurrentSettings(config, ConnectionState.ApplyingRoutingChanges, cleanStateFirst = false)
+        if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+        connectWithCurrentSettings(
+            config,
+            ConnectionState.ApplyingRoutingChanges,
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
+        )
     }
 
     private suspend fun restoreRunningConnectionStatus() {
@@ -572,10 +631,10 @@ class XrayService : VpnService() {
         }
 
         val restoredServerId = settingsRepo.lastServerId.first()
-        activeConfig = loadServerConfig(restoredServerId)
+        connectionLifecycle.updateActiveConfig(loadServerConfig(restoredServerId))
         if (activeConfig == null) {
             logBuffer.append(LogSource.APP, "Stopping restored Xray runtime without selected server config")
-            connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+            if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
             if (restoredServerId >= 0) {
                 settingsRepo.compareAndSetLastServerId(restoredServerId, -1)
             }
@@ -588,12 +647,12 @@ class XrayService : VpnService() {
             val config = activeConfig
             if (config != null) {
                 logBuffer.append(LogSource.APP, "Restarting Xray to migrate its control API")
-                connectionManager.disconnect(updateState = false, fastRootCleanup = true)
-                connectWithCurrentSettings(config, cleanStateFirst = false)
+                if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+                connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
                 return
             }
             logBuffer.append(LogSource.APP, "Could not secure the restored Xray API; stopping Xray")
-            connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+            if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
             connectionStateCoordinator.markDisconnected()
             updateNotification()
             stopSelf()
@@ -614,7 +673,7 @@ class XrayService : VpnService() {
 
         val state = stateFile.read() ?: return@withContext null
         if (state.xrayPid <= 0) return@withContext null
-        if (!connectionManager.isProcessAlive(state.xrayPid)) return@withContext null
+        if (!connectionManager.isRestorableRootProcessAlive(state.xrayPid)) return@withContext null
         if (!TunInterfaceDetector.isInterfaceUp(state.tunName)) return@withContext null
 
         val persistedRoute = selectRestoredPhysicalRoute(state, fallback = null)
@@ -681,152 +740,14 @@ class XrayService : VpnService() {
         connectionStateCoordinator.updateActiveBalancerSelection(null)
     }
 
-    @Suppress("TooGenericExceptionCaught")
     private fun startProcessWatchdog(state: ConnectionState.Connected) {
-        if (watchdogSessions.isWatching(state.corePid) && processWatchdogJob?.isActive == true) return
-
-        stopProcessWatchdog()
-        val watchdogSession = watchdogSessions.start(state.corePid)
-        val localHealthMonitor = LocalXrayHealthMonitor(
-            apiProbeIntervalMs = LOCAL_API_HEALTH_PROBE_INTERVAL_MS,
-            snapshotIntervalMs = LOCAL_HEALTH_SNAPSHOT_INTERVAL_MS,
-            tunnelFailureThreshold = TUNNEL_FAILURE_THRESHOLD,
-            apiFailureThreshold = LOCAL_API_FAILURE_THRESHOLD,
-        )
-        lastNetworkSafetyCheckAtMs = SystemClock.elapsedRealtime()
-        processWatchdogJob = scope.launch(Dispatchers.IO) {
-            var keepWatching = true
-            var consecutiveCheckFailures = 0
-            while (isActive && keepWatching) {
-                delay(PROCESS_WATCHDOG_INTERVAL_MS)
-                try {
-                    keepWatching = checkXrayProcessHealth(watchdogSession, localHealthMonitor)
-                    if (keepWatching && consecutiveCheckFailures > 0) {
-                        logBuffer.append(
-                            LogSource.APP,
-                            "Local Xray health monitoring recovered after $consecutiveCheckFailures failed check(s)",
-                        )
-                    }
-                    consecutiveCheckFailures = 0
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    consecutiveCheckFailures++
-                    if (consecutiveCheckFailures == 1 || consecutiveCheckFailures == HEALTH_CHECK_FAILURE_LOG_THRESHOLD) {
-                        logBuffer.append(
-                            LogSource.APP,
-                            "Local Xray health check failed ($consecutiveCheckFailures): " +
-                                (error.message ?: error.javaClass.simpleName),
-                        )
-                    }
-                }
-            }
+        if (healthWatchdog.start(state)) {
+            lastNetworkSafetyCheckAtMs = SystemClock.elapsedRealtime()
         }
     }
 
-    private suspend fun checkXrayProcessHealth(
-        watchdogSession: WatchdogSession,
-        localHealthMonitor: LocalXrayHealthMonitor,
-    ): Boolean {
-        val currentState = connectionStateCoordinator.state.value as? ConnectionState.Connected ?: return false
-        if (!watchdogSessions.matches(watchdogSession, currentState.corePid)) return false
-        if (synchronizeAlwaysOnVpnMode(watchdogSession)) return false
-        val pid = currentState.corePid
-        val processAlive = connectionManager.isProcessAlive(pid)
-        if (!isCurrentWatchdogSession(watchdogSession)) return false
-        if (!processAlive) {
-            val recoveryScheduled = recoverNativeProcess(
-                reason = "xray process $pid exited unexpectedly; reconnecting...",
-                watchdogSession = watchdogSession,
-            )
-            return !recoveryScheduled
-        }
-
-        if (passiveHealthMonitoringEnabled) {
-            val tunnelAvailable = if (activeUseRootService) {
-                TunInterfaceDetector.isInterfaceUp(currentState.tunName)
-            } else {
-                vpnInterface?.fileDescriptor?.valid() == true
-            }
-            val tunnelTransition = localHealthMonitor.recordTunnelAvailability(tunnelAvailable)
-            when {
-                tunnelTransition.recovered -> logBuffer.append(
-                    LogSource.APP,
-                    "Xray tunnel became available again after ${tunnelTransition.consecutiveFailures} failed check(s)",
-                )
-                tunnelTransition.consecutiveFailures == 1 -> logBuffer.append(
-                    LogSource.APP,
-                    "Xray tunnel is unavailable; verifying before recovery",
-                )
-            }
-            if (tunnelTransition.consecutiveFailures >= TUNNEL_FAILURE_THRESHOLD) {
-                val recoveryScheduled = recoverNativeProcess(
-                    reason = "xray process $pid is alive but tunnel ${currentState.tunName} is unavailable; reconnecting...",
-                    watchdogSession = watchdogSession,
-                )
-                return !recoveryScheduled
-            }
-        }
-
-        val residentMemoryMb = connectionManager.readProcessResidentMemoryMb(pid)
-        if (!isCurrentWatchdogSession(watchdogSession)) return false
-        val thresholdMiB = xrayMemoryRestartThresholdMiB
-        if (XrayRuntimeSettings.shouldRestartForMemory(residentMemoryMb, thresholdMiB)) {
-            val recoveryScheduled = recoverNativeProcess(
-                reason = "xray process $pid exceeded $thresholdMiB MiB RSS ($residentMemoryMb MiB); restarting...",
-                pidToKill = pid,
-                watchdogSession = watchdogSession,
-            )
-            return !recoveryScheduled
-        }
-        if (passiveHealthMonitoringEnabled) {
-            checkLocalXrayApiHealth(watchdogSession, localHealthMonitor, residentMemoryMb)
-            if (!isCurrentWatchdogSession(watchdogSession)) return false
-        }
-        maybeScheduleNetworkSafetyCheck()
-        return true
-    }
-
-    private suspend fun checkLocalXrayApiHealth(
-        watchdogSession: WatchdogSession,
-        localHealthMonitor: LocalXrayHealthMonitor,
-        residentMemoryMb: Long?,
-    ) {
-        val now = SystemClock.elapsedRealtime()
-        if (!localHealthMonitor.shouldProbeApi(now)) return
-
-        val sysStats = connectionManager.readXraySysStats()
-        if (!isCurrentWatchdogSession(watchdogSession)) return
-        val transition = localHealthMonitor.recordApiResponsiveness(sysStats != null)
-        when {
-            transition.recovered -> logBuffer.append(
-                LogSource.APP,
-                "Local Xray API recovered after ${transition.consecutiveFailures} failed probe(s)",
-            )
-            transition.consecutiveFailures == 1 -> logBuffer.append(
-                LogSource.APP,
-                "Local Xray API did not respond; the core process is still alive",
-            )
-            transition.thresholdReached -> logBuffer.append(
-                LogSource.APP,
-                "Local Xray API is unresponsive after ${transition.consecutiveFailures} probes; " +
-                    "automatic restart was suppressed because forwarding may still be healthy",
-            )
-        }
-
-        if (sysStats != null && localHealthMonitor.shouldRecordSnapshot(now)) {
-            logBuffer.append(
-                LogSource.APP,
-                "Xray health: pid=${watchdogSession.pid}, rss=${residentMemoryMb?.let { "$it MiB" } ?: "unknown"}, " +
-                    "goAlloc=${sysStats.alloc.bytesToMiB()} MiB, goSys=${sysStats.sys.bytesToMiB()} MiB, " +
-                    "goroutines=${sysStats.numGoroutine}, liveObjects=${sysStats.liveObjects}, " +
-                    "uptime=${sysStats.uptimeSeconds}s",
-            )
-        }
-    }
-
-    private suspend fun synchronizeAlwaysOnVpnMode(watchdogSession: WatchdogSession): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+    private suspend fun runtimeModeRecoveryReason(): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         val alwaysOnVpn = isAlwaysOn
         if (alwaysOnVpnState.active.value != alwaysOnVpn) {
             alwaysOnVpnState.update(alwaysOnVpn)
@@ -835,18 +756,14 @@ class XrayService : VpnService() {
                 updateNotification()
             }
         }
-        val rootServiceRequested = settingsRepo.useRootService.first()
-        val shouldRunRootService = rootServiceRequested && !alwaysOnVpn
-        if (activeUseRootService == shouldRunRootService) return false
+        val shouldRunRootService = (rootServiceRequested ?: return null) && !alwaysOnVpn
+        if (connectionManager.isUsingRootRuntime == shouldRunRootService) return null
 
-        return recoverNativeProcess(
-            reason = if (alwaysOnVpn) {
-                "Always-on VPN enabled; switching to Android VpnService..."
-            } else {
-                "Always-on VPN disabled; restoring the configured service mode..."
-            },
-            watchdogSession = watchdogSession,
-        )
+        return if (alwaysOnVpn) {
+            "Always-on VPN enabled; switching to Android VpnService..."
+        } else {
+            "Always-on VPN disabled; restoring the configured service mode..."
+        }
     }
 
     private suspend fun maybeScheduleNetworkSafetyCheck() {
@@ -855,10 +772,10 @@ class XrayService : VpnService() {
         lastNetworkSafetyCheckAtMs = now
 
         withContext(Dispatchers.Main.immediate) {
-            if (!activeUseRootService || activeConfig == null) return@withContext
+            if (!connectionManager.isUsingRootRuntime || activeConfig == null) return@withContext
 
-            val currentNetwork = currentPhysicalNetworkSnapshot() ?: return@withContext
-            val networkChanged = activePhysicalNetwork?.sameNetwork(currentNetwork) != true
+            val currentNetwork = currentPhysicalNetworkSnapshot()
+            val networkChanged = currentNetwork != null && activePhysicalNetwork?.sameNetwork(currentNetwork) != true
             if (!shouldVerifyRootRoute(passiveHealthMonitoringEnabled, networkChanged, networkCallbacksAvailable)) {
                 return@withContext
             }
@@ -872,9 +789,7 @@ class XrayService : VpnService() {
     }
 
     private fun stopProcessWatchdog() {
-        processWatchdogJob?.cancel()
-        processWatchdogJob = null
-        watchdogSessions.stop()
+        if (::healthWatchdog.isInitialized) healthWatchdog.stop()
     }
 
     private fun updateNotificationMetricsJob() {
@@ -924,13 +839,18 @@ class XrayService : VpnService() {
         } else {
             null
         }
+        val processMetrics = if (settings.showRamUsage || settings.showConnectionCount) {
+            connectionManager.readProcessMetrics(state.corePid)
+        } else {
+            null
+        }
         val ramMb = if (settings.showRamUsage) {
-            connectionManager.readProcessResidentMemoryMb(state.corePid)
+            processMetrics?.residentMemoryMb
         } else {
             null
         }
         val connectionCount = if (settings.showConnectionCount) {
-            connectionManager.readActiveConnectionCount(state.corePid)
+            processMetrics?.activeConnectionCount
         } else {
             null
         }
@@ -969,16 +889,16 @@ class XrayService : VpnService() {
     @Synchronized
     private fun recoverNativeProcess(
         reason: String,
-        watchdogSession: WatchdogSession,
+        watchedPid: Int,
         pidToKill: Int? = null,
     ): Boolean {
-        if (!isCurrentWatchdogSession(watchdogSession)) return false
-        if (processRecoveryJob?.isActive == true) return false
+        if (!isConnectedProcess(watchedPid)) return false
+        if (processRecoveryJob?.isActive == true) return true
 
         processRecoveryJob = scope.launch {
-            connectionCommandMutex.withLock {
-                if (!isCurrentWatchdogSession(watchdogSession)) return@withLock
-                val config = activeConfig ?: return@withLock
+            runConnectionCommand {
+                if (!isConnectedProcess(watchedPid)) return@runConnectionCommand
+                val config = activeConfig ?: return@runConnectionCommand
 
                 stopLogTail()
                 stopProcessWatchdog()
@@ -990,17 +910,17 @@ class XrayService : VpnService() {
 
                 connectionStateCoordinator.startConnection(ConnectionState.Connecting)
                 updateNotification(localizedString(R.string.notification_status_recovering_core))
-                connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+                if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return@runConnectionCommand
                 delay(PROCESS_RESTART_DELAY_MS)
-                connectWithCurrentSettings(config, cleanStateFirst = false)
+                connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
             }
         }
         return true
     }
 
-    private fun isCurrentWatchdogSession(session: WatchdogSession): Boolean {
+    private fun isConnectedProcess(watchedPid: Int): Boolean {
         val currentPid = (connectionStateCoordinator.state.value as? ConnectionState.Connected)?.corePid
-        return watchdogSessions.matches(session, currentPid)
+        return currentPid == watchedPid
     }
 
     private fun registerNetworkCallback() {
@@ -1051,6 +971,20 @@ class XrayService : VpnService() {
         }
     }
 
+    private fun acquireConnectionCommandWakeLock() {
+        runCatching {
+            connectionCommandWakeLock.acquire(CONNECTION_COMMAND_WAKE_LOCK_TIMEOUT_MS)
+        }.onFailure { error ->
+            logBuffer.append(LogSource.APP, "Could not hold CPU awake for connection command: ${error.message}")
+        }
+    }
+
+    private fun releaseConnectionCommandWakeLock() {
+        runCatching {
+            if (connectionCommandWakeLock.isHeld) connectionCommandWakeLock.release()
+        }
+    }
+
     private fun networkCallback(source: String) = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             scheduleNetworkRetarget("$source available", settle = false)
@@ -1081,7 +1015,7 @@ class XrayService : VpnService() {
     }
 
     private fun scheduleNetworkRetarget(reason: String, settle: Boolean) {
-        if (!activeUseRootService) return
+        if (!connectionManager.isUsingRootRuntime) return
         activeConfig ?: return
         networkRetargetWorker.signal(
             reason = reason,
@@ -1096,7 +1030,7 @@ class XrayService : VpnService() {
         val outcome = retryNetworkRetarget(
             retryDelaysMs = NETWORK_RETARGET_RETRY_DELAYS_MS,
             shouldContinue = {
-                activeUseRootService &&
+                connectionManager.isUsingRootRuntime &&
                     activeConfig != null &&
                     (!requiresPassiveMonitoring || passiveHealthMonitoringEnabled)
             },
@@ -1105,7 +1039,7 @@ class XrayService : VpnService() {
         }
         if (
             outcome == NetworkRetargetRetryOutcome.Exhausted &&
-            activeUseRootService &&
+            connectionManager.isUsingRootRuntime &&
             activeConfig != null
         ) {
             logBuffer.append(LogSource.APP, "Network changed ($reason), but no usable physical route appeared")
@@ -1113,21 +1047,21 @@ class XrayService : VpnService() {
         }
     }
 
-    private suspend fun retargetNetwork(reason: String, attempt: Int): NetworkRetargetResult = connectionCommandMutex.withLock {
+    private suspend fun retargetNetwork(reason: String, attempt: Int): NetworkRetargetResult = runConnectionCommand {
         if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
-            return@withLock NetworkRetargetResult.Done
+            return@runConnectionCommand NetworkRetargetResult.Done
         }
-        if (!activeUseRootService) return@withLock NetworkRetargetResult.Done
-        val latestConfig = activeConfig ?: return@withLock NetworkRetargetResult.Done
+        if (!connectionManager.isUsingRootRuntime) return@runConnectionCommand NetworkRetargetResult.Done
+        val latestConfig = activeConfig ?: return@runConnectionCommand NetworkRetargetResult.Done
         val latestState = connectionStateCoordinator.state.value as? ConnectionState.Connected
-            ?: return@withLock NetworkRetargetResult.Done
+            ?: return@runConnectionCommand NetworkRetargetResult.Done
         val previousNetwork = activePhysicalNetwork
         val currentNetwork = currentPhysicalNetworkSnapshot()
         val currentRoute = withContext(Dispatchers.IO) {
             connectionManager.detectPhysicalRoute(latestState.tunName)
         }
         if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
-            return@withLock NetworkRetargetResult.Done
+            return@runConnectionCommand NetworkRetargetResult.Done
         }
 
         if (currentRoute == null) {
@@ -1135,7 +1069,7 @@ class XrayService : VpnService() {
                 logBuffer.append(LogSource.APP, "Network changed ($reason), waiting for a usable physical route")
             }
             updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
-            return@withLock NetworkRetargetResult.Retry
+            return@runConnectionCommand NetworkRetargetResult.Retry
         }
 
         val androidNetworkChanged = previousNetwork != null &&
@@ -1143,13 +1077,13 @@ class XrayService : VpnService() {
             !previousNetwork.sameNetwork(currentNetwork)
         val physicalRouteChanged = !currentRoute.matches(latestState)
         if (shouldWaitForMatchingPhysicalNetwork(reason, attempt, previousNetwork, currentNetwork, currentRoute)) {
-            return@withLock NetworkRetargetResult.Retry
+            return@runConnectionCommand NetworkRetargetResult.Retry
         }
 
         if (!androidNetworkChanged && !physicalRouteChanged) {
             activePhysicalNetwork = currentNetwork ?: previousNetwork
             updateNotification()
-            return@withLock NetworkRetargetResult.Done
+            return@runConnectionCommand NetworkRetargetResult.Done
         }
 
         if (androidNetworkChanged || currentRoute.dev != latestState.physicalInterface) {
@@ -1159,7 +1093,7 @@ class XrayService : VpnService() {
                     "${latestState.physicalInterface} -> ${currentRoute.describe()}, reconnecting...",
             )
             reconnectForPhysicalRouteChange(latestConfig, latestState, currentRoute)
-            return@withLock NetworkRetargetResult.Done
+            return@runConnectionCommand NetworkRetargetResult.Done
         }
 
         refreshPhysicalRoutingForNetworkChange(
@@ -1186,10 +1120,12 @@ class XrayService : VpnService() {
                 "${currentRoute.describe()}, refreshing routing...",
         )
         updateNotification(localizedString(R.string.notification_status_refreshing_physical_route))
+        val runtimeSettings = settingsRepo.runtimeSettingsSnapshot()
         val result = withContext(Dispatchers.IO) {
-            connectionManager.reapplyPhysicalRoutingForNetworkChange(
+            connectionManager.updatePhysicalBypassRoute(
                 connectedState = latestState,
-                runtimeSettings = settingsRepo.runtimeSettingsSnapshot(),
+                physicalRoute = currentRoute,
+                runtimeSettings = runtimeSettings,
             )
         }
         return when (result) {
@@ -1204,14 +1140,6 @@ class XrayService : VpnService() {
                 activePhysicalNetwork = currentPhysicalNetworkSnapshot() ?: currentNetwork ?: previousNetwork
                 updateNotification()
                 NetworkRetargetResult.Done
-            }
-            PhysicalRouteUpdateResult.RouteUnavailable -> {
-                if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
-                    updateNotification()
-                    return NetworkRetargetResult.Done
-                }
-                updateNotification(localizedString(R.string.notification_status_waiting_for_physical_route))
-                NetworkRetargetResult.Retry
             }
             PhysicalRouteUpdateResult.RequiresReconnect -> {
                 if (reason == PERIODIC_ROOT_ROUTE_VERIFICATION_REASON && !passiveHealthMonitoringEnabled) {
@@ -1267,9 +1195,9 @@ class XrayService : VpnService() {
         stopLogTail()
         stopProcessWatchdog()
         connectionStateCoordinator.startConnection(ConnectionState.Connecting)
-        connectionManager.disconnect(updateState = false, fastRootCleanup = true)
+        if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
         closeVpnInterface()
-        connectWithCurrentSettings(config, cleanStateFirst = false)
+        connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
     }
 
     private suspend fun setupVpnInterface(runtimeSettings: XrayRuntimeSettings): ParcelFileDescriptor? {
@@ -1360,7 +1288,7 @@ class XrayService : VpnService() {
         alwaysOnRetryJob?.cancel()
         alwaysOnRetryJob = null
         launchConnectionCommand {
-            activeConfig = null
+            connectionLifecycle.updateActiveConfig(null)
             activePhysicalNetwork = null
             stopLogTail()
             stopProcessWatchdog()
@@ -1744,6 +1672,7 @@ class XrayService : VpnService() {
         const val EXTRA_SERVER_CONFIG = "server_config"
         private const val NETWORK_RETARGET_SETTLE_DELAY_MS = 250L
         private const val NETWORK_RETARGET_WAKE_LOCK_TIMEOUT_MS = 30_000L
+        private const val CONNECTION_COMMAND_WAKE_LOCK_TIMEOUT_MS = 10 * 60_000L
         private const val NETWORK_SAFETY_CHECK_INTERVAL_MS = 60_000L
         private const val PERIODIC_ROOT_ROUTE_VERIFICATION_REASON = "periodic root route verification"
         private val NETWORK_RETARGET_RETRY_DELAYS_MS = listOf(250L, 500L, 1_000L, 2_000L, 4_000L, 8_000L)
@@ -1821,10 +1750,6 @@ internal fun shouldVerifyRootRoute(
     networkChanged: Boolean,
     networkCallbacksAvailable: Boolean,
 ): Boolean = passiveHealthMonitoringEnabled || networkChanged || !networkCallbacksAvailable
-
-private const val BYTES_PER_MIB = 1024L * 1024L
-
-private fun Long.bytesToMiB(): Long = this / BYTES_PER_MIB
 
 internal fun selectRestoredPhysicalRoute(
     state: XrayState,

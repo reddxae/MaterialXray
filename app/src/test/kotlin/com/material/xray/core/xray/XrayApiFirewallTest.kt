@@ -2,109 +2,71 @@ package com.material.xray.core.xray
 
 import com.material.xray.core.root.RootShell
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XrayApiFirewallTest {
     @Test
-    fun `apply restricts loopback API to the app UID`() = runTest {
+    fun `apply installs a UID-restricted atomic replacement`() = runTest {
         val commands = mutableListOf<String>()
         val firewall = XrayApiFirewall { command ->
             commands += command
-            RootShell.Result(
-                exitCode = if (command.startsWith("iptables -w -C OUTPUT")) 1 else 0,
-                output = if (command == "iptables -w -S") FIREWALL_CHAINS else "",
-                error = "",
-            )
+            successfulCommand()
         }
 
         assertTrue(firewall.apply(port = 48_123, appUid = 10_518))
 
-        val configuration = commands.first { "-N mxray_api_10518_a" in it }
-        assertTrue(configuration.contains("--dport 48123 -m owner --uid-owner 10518 -j ACCEPT"))
-        assertTrue(configuration.contains("--dport 48123 -j REJECT"))
-        assertTrue("iptables -w -I OUTPUT 1 -j mxray_api_10518_a" in commands)
+        val command = commands.single()
+        assertTrue(command.contains("refresh_ruleset() { ruleset=\$(iptables -w -S) || return 1; }"))
+        assertTrue(command.contains("refresh_ruleset || exit 1"))
+        assertTrue(command.contains("--dport 48123 -m owner --uid-owner 10518 -j ACCEPT"))
+        assertTrue(command.contains("--dport 48123 -j REJECT"))
+        assertTrue(command.contains("iptables -w -I OUTPUT 1 -j \"\$replacement\""))
     }
 
     @Test
     fun `apply activates replacement before removing live chain`() = runTest {
-        val commands = mutableListOf<String>()
-        val firewall = XrayApiFirewall { command ->
-            commands += command
-            RootShell.Result(
-                exitCode = if (command == "iptables -w -C OUTPUT -j mxray_api_10518_b") 1 else 0,
-                output = if (command == "iptables -w -S") FIREWALL_CHAINS else "",
-                error = "",
-            )
+        var command = ""
+        val firewall = XrayApiFirewall { value ->
+            command = value
+            successfulCommand()
         }
 
         assertTrue(firewall.apply(port = 48_123, appUid = 10_518))
 
-        val activationIndex = commands.indexOf("iptables -w -I OUTPUT 1 -j mxray_api_10518_b")
-        val oldChainRemovalIndex = commands.indexOfLast { "-D OUTPUT -j mxray_api_10518_a" in it }
+        val activationIndex = command.indexOf("-I OUTPUT 1 -j \"\$replacement\"")
+        val oldChainRemovalIndex = command.lastIndexOf("remove_chain \"\$active\"")
         assertTrue(activationIndex >= 0)
         assertTrue(oldChainRemovalIndex > activationIndex)
     }
 
     @Test
-    fun `apply removes partial replacement after configuration failure`() = runTest {
-        val commands = mutableListOf<String>()
-        val firewall = XrayApiFirewall { command ->
-            commands += command
-            RootShell.Result(
-                exitCode = if (
-                    command.startsWith("iptables -w -C OUTPUT") ||
-                    "-N mxray_api_10518_a" in command
-                ) {
-                    1
-                } else {
-                    0
-                },
-                output = if (command == "iptables -w -S") FIREWALL_CHAINS else "",
-                error = "failed",
-            )
+    fun `apply command aborts before mutation when inspection fails`() = runTest {
+        var command = ""
+        val firewall = XrayApiFirewall { value ->
+            command = value
+            RootShell.Result(exitCode = 1, output = "", error = "unavailable")
         }
 
         assertFalse(firewall.apply(port = 48_123, appUid = 10_518))
-        assertFalse(commands.any { "-I OUTPUT" in it })
-        assertTrue(commands.last().contains("-X mxray_api_10518_a"))
+
+        assertTrue(command.indexOf("refresh_ruleset || exit 1") < command.indexOf("iptables -w -N"))
     }
 
     @Test
-    fun `apply leaves live chain in place when replacement activation fails`() = runTest {
-        val commands = mutableListOf<String>()
-        val firewall = XrayApiFirewall { command ->
-            commands += command
-            val failed = command == "iptables -w -C OUTPUT -j mxray_api_10518_b" ||
-                command == "iptables -w -I OUTPUT 1 -j mxray_api_10518_b"
-            RootShell.Result(
-                exitCode = if (failed) 1 else 0,
-                output = if (command == "iptables -w -S") FIREWALL_CHAINS else "",
-                error = if (failed) "failed" else "",
-            )
+    fun `apply command cleans partial replacement on configuration or activation failure`() = runTest {
+        var command = ""
+        val firewall = XrayApiFirewall { value ->
+            command = value
+            successfulCommand()
         }
 
-        assertFalse(firewall.apply(port = 48_123, appUid = 10_518))
-        assertFalse(commands.any { "-D OUTPUT -j mxray_api_10518_a" in it })
-        assertTrue(commands.last().contains("-X mxray_api_10518_b"))
-    }
+        firewall.apply(port = 48_123, appUid = 10_518)
 
-    @Test
-    fun `apply makes no changes when existing rules cannot be inspected`() = runTest {
-        val commands = mutableListOf<String>()
-        val firewall = XrayApiFirewall { command ->
-            commands += command
-            RootShell.Result(
-                exitCode = 1,
-                output = "",
-                error = "unavailable",
-            )
-        }
-
-        assertFalse(firewall.apply(port = 48_123, appUid = 10_518))
-        assertFalse(commands.any { " -N " in it || " -A " in it || " -I " in it })
+        val cleanup = "remove_chain \"\$replacement\"; exit 1; fi"
+        assertTrue(command.contains(cleanup))
+        assertTrue(command.indexOf(cleanup) != command.lastIndexOf(cleanup))
     }
 
     @Test
@@ -112,7 +74,7 @@ class XrayApiFirewallTest {
         var called = false
         val firewall = XrayApiFirewall {
             called = true
-            RootShell.Result(exitCode = 0, output = "", error = "")
+            successfulCommand()
         }
 
         assertFalse(firewall.apply(port = 0, appUid = 10_518))
@@ -121,26 +83,22 @@ class XrayApiFirewallTest {
     }
 
     @Test
-    fun `remove only touches UID-scoped chains`() = runTest {
+    fun `remove handles both UID-scoped chains in one transaction`() = runTest {
         val commands = mutableListOf<String>()
         val firewall = XrayApiFirewall { command ->
             commands += command
-            RootShell.Result(
-                exitCode = 0,
-                output = if (command == "iptables -w -S") FIREWALL_CHAINS else "",
-                error = "",
-            )
+            successfulCommand()
         }
 
-        firewall.remove(appUid = 10_518)
+        assertTrue(firewall.remove(appUid = 10_518))
 
-        assertEquals(4, commands.size)
-        assertTrue(commands[1].contains("mxray_api_10518_a"))
-        assertTrue(commands[3].contains("mxray_api_10518_b"))
-        assertFalse(commands.any { "-F OUTPUT" in it || "-X OUTPUT" in it })
+        val command = commands.single()
+        assertTrue(command.contains("remove_chain mxray_api_10518_a"))
+        assertTrue(command.contains("remove_chain mxray_api_10518_b"))
+        assertTrue(command.contains("remove_chain mxray_api_10518_a || status=1"))
+        assertTrue(command.contains("remove_chain mxray_api_10518_b || status=1"))
+        assertFalse(command.contains("-F OUTPUT") || command.contains("-X OUTPUT"))
     }
 
-    private companion object {
-        const val FIREWALL_CHAINS = "-N mxray_api_10518_a\n-N mxray_api_10518_b"
-    }
+    private fun successfulCommand() = RootShell.Result(exitCode = 0, output = "", error = "")
 }

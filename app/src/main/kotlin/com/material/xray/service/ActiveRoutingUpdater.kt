@@ -8,7 +8,6 @@ import kotlinx.serialization.SerializationException
 
 sealed interface PhysicalRouteUpdateResult {
     data class Applied(val route: TunManager.PhysicalRoute) : PhysicalRouteUpdateResult
-    data object RouteUnavailable : PhysicalRouteUpdateResult
     data object RequiresReconnect : PhysicalRouteUpdateResult
 }
 
@@ -30,12 +29,12 @@ internal interface ActiveRoutingController {
         allowIpv6: Boolean,
     ): Boolean
 
-    suspend fun reapplyPhysicalRoutingForNetworkChange(
+    suspend fun updatePhysicalBypassRoute(
         connectedState: ConnectionState.Connected,
+        physicalRoute: TunManager.PhysicalRoute,
         tunName: String,
         fwmark: Int,
         routeTable: Int,
-        allowIpv6: Boolean,
     ): PhysicalRouteUpdateResult
 }
 
@@ -61,6 +60,11 @@ internal interface TunRoutingGateway {
         appTunRoutes: List<TunManager.AppTunRoute>,
         managedAppRouteCount: Int,
         routeProfileIds: Set<Int>,
+    ): TunManager.RoutingResult
+
+    suspend fun replacePhysicalBypassRoute(
+        bypassTable: Int,
+        physicalRoute: TunManager.PhysicalRoute,
     ): TunManager.RoutingResult
 }
 
@@ -114,6 +118,11 @@ internal class TunManagerRoutingGateway(
         managedAppRouteCount = managedAppRouteCount,
         routeProfileIds = routeProfileIds,
     )
+
+    override suspend fun replacePhysicalBypassRoute(
+        bypassTable: Int,
+        physicalRoute: TunManager.PhysicalRoute,
+    ): TunManager.RoutingResult = tunManager.replacePhysicalBypassRoute(bypassTable, physicalRoute)
 }
 
 internal class ActiveRoutingUpdater(
@@ -216,89 +225,48 @@ internal class ActiveRoutingUpdater(
         return true
     }
 
-    override suspend fun reapplyPhysicalRoutingForNetworkChange(
+    override suspend fun updatePhysicalBypassRoute(
         connectedState: ConnectionState.Connected,
+        physicalRoute: TunManager.PhysicalRoute,
         tunName: String,
         fwmark: Int,
         routeTable: Int,
-        allowIpv6: Boolean,
     ): PhysicalRouteUpdateResult {
         val startedAt = elapsedRealtime()
-        val persistedState = stateStore.read()
-        if (persistedState == null) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: active state file is missing")
+        val persistedState = stateStore.read() ?: return PhysicalRouteUpdateResult.RequiresReconnect
+        val routingIdentityChanged = persistedState.tunName != tunName ||
+            persistedState.routeTable != routeTable ||
+            persistedState.fwmark != fwmark
+        if (!persistedState.ipRulesApplied || routingIdentityChanged) {
             return PhysicalRouteUpdateResult.RequiresReconnect
         }
-        if (persistedState.tunName != tunName || persistedState.routeTable != routeTable || persistedState.fwmark != fwmark) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: active routing settings changed")
+        if (physicalRoute.dev != connectedState.physicalInterface) {
             return PhysicalRouteUpdateResult.RequiresReconnect
         }
         if (!processProbe.isAlive(connectedState.corePid)) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: xray process is not running")
             return PhysicalRouteUpdateResult.RequiresReconnect
         }
 
-        val appRoutingPlan = buildAppRoutingPlan(
-            tunName = tunName,
-            routeTable = routeTable,
-            failurePrefix = "Physical routing refresh requires reconnect",
-        ) ?: return PhysicalRouteUpdateResult.RequiresReconnect
-
-        if (appRoutingPlan.proxyServerIds != persistedState.appProxyServerIds) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: app proxy routes changed")
-            return PhysicalRouteUpdateResult.RequiresReconnect
-        }
-
-        val physicalRoute = timedStep("Physical route detection") {
-            tunGateway.detectPhysicalRoute(tunName)
-        } ?: return PhysicalRouteUpdateResult.RouteUnavailable
-
-        appRoutingPlan.tunRoutes.forEachIndexed { index, route ->
-            val appTunSetup = timedStep("App TUN check ${index + 1}") {
-                tunGateway.configureTun(
-                    tunName = route.tunName,
-                    addressCidr = TunManager.appTunAddressCidr(index + 1),
-                ) { processProbe.isAlive(connectedState.corePid) }
-            }
-            if (!appTunSetup.success) {
-                log.append(
-                    LogSource.APP,
-                    "Physical routing refresh requires reconnect: ${appTunSetup.error ?: "app TUN ${route.tunName} is unavailable"}",
-                )
-                return PhysicalRouteUpdateResult.RequiresReconnect
-            }
-        }
-
-        val bypassTable = routeTable + 1
-        val routingResult = timedStep("IP routing refresh") {
-            tunGateway.applyRouting(
-                tunName = tunName,
-                fwmark = fwmark,
-                routeTable = routeTable,
-                bypassTable = bypassTable,
-                physicalRoute = physicalRoute,
-                allowIpv6 = allowIpv6,
-                bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
-                appTunRoutes = appRoutingPlan.tunRoutes,
-                managedAppRouteCount = persistedState.appProxyServerIds.size,
-                routeProfileIds = appRoutingPlan.routeProfileIds,
-            )
-        }
+        val routingResult = tunGateway.replacePhysicalBypassRoute(
+            bypassTable = routeTable + 1,
+            physicalRoute = physicalRoute,
+        )
         if (!routingResult.success) {
-            log.append(LogSource.APP, "Physical routing refresh requires reconnect: ${routingResult.error ?: "unknown routing error"}")
+            log.append(
+                LogSource.APP,
+                "Physical bypass route update requires reconnect: ${routingResult.error ?: "unknown routing error"}",
+            )
             return PhysicalRouteUpdateResult.RequiresReconnect
         }
 
         stateStore.write(
             persistedState.copy(
-                ipRulesApplied = true,
-                appProxyServerIds = appRoutingPlan.proxyServerIds,
                 physicalInterface = physicalRoute.dev,
                 physicalGateway = physicalRoute.gateway,
                 physicalTable = physicalRoute.table,
             ),
         )
-        log.append(LogSource.APP, "Physical routing refreshed in ${elapsedRealtime() - startedAt} ms")
+        log.append(LogSource.APP, "Physical bypass route updated in ${elapsedRealtime() - startedAt} ms")
         return PhysicalRouteUpdateResult.Applied(physicalRoute)
     }
 

@@ -59,6 +59,7 @@ android {
         targetSdk = 36
         versionCode = 550
         versionName = "0.5.5"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -197,4 +198,5 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.sqlite.jdbc)
+    androidTestImplementation(libs.androidx.test.runner)
 }

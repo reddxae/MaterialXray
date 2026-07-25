@@ -10,6 +10,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton
 class StartupDiagnosticsLogger @Inject constructor(
@@ -17,7 +19,20 @@ class StartupDiagnosticsLogger @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val logBuffer: LogBuffer,
 ) {
-    suspend fun log() {
+    private val mutex = Mutex()
+
+    suspend fun log() = mutex.withLock {
+        recordSnapshot()
+    }
+
+    suspend fun logIfMissing() = mutex.withLock {
+        if (logBuffer.entries.value.any { it.source == LogSource.APP && it.message == STARTUP_DIAGNOSTICS_HEADER }) {
+            return@withLock
+        }
+        recordSnapshot()
+    }
+
+    private suspend fun recordSnapshot() {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         val activityManager = context.getSystemService(ActivityManager::class.java)
         val memoryInfo = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
@@ -73,6 +88,7 @@ class StartupDiagnosticsLogger @Inject constructor(
 
     private companion object {
         const val BYTES_PER_MIB = 1024L * 1024L
+        const val STARTUP_DIAGNOSTICS_HEADER = "Startup diagnostics"
     }
 }
 

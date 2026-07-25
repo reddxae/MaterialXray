@@ -63,7 +63,7 @@ class TunManagerTest {
     }
 
     @Test
-    fun `routing update guards IPv6 until complete policy is installed`() = runTest {
+    fun `routing update guards both address families until complete policy is installed`() = runTest {
         val commands = mutableListOf<String>()
         val manager = TunManager { command ->
             commands += command
@@ -82,28 +82,62 @@ class TunManagerTest {
         )
 
         assertTrue(result.success)
-        assertEquals(3, commands.size)
-        assertTrue(commands[0].startsWith("ip -6 route replace unreachable default table 102"))
-        assertTrue(commands[0].contains("ip -6 rule add iif lo uidrange 10000-10000 table 102 prio 11999"))
-        assertTrue(commands[0].contains("ip -6 rule add iif lo uidrange 10002-99999 table 102 prio 11999"))
-        assertFalse(commands[0].contains("uidrange 10001-10001 table 102"))
-        assertTrue(commands[0].contains("ip -6 route replace unreachable default table 100"))
-        assertTrue(commands[0].contains("ip -6 route replace unreachable default table 110"))
-        assertTrue(commands[1].contains("ip rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
-        assertTrue(commands[1].contains("ip -6 rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
-        assertTrue(commands[1].contains("ip rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
-        assertTrue(commands[1].contains("ip -6 rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
-        assertTrue(commands[2].contains("ip -6 rule del table 102 pref 11999"))
-        assertTrue(commands[2].contains("lookup 102"))
-        assertTrue(commands[2].contains("ip -6 route flush table 102"))
+        assertEquals(7, commands.size)
+        assertEquals(
+            "ip route replace unreachable default table 102 && ip -6 route replace unreachable default table 102",
+            commands[0],
+        )
+        assertTrue(commands[1].contains("rule add iif lo uidrange 10000-10000 table 102 prio 11999"))
+        assertTrue(commands[1].contains("rule add iif lo uidrange 10002-99999 table 102 prio 11999"))
+        assertTrue(commands[1].contains("| ip -batch -"))
+        assertTrue(commands[2].contains("rule add iif lo uidrange 10000-10000 table 102 prio 11999"))
+        assertTrue(commands[2].contains("rule add iif lo uidrange 10002-99999 table 102 prio 11999"))
+        assertTrue(commands[2].contains("| ip -6 -batch -"))
+        assertTrue(commands[3].contains("ip -6 route replace unreachable default table 100"))
+        assertTrue(commands[3].contains("ip -6 route replace unreachable default table 110"))
+        assertTrue(commands[4].contains("rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
+        assertTrue(commands[4].contains("rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
+        assertTrue(commands[4].contains("| ip -batch -"))
+        assertTrue(commands[5].contains("rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
+        assertTrue(commands[5].contains("rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
+        assertTrue(commands[5].contains("| ip -6 -batch -"))
+        assertTrue(commands[6].contains("ip rule del pref 11999 table 102"))
+        assertTrue(commands[6].contains("ip -6 rule del pref 11999 table 102"))
+        assertTrue(commands[6].contains("ip route flush table 102"))
+        assertTrue(commands[6].contains("ip -6 route flush table 102"))
+        assertTrue(commands[3].contains("if ip route show table 100"))
+        assertTrue(commands[3].contains("if ip -6 route show table 100"))
+        commands.forEach { command ->
+            assertEquals(0, ProcessBuilder("sh", "-n", "-c", command).start().waitFor())
+        }
     }
 
     @Test
-    fun `failed routing update retains IPv6 guard`() = runTest {
+    fun `physical bypass update replaces only its default route`() = runTest {
         val commands = mutableListOf<String>()
         val manager = TunManager { command ->
             commands += command
-            if (commands.size == 2) RootShell.Result(1, "", "rule failed") else successfulCommand()
+            successfulCommand()
+        }
+
+        val result = manager.replacePhysicalBypassRoute(
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.2", "wlan0"),
+        )
+
+        assertTrue(result.success)
+        assertEquals(
+            listOf("ip route replace default via 192.0.2.2 dev wlan0 table 101"),
+            commands,
+        )
+    }
+
+    @Test
+    fun `failed routing update retains both address family guards`() = runTest {
+        val commands = mutableListOf<String>()
+        val manager = TunManager { command ->
+            commands += command
+            if (commands.size == 5) RootShell.Result(1, "", "rule failed") else successfulCommand()
         }
 
         val result = manager.applyRouting(
@@ -117,13 +151,43 @@ class TunManagerTest {
         )
 
         assertFalse(result.success)
-        assertEquals(2, commands.size)
-        assertTrue(commands[0].contains("table 102 prio 11999"))
+        assertEquals(5, commands.size)
+        assertTrue(commands[0].contains("ip route replace unreachable default table 102"))
+        assertTrue(commands[0].contains("ip -6 route replace unreachable default table 102"))
+        assertTrue(commands[1].contains("table 102 prio 11999"))
+        assertTrue(commands[2].contains("table 102 prio 11999"))
         assertFalse(commands.any { it.contains("grep -Eq") })
     }
 
     @Test
-    fun `failed guard installation does not remove an existing guard`() = runTest {
+    fun `failed stale rule deletion retains update guards`() = runTest {
+        val commands = mutableListOf<String>()
+        val manager = TunManager { command ->
+            commands += command
+            if (command.contains("rules=\$(ip rule show")) {
+                RootShell.Result(1, "", "stale rule deletion failed")
+            } else {
+                successfulCommand()
+            }
+        }
+
+        val result = manager.applyRouting(
+            tunName = "wlan1",
+            fwmark = 255,
+            routeTable = 100,
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+        )
+
+        assertFalse(result.success)
+        assertEquals(4, commands.size)
+        assertFalse(commands.any { it.contains("guard_rules=") })
+    }
+
+    @Test
+    fun `failed guard route installation stops before adding rules`() = runTest {
         val commands = mutableListOf<String>()
         val manager = TunManager { command ->
             commands += command
@@ -142,8 +206,10 @@ class TunManagerTest {
 
         assertFalse(result.success)
         assertEquals(1, commands.size)
-        assertFalse(commands.single().contains("rule del pref 11999"))
-        assertTrue(commands.single().contains("lookup 102' || ip -6 rule add"))
+        assertEquals(
+            "ip route replace unreachable default table 102 && ip -6 route replace unreachable default table 102",
+            commands.single(),
+        )
     }
 
     @Test
@@ -165,6 +231,52 @@ class TunManagerTest {
         assertTrue(commands.contains("ip -6 rule show"))
         assertTrue(commands.any { it.contains("ip -6 route flush table 100") })
         assertTrue(commands.any { it.contains("ip -6 route flush table 102") })
+    }
+
+    @Test
+    fun `routing cleanup reports an inspection failure`() = runTest {
+        val manager = TunManager { command ->
+            if (command == "ip rule show") RootShell.Result(1, "", "unavailable") else successfulCommand()
+        }
+
+        val cleaned = manager.removeRouting(
+            fwmark = 255,
+            routeMark = 100,
+            routeTable = 100,
+            tunName = "wlan1",
+            managedAppRouteCount = 1,
+        )
+
+        assertFalse(cleaned)
+    }
+
+    @Test
+    fun `link cleanup tolerates interface disappearing after inspection`() {
+        val command = managedLinkRemovalCommand(listOf("xray0"))
+        val fakeIp = """
+            present=1
+            ip() {
+                if [ "${'$'}1 ${'$'}2" = "link show" ]; then [ "${'$'}present" -eq 1 ]; return; fi
+                if [ "${'$'}1 ${'$'}2" = "link del" ]; then present=0; return 1; fi
+                return 1
+            }
+        """.trimIndent()
+
+        assertEquals(0, ProcessBuilder("sh", "-c", "$fakeIp\n$command").start().waitFor())
+    }
+
+    @Test
+    fun `link cleanup reports deletion failure while interface remains`() {
+        val command = managedLinkRemovalCommand(listOf("xray0"))
+        val fakeIp = """
+            ip() {
+                if [ "${'$'}1 ${'$'}2" = "link show" ]; then return 0; fi
+                if [ "${'$'}1 ${'$'}2" = "link del" ]; then return 1; fi
+                return 1
+            }
+        """.trimIndent()
+
+        assertEquals(1, ProcessBuilder("sh", "-c", "$fakeIp\n$command").start().waitFor())
     }
 
     private fun successfulCommand() = RootShell.Result(0, "", "")

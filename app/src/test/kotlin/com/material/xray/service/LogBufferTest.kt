@@ -27,4 +27,17 @@ class LogBufferTest {
 
         assertEquals(listOf("recovery reason"), buffer.entries.value.map { it.message })
     }
+
+    @Test
+    fun `Xray debug flood retains application diagnostics`() {
+        val buffer = LogBuffer()
+        buffer.append(LogSource.APP, "network change detected")
+
+        buffer.appendAll(LogSource.XRAY, (0 until 2_500).map { "debug-$it" })
+
+        val entries = buffer.entries.value
+        assertEquals(2_000, entries.size)
+        assertEquals("network change detected", entries.first().message)
+        assertEquals("debug-2499", entries.last().message)
+    }
 }

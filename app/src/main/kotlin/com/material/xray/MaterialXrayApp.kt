@@ -40,7 +40,7 @@ class MaterialXrayApp : Application() {
         appScope.launch {
             runCatching { backupManager.recoverInterruptedRestore() }
                 .onFailure { error -> Log.e(LOG_TAG, "Unable to recover interrupted backup restore", error) }
-            runCatching { startupDiagnosticsLogger.log() }
+            runCatching { startupDiagnosticsLogger.logIfMissing() }
                 .onFailure { error -> Log.e(LOG_TAG, "Unable to record startup diagnostics", error) }
             launcherIconManager.apply(settingsRepository.launcherIcon.first())
             appUpdateScheduler.setEnabled(settingsRepository.appUpdateChecksEnabled.first())

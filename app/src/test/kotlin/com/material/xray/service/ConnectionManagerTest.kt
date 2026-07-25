@@ -14,6 +14,9 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,7 +29,7 @@ class ConnectionManagerTest {
     fun `binary setup failure cleans runtime and publishes error`() = runTest {
         val harness = Harness().apply { binary.rootReady = false }
 
-        harness.manager.connect(server(), runtimeSettings(), cleanStateFirst = false)
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
 
         assertEquals(1, harness.cleanup.cleanCalls)
         assertEquals(0, harness.rootProcess.startCalls)
@@ -45,7 +48,7 @@ class ConnectionManagerTest {
             rootProcess.crashReason = "startup failed"
         }
 
-        harness.manager.connect(server(), runtimeSettings(), cleanStateFirst = false)
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
 
         assertEquals(1, harness.diagnostics.calls)
         assertEquals(1, harness.cleanup.cleanCalls)
@@ -62,7 +65,7 @@ class ConnectionManagerTest {
             tunGateway.routingResult = TunManager.RoutingResult(success = false, error = "route failed")
         }
 
-        harness.manager.connect(server(), runtimeSettings(), cleanStateFirst = false)
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
 
         assertEquals(1, harness.tunGateway.applyCalls)
         assertEquals(1, harness.cleanup.cleanCalls)
@@ -88,14 +91,103 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `disconnect without runtime or persisted state is already clean`() = runTest {
+        val harness = Harness().apply { cleanup.knownStateStopped = false }
+
+        harness.manager.disconnect(updateState = false, fastRootCleanup = true)
+
+        assertEquals(0, harness.cleanup.knownStateStopCalls)
+        assertEquals(0, harness.cleanup.cleanCalls)
+    }
+
+    @Test
+    fun `failed cleanup prevents disconnect from being published`() = runTest {
+        val harness = Harness().apply {
+            stateStore.state = XrayState(xrayPid = 42)
+            cleanup.knownStateStopped = false
+            cleanup.cleanResult = false
+        }
+
+        val disconnected = harness.manager.disconnect(updateState = true, fastRootCleanup = true)
+
+        assertFalse(disconnected)
+        assertEquals(
+            ConnectionState.Error(harness.environment.message(R.string.connection_error_cleanup_failed)),
+            harness.stateCoordinator.state.value,
+        )
+        assertEquals(42, harness.stateStore.state?.xrayPid)
+    }
+
+    @Test
+    fun `failed initial cleanup prevents a replacement process from starting`() = runTest {
+        val harness = Harness().apply { cleanup.cleanResult = false }
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.Full)
+
+        assertEquals(0, harness.rootProcess.startCalls)
+        assertEquals(
+            ConnectionState.Error(harness.environment.message(R.string.connection_error_cleanup_failed)),
+            harness.stateCoordinator.state.value,
+        )
+    }
+
+    @Test
     fun `successful root connection persists its protected loopback API port`() = runTest {
         val harness = Harness()
 
-        harness.manager.connect(server(), runtimeSettings(), cleanStateFirst = false)
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
 
         assertEquals(XrayApiEndpoint.LoopbackTcp(48_123), harness.createdApiEndpoints.single())
         assertEquals(48_123, harness.stateStore.state?.xrayApiPort)
         assertEquals(listOf(48_123 to harness.environment.appUid), harness.rootRuntime.protectedApis)
+    }
+
+    @Test
+    fun `connection is not published before Xray API readiness`() = runTest {
+        val harness = Harness().apply { apiClients.sysStats = null }
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertEquals(
+            ConnectionState.Error(harness.environment.message(R.string.connection_error_xray_api_not_ready)),
+            harness.stateCoordinator.state.value,
+        )
+        assertEquals(1, harness.cleanup.cleanCalls)
+    }
+
+    @Test
+    fun `connection waits through transient Xray API startup failures`() = runTest {
+        val harness = Harness().apply { apiClients.unavailableSysStatsQueries = 3 }
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertTrue(harness.stateCoordinator.state.value is ConnectionState.Connected)
+        assertEquals(4, harness.apiClients.sysStatsQueries)
+    }
+
+    @Test
+    fun `connection cancellation cleans partial runtime without publishing an error`() = runTest {
+        val harness = Harness()
+        val queryStarted = CompletableDeferred<Unit>()
+        val cleanupStarted = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        harness.apiClients.queryStarted = queryStarted
+        harness.apiClients.releaseQuery = CompletableDeferred()
+        harness.cleanup.cleanStarted = cleanupStarted
+        harness.cleanup.releaseClean = releaseCleanup
+
+        val connection = async {
+            harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+        }
+        queryStarted.await()
+        connection.cancel()
+        cleanupStarted.await()
+        releaseCleanup.complete(Unit)
+        connection.join()
+
+        assertEquals(1, harness.cleanup.cleanCalls)
+        assertEquals(1, harness.apiClients.statsCloseCalls)
+        assertFalse(harness.stateCoordinator.state.value is ConnectionState.Error)
     }
 
     @Test
@@ -114,6 +206,47 @@ class ConnectionManagerTest {
         assertEquals(harness.apiClients.trafficStats, harness.manager.readOutboundTrafficStatsBytes())
         assertEquals(harness.apiClients.sysStats, harness.manager.readXraySysStats())
         assertEquals(selection, harness.manager.readBalancerSelection("primary"))
+    }
+
+    @Test
+    fun `service destruction defers API client close until active query completes`() = runTest {
+        val harness = Harness()
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+        val queryStarted = CompletableDeferred<Unit>()
+        val releaseQuery = CompletableDeferred<Unit>()
+        harness.apiClients.queryStarted = queryStarted
+        harness.apiClients.releaseQuery = releaseQuery
+
+        val query = async { harness.manager.readXraySysStats() }
+        queryStarted.await()
+        harness.manager.prepareForServiceDestruction()
+
+        assertEquals(0, harness.apiClients.statsCloseCalls)
+        releaseQuery.complete(Unit)
+        query.await()
+        assertEquals(1, harness.apiClients.statsCloseCalls)
+    }
+
+    @Test
+    fun `service destruction closes API clients created by a queued replacement`() = runTest {
+        val harness = Harness()
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+        val queryStarted = CompletableDeferred<Unit>()
+        val releaseQuery = CompletableDeferred<Unit>()
+        harness.apiClients.queryStarted = queryStarted
+        harness.apiClients.releaseQuery = releaseQuery
+
+        val query = async { harness.manager.readXraySysStats() }
+        queryStarted.await()
+        val replacement = async(start = CoroutineStart.UNDISPATCHED) {
+            harness.manager.restoreRootApiClients()
+        }
+        harness.manager.prepareForServiceDestruction()
+
+        releaseQuery.complete(Unit)
+        query.await()
+        assertTrue(replacement.await())
+        assertEquals(2, harness.apiClients.statsCloseCalls)
     }
 
     @Test
@@ -144,7 +277,7 @@ class ConnectionManagerTest {
     fun `root connection fails closed when API firewall cannot be installed`() = runTest {
         val harness = Harness().apply { rootRuntime.apiProtectionReady = false }
 
-        harness.manager.connect(server(), runtimeSettings(), cleanStateFirst = false)
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
 
         assertEquals(0, harness.rootProcess.startCalls)
         assertEquals(1, harness.cleanup.cleanCalls)
@@ -161,7 +294,7 @@ class ConnectionManagerTest {
         harness.manager.connect(
             server(),
             runtimeSettings().copy(tunName = ""),
-            cleanStateFirst = false,
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
         )
 
         assertEquals(1, harness.tunGateway.nameDetectionCalls)
@@ -177,7 +310,7 @@ class ConnectionManagerTest {
         harness.manager.connect(
             server(),
             runtimeSettings().copy(tunName = "custom0"),
-            cleanStateFirst = false,
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
         )
 
         assertEquals(0, harness.tunGateway.nameDetectionCalls)
@@ -191,7 +324,7 @@ class ConnectionManagerTest {
         harness.manager.connect(
             server(),
             runtimeSettings().copy(allowIpv6 = true),
-            cleanStateFirst = false,
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
         )
 
         assertTrue(harness.tunGateway.lastAllowIpv6)
@@ -265,7 +398,7 @@ class ConnectionManagerTest {
         override fun allocateLoopbackApiPort(): Int = 48_123
         private var clock = 0L
 
-        override fun elapsedRealtime(): Long = clock++
+        override fun elapsedRealtime(): Long = clock.also { clock += 250L }
 
         override fun localizedString(resourceId: Int, vararg arguments: Any): String = message(resourceId)
 
@@ -283,6 +416,7 @@ class ConnectionManagerTest {
             return apiProtectionReady
         }
         override suspend fun readActiveConnectionCount(pid: Int): Int = 0
+        override suspend fun readProcessMetrics(pid: Int): ProcessMetrics = ProcessMetrics(1, 0)
     }
 
     private class FakeXrayBinary : ConnectionXrayBinary {
@@ -364,15 +498,26 @@ class ConnectionManagerTest {
             lastAllowIpv6 = allowIpv6
             return routingResult
         }
+
+        override suspend fun replacePhysicalBypassRoute(
+            bypassTable: Int,
+            physicalRoute: TunManager.PhysicalRoute,
+        ): TunManager.RoutingResult = routingResult
     }
 
     private class FakeCleanup : ConnectionCleanup {
         var cleanCalls = 0
         var knownStateStopCalls = 0
         var knownStateStopped = true
+        var cleanResult = true
+        var cleanStarted: CompletableDeferred<Unit>? = null
+        var releaseClean: CompletableDeferred<Unit>? = null
 
-        override suspend fun ensureCleanState(fallbackTunName: String) {
+        override suspend fun ensureCleanState(fallbackTunName: String): Boolean {
             cleanCalls += 1
+            cleanStarted?.complete(Unit)
+            releaseClean?.await()
+            return cleanResult
         }
 
         override suspend fun ensureKnownStateStopped(fallbackTunName: String): Boolean {
@@ -471,24 +616,40 @@ class ConnectionManagerTest {
             return false
         }
 
-        override suspend fun reapplyPhysicalRoutingForNetworkChange(
+        override suspend fun updatePhysicalBypassRoute(
             connectedState: ConnectionState.Connected,
+            physicalRoute: TunManager.PhysicalRoute,
             tunName: String,
             fwmark: Int,
             routeTable: Int,
-            allowIpv6: Boolean,
-        ): PhysicalRouteUpdateResult = PhysicalRouteUpdateResult.RequiresReconnect
+        ): PhysicalRouteUpdateResult = PhysicalRouteUpdateResult.Applied(physicalRoute)
     }
 
     private class FakeApiClients {
         var trafficStats: Map<String, Long> = emptyMap()
         var balancerSelection: ActiveBalancerSelection? = null
-        var sysStats = XraySysStats(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+        var sysStats: XraySysStats? = XraySysStats(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+        var unavailableSysStatsQueries = 0
+        var sysStatsQueries = 0
+        var queryStarted: CompletableDeferred<Unit>? = null
+        var releaseQuery: CompletableDeferred<Unit>? = null
+        var statsCloseCalls = 0
 
         private val stats = object : ConnectionStatsClient {
             override suspend fun queryOutboundTrafficStatsBytes(): Map<String, Long> = trafficStats
-            override suspend fun getSysStats(): XraySysStats = sysStats
-            override fun close() = Unit
+            override suspend fun getSysStats(): XraySysStats? {
+                sysStatsQueries++
+                queryStarted?.complete(Unit)
+                releaseQuery?.await()
+                if (unavailableSysStatsQueries > 0) {
+                    unavailableSysStatsQueries--
+                    return null
+                }
+                return sysStats
+            }
+            override fun close() {
+                statsCloseCalls++
+            }
         }
         private val routing = object : ConnectionRoutingClient {
             override suspend fun queryBalancerSelection(balancerTag: String): ActiveBalancerSelection? = balancerSelection

@@ -65,6 +65,7 @@ internal interface ConnectionRootRuntime {
     fun networkNamespaceName(): String
     suspend fun protectLoopbackApi(port: Int, appUid: Int): Boolean
     suspend fun readActiveConnectionCount(pid: Int): Int?
+    suspend fun readProcessMetrics(pid: Int): ProcessMetrics?
 }
 
 internal class RootShellConnectionRuntime(
@@ -72,7 +73,7 @@ internal class RootShellConnectionRuntime(
 ) : ConnectionRootRuntime {
     private val apiFirewall = XrayApiFirewall(shell)
 
-    override suspend fun open(): Boolean = shell.open()
+    override suspend fun open(): Boolean = shell.open(RootShell.NetworkNamespace.INIT)
 
     override fun networkNamespaceName(): String = shell.defaultNetworkNamespace().name.lowercase()
 
@@ -83,7 +84,34 @@ internal class RootShellConnectionRuntime(
         .output
         .trim()
         .toIntOrNull()
+
+    override suspend fun readProcessMetrics(pid: Int): ProcessMetrics? = shell.execute(
+        "rss=\$(awk '/^VmRSS:/ { print \$2 }' /proc/$pid/status 2>/dev/null); " +
+            "sockets=\$(ls -l /proc/$pid/fd 2>/dev/null | grep -c 'socket:'); " +
+            "printf 'rss_kb=%s\\nsockets=%s\\n' \"\$rss\" \"\$sockets\"",
+    ).takeIf { it.isSuccess }?.output?.let(::parseProcessMetrics)
 }
+
+internal data class ProcessMetrics(
+    val residentMemoryMb: Long?,
+    val activeConnectionCount: Int?,
+)
+
+internal fun parseProcessMetrics(output: String): ProcessMetrics? {
+    val values = output.lineSequence().mapNotNull { line ->
+        val separator = line.indexOf('=')
+        if (separator <= 0) null else line.substring(0, separator) to line.substring(separator + 1)
+    }.toMap()
+    val rssKb = values["rss_kb"]?.toLongOrNull()
+    val sockets = values["sockets"]?.toIntOrNull()
+    if (rssKb == null && sockets == null) return null
+    return ProcessMetrics(
+        residentMemoryMb = rssKb?.let { (it + KILOBYTES_PER_MEBIBYTE - 1) / KILOBYTES_PER_MEBIBYTE },
+        activeConnectionCount = sockets,
+    )
+}
+
+private const val KILOBYTES_PER_MEBIBYTE = 1024L
 
 internal interface ConnectionXrayBinary : XrayProcessBinary {
     fun ensureRootBinaryExtracted(): Boolean
@@ -108,14 +136,14 @@ internal class XrayBinaryConnectionAdapter(
 }
 
 internal interface ConnectionCleanup {
-    suspend fun ensureCleanState(fallbackTunName: String = "xray0")
+    suspend fun ensureCleanState(fallbackTunName: String = "xray0"): Boolean
     suspend fun ensureKnownStateStopped(fallbackTunName: String = "xray0"): Boolean
 }
 
 internal class CleanupManagerConnectionAdapter(
     private val cleanupManager: CleanupManager,
 ) : ConnectionCleanup {
-    override suspend fun ensureCleanState(fallbackTunName: String) = cleanupManager.ensureCleanState(fallbackTunName)
+    override suspend fun ensureCleanState(fallbackTunName: String): Boolean = cleanupManager.ensureCleanState(fallbackTunName)
 
     override suspend fun ensureKnownStateStopped(fallbackTunName: String): Boolean = cleanupManager.ensureKnownStateStopped(fallbackTunName)
 }

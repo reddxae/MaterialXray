@@ -22,6 +22,7 @@ class LogBuffer @Inject constructor() {
     val entries: StateFlow<List<LogEntry>> = _entries
     private val buffer = ArrayDeque<LogEntry>(maxSize)
     private var nextId = 0L
+    private var appEntryCount = 0
 
     fun append(source: LogSource, message: String) {
         appendAll(source, listOf(message))
@@ -41,7 +42,12 @@ class LogBuffer @Inject constructor() {
         synchronized(this) {
             messages.forEach { message ->
                 if (buffer.size == maxSize) {
-                    buffer.removeFirst()
+                    val evictionIndex = if (source == LogSource.XRAY && appEntryCount <= MIN_RETAINED_APP_ENTRIES) {
+                        buffer.indexOfFirst { entry -> entry.source == LogSource.XRAY }.takeIf { it >= 0 } ?: 0
+                    } else {
+                        0
+                    }
+                    if (buffer.removeAt(evictionIndex).source == LogSource.APP) appEntryCount--
                 }
                 buffer.addLast(
                     LogEntry(
@@ -50,6 +56,7 @@ class LogBuffer @Inject constructor() {
                         message = message,
                     ),
                 )
+                if (source == LogSource.APP) appEntryCount++
             }
             _entries.value = buffer.toList()
         }
@@ -58,6 +65,7 @@ class LogBuffer @Inject constructor() {
     @Synchronized
     fun clear() {
         buffer.clear()
+        appEntryCount = 0
         _entries.value = emptyList()
     }
 
@@ -66,6 +74,7 @@ class LogBuffer @Inject constructor() {
         val retained = buffer.filterNot { it.source == source }
         buffer.clear()
         buffer.addAll(retained)
+        appEntryCount = retained.count { it.source == LogSource.APP }
         _entries.value = buffer.toList()
     }
 
@@ -73,5 +82,9 @@ class LogBuffer @Inject constructor() {
         val time = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
             .format(java.util.Date(entry.timestamp))
         "$time [${entry.source.name}] ${entry.message}"
+    }
+
+    private companion object {
+        const val MIN_RETAINED_APP_ENTRIES = 256
     }
 }

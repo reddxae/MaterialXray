@@ -424,19 +424,24 @@ class TunManager internal constructor(
         guardTable: Int,
         verify: Boolean = false,
     ): String = listOf(
-        removeUpdateGuardCommand(guardTable, "ip rule", "ip route", verify),
-        removeUpdateGuardCommand(guardTable, "ip -6 rule", "ip -6 route", verify),
+        removeUpdateGuardCommand(guardTable, "ip rule", "ip", "ip route", verify),
+        removeUpdateGuardCommand(guardTable, "ip -6 rule", "ip -6", "ip -6 route", verify),
     ).joinToString(" && ")
 
     private fun removeUpdateGuardCommand(
         guardTable: Int,
         ruleCommand: String,
+        ipCommand: String,
         routeCommand: String,
         verify: Boolean,
     ): String = buildString {
         val guardPattern = "^$UPDATE_GUARD_PRIORITY:"
-        append("while $ruleCommand show table $guardTable 2>/dev/null | grep -q ${shellQuote(guardPattern)}; do ")
-        append("$ruleCommand del pref $UPDATE_GUARD_PRIORITY table $guardTable || exit 1; done")
+        append("guard_rules=\$($ruleCommand show table $guardTable 2>/dev/null) || exit 1")
+        append("; batch=\$(printf '%s\\n' \"\$guard_rules\" | while IFS= read -r line; do ")
+        append("case \"\$line\" in \"$UPDATE_GUARD_PRIORITY:\"*) ")
+        append("printf 'rule del pref $UPDATE_GUARD_PRIORITY table $guardTable\\n';; esac; done)")
+        append("; if [ -n \"\$batch\" ]; then printf '%s\\n' \"\$batch\" | ")
+        append("$ipCommand -force -batch - >/dev/null 2>&1 || exit 1; fi")
         if (verify) {
             append("; guard_rules=\$($ruleCommand show table $guardTable 2>/dev/null) || exit 1")
             append("; printf '%s\\n' \"\$guard_rules\" | grep -Eq ${shellQuote(guardPattern)}")

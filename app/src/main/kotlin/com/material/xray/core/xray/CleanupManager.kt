@@ -52,7 +52,8 @@ class CleanupManager(
 internal fun ownedProcessStopCommand(configPath: String, persistedPid: Int?): String = buildString {
     append("config=${shellQuote(configPath)}; candidates=${shellQuote(persistedPid?.takeIf { it > 0 }?.toString().orEmpty())}; ")
     append("is_owned() { [ -e \"/proc/\$1\" ] || return 1; [ -r \"/proc/\$1/cmdline\" ] || return 1; ")
-    append("cmdline=\$(tr '\\0' ' ' < \"/proc/\$1/cmdline\" 2>/dev/null) || return 1; ")
+    // Unlike Toybox tr, cat terminates if a procfs read races with process exit.
+    append("cmdline=\$(cat -v \"/proc/\$1/cmdline\" 2>/dev/null) || return 1; ")
     append("case \"\$cmdline\" in *\"\$config\"*) return 0;; *) return 1;; esac; }; ")
     append("for pid in \$(pidof xray 2>/dev/null); do case \" \$candidates \" in *\" \$pid \"*) ;; ")
     append("*) candidates=\"\$candidates \$pid\";; esac; done; owned=''; ")

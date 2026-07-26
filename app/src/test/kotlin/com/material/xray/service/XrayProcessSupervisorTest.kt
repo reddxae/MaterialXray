@@ -26,6 +26,8 @@ class XrayProcessSupervisorTest {
                 assertTrue(command.contains("'/tmp/xray bin/xray' run -c \"\$config\""))
                 assertTrue(command.contains("> '/tmp/runtime dir/xray.log' 2>&1 & launcher=\$!"))
                 assertTrue(command.contains("pidof xray"))
+                assertTrue(command.contains("cat -v \"/proc/\$pid/cmdline\""))
+                assertFalse(command.contains("tr "))
                 assertTrue(command.contains("printf '%s' \"\${found:-\$launcher}\""))
                 RootShell.Result(exitCode = 0, output = "1234", error = "")
             },
@@ -73,6 +75,8 @@ class XrayProcessSupervisorTest {
         assertTrue(command.contains("!= Z"))
         assertTrue(command.contains("config='/tmp/config dir/config.json'"))
         assertTrue(command.contains("/proc/42/cmdline"))
+        assertTrue(command.contains("cat -v /proc/42/cmdline"))
+        assertFalse(command.contains("tr "))
     }
 
     @Test

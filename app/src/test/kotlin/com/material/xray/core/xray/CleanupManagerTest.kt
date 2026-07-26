@@ -19,6 +19,8 @@ class CleanupManagerTest {
 
         assertTrue(command.indexOf("kill \"\$pid\"") > command.indexOf("is_owned()"))
         assertTrue(command.contains("/proc/\$1/cmdline"))
+        assertTrue(command.contains("cat -v \"/proc/\$1/cmdline\""))
+        assertFalse(command.contains("tr "))
         assertTrue(command.contains("*\"\$config\"*"))
         assertTrue(command.contains("candidates='42'"))
         assertFalse(command.contains("return 2"))

@@ -113,7 +113,8 @@ internal class XrayProcessSupervisor(
             append("i=0; ")
             append("while [ \$i -lt 20 ]; do ")
             append("for pid in \$(pidof xray 2>/dev/null); do ")
-            append("cmdline=\$(tr '\\0' ' ' < \"/proc/\$pid/cmdline\" 2>/dev/null) || continue; ")
+            // Unlike Toybox tr, cat terminates if a procfs read races with process exit.
+            append("cmdline=\$(cat -v \"/proc/\$pid/cmdline\" 2>/dev/null) || continue; ")
             append("case \"\$cmdline\" in *\"\$config\"*) found=\"\$pid\"; break;; esac; ")
             append("done; ")
             append("[ -n \"\$found\" ] && break; ")
@@ -132,7 +133,7 @@ internal class XrayProcessSupervisor(
         val command = "config=$configPath; " +
             "kill -0 $pid 2>/dev/null && " +
             "[ \"\$(awk '/^State:/ { print \$2 }' /proc/$pid/status 2>/dev/null)\" != Z ] && " +
-            "cmdline=\$(tr '\\0' ' ' < /proc/$pid/cmdline 2>/dev/null) && " +
+            "cmdline=\$(cat -v /proc/$pid/cmdline 2>/dev/null) && " +
             "case \"\$cmdline\" in *\"\$config\"*) true;; *) false;; esac"
         return commandRunner.execute(command).isSuccess
     }

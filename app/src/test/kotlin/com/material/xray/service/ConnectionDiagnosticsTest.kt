@@ -4,6 +4,7 @@ import com.material.xray.core.root.RootShell
 import com.material.xray.core.root.RootShell.NetworkNamespace
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,6 +33,9 @@ class ConnectionDiagnosticsTest {
             runner.calls.map { it.label to it.namespace },
         )
         assertTrue(log.messages().any { it.contains("tun-failure/current-netns: output for current-netns") })
+        val processProbe = runner.calls.single { it.label == "xray-proc" }.command
+        assertTrue(processProbe.contains("cat -v /proc/42/cmdline"))
+        assertFalse(processProbe.contains("tr "))
     }
 
     @Test
@@ -84,7 +88,7 @@ class ConnectionDiagnosticsTest {
                 command.contains("readlink /proc/") -> "current-netns"
                 else -> error("Unexpected diagnostic command: $command")
             }
-            calls += Call(label, namespace)
+            calls += Call(label, namespace, command)
             return resultForLabel(label)
         }
     }
@@ -92,6 +96,7 @@ class ConnectionDiagnosticsTest {
     private data class Call(
         val label: String,
         val namespace: NetworkNamespace,
+        val command: String,
     )
 
     private companion object {

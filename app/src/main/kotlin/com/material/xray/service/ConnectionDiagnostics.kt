@@ -66,7 +66,7 @@ internal class ConnectionDiagnostics(
         if (xrayPid != null && xrayPid > 0) {
             logCommand(
                 "$stage/xray-proc",
-                "if [ -d /proc/$xrayPid ]; then printf 'pid=$xrayPid net=%s\\n' \"$(readlink /proc/$xrayPid/ns/net 2>/dev/null)\"; tr '\\0' ' ' </proc/$xrayPid/cmdline 2>/dev/null; else echo 'pid=$xrayPid missing'; fi",
+                "if [ -d /proc/$xrayPid ]; then printf 'pid=$xrayPid net=%s\\n' \"$(readlink /proc/$xrayPid/ns/net 2>/dev/null)\"; cat -v /proc/$xrayPid/cmdline 2>/dev/null; else echo 'pid=$xrayPid missing'; fi",
                 NetworkNamespace.CURRENT,
             )
             if (tunName != null) {

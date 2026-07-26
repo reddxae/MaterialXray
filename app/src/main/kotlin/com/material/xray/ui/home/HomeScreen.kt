@@ -82,6 +82,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -93,6 +94,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -132,14 +134,13 @@ import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionUserAgentMode
-import com.material.xray.model.endpointSummary
-import com.material.xray.model.proxyOutboundCount
 import com.material.xray.service.AppUpdateInstallProgress
 import com.material.xray.service.AppUpdateInstallStage
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
@@ -253,7 +254,6 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 ConnectionPanel(
                     connectionState = uiState.connectionState,
                     selectedServerName = connectionUiState.displayServerName,
-                    selectedServerDetail = connectionUiState.selectedServerDetail,
                     activeBalancerServer = uiState.activeBalancerServer,
                     buttonColor = connectionUiState.buttonColor,
                     isConnected = connectionUiState.isConnected,
@@ -763,19 +763,7 @@ private fun buildConnectionUiState(
             else -> MaterialTheme.colorScheme.primary
         },
         displayServerName = (connectionState as? ConnectionState.Connected)?.serverName ?: selectedServerName,
-        selectedServerDetail = selectedServer?.localizedEndpointSummary()
-            ?: stringResource(R.string.home_select_server_below),
     )
-}
-
-@Composable
-private fun ServerConfig.localizedEndpointSummary(): String {
-    val outboundCount = proxyOutboundCount()
-    return if (outboundCount == null) {
-        endpointSummary()
-    } else {
-        pluralStringResource(R.plurals.home_server_multiconnect_summary, outboundCount, outboundCount)
-    }
 }
 
 private data class HomeUiState(
@@ -805,14 +793,12 @@ private data class ConnectionUiState(
     val isAlwaysOnVpn: Boolean,
     val buttonColor: Color,
     val displayServerName: String,
-    val selectedServerDetail: String,
 )
 
 @Composable
 private fun ConnectionPanel(
     connectionState: ConnectionState,
     selectedServerName: String,
-    selectedServerDetail: String,
     activeBalancerServer: ActiveBalancerServerState?,
     buttonColor: Color,
     isConnected: Boolean,
@@ -876,14 +862,13 @@ private fun ConnectionPanel(
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
-        if (!isRestartRequired && !isInterfaceBusy) {
-            Text(
-                text = selectedServerDetail,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Box(
+            modifier = Modifier.height(with(LocalDensity.current) { MaterialTheme.typography.bodySmall.lineHeight.toDp() }),
+            contentAlignment = Alignment.Center,
+        ) {
+            (connectionState as? ConnectionState.Connected)?.let { connectedState ->
+                CoreUptime(startTime = connectedState.startTime)
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -951,6 +936,38 @@ private fun ConnectionPanel(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+    }
+}
+
+@Composable
+private fun CoreUptime(startTime: Long) {
+    var currentTime by remember(startTime) { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(startTime) {
+        while (true) {
+            currentTime = System.currentTimeMillis()
+            delay(CORE_UPTIME_REFRESH_INTERVAL_MS)
+        }
+    }
+
+    Text(
+        text = formatCoreUptime(currentTime - startTime),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+    )
+}
+
+internal fun formatCoreUptime(elapsedMillis: Long): String {
+    val totalSeconds = elapsedMillis.coerceAtLeast(0L) / 1_000L
+    val days = totalSeconds / 86_400L
+    val hours = totalSeconds % 86_400L / 3_600L
+    val minutes = totalSeconds % 3_600L / 60L
+    val seconds = totalSeconds % 60L
+    return when {
+        days > 0L -> String.format(Locale.ROOT, "%02d:%02d:%02d:%02d", days, hours, minutes, seconds)
+        hours > 0L -> String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds)
+        else -> String.format(Locale.ROOT, "%02d:%02d", minutes, seconds)
     }
 }
 
@@ -1863,6 +1880,7 @@ private val trailingUrlPunctuation = setOf('.', ',', ';', ':', '!', '?', ')', ']
 private val SubscriptionBlockGap = 6.dp
 private val SubscriptionMetadataGap = 10.dp
 private const val QR_SCANNER_TRANSITION_MS = 180
+private const val CORE_UPTIME_REFRESH_INTERVAL_MS = 1_000L
 private const val CAMERA_PERMISSION_PREFS = "camera_permission"
 private const val CAMERA_PERMISSION_REQUESTED = "requested"
 

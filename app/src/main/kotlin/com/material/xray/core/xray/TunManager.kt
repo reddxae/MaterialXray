@@ -186,14 +186,7 @@ class TunManager internal constructor(
         val routingResult = executeRoutingCommands(uidRoutingCommands + ipv6UidRoutingCommands)
         if (!routingResult.success) return routingResult
 
-        val guardRemovalResult = executeCommand(
-            removeRoutingUpdateGuardCommand(updateGuardTable, verify = true),
-        )
-        return if (guardRemovalResult.isSuccess) {
-            RoutingResult(success = true)
-        } else {
-            guardRemovalResult.toRoutingError("routing update guard removal")
-        }
+        return removeRoutingUpdateGuard(updateGuardTable)
     }
 
     suspend fun replacePhysicalBypassRoute(
@@ -320,7 +313,11 @@ class TunManager internal constructor(
         "ip route replace default dev ${physicalRoute.dev} table $bypassTable"
     }
 
-    private suspend fun executeRoutingCommands(commands: List<String>): RoutingResult {
+    private suspend fun executeRoutingCommands(
+        commands: List<String>,
+        force: Boolean = false,
+        continueOnFailure: Boolean = false,
+    ): RoutingResult {
         if (commands.isEmpty()) return RoutingResult(success = true)
         require(
             commands.all { command ->
@@ -331,15 +328,19 @@ class TunManager internal constructor(
             commands.filter { it.startsWith(IPV4_RULE_COMMAND_PREFIX) },
             commands.filter { it.startsWith(IPV6_RULE_COMMAND_PREFIX) },
         )
+        var firstFailure: RoutingResult? = null
         for (group in commandGroups) {
             if (group.isEmpty()) continue
             for (chunk in group.chunked(IP_RULE_BATCH_SIZE)) {
-                val command = ipRuleBatchCommand(chunk)
+                val command = ipRuleBatchCommand(chunk, force)
                 val result = executeCommand(command)
-                if (!result.isSuccess) return result.toRoutingError(command)
+                if (!result.isSuccess) {
+                    firstFailure = firstFailure ?: result.toRoutingError(command)
+                    if (!continueOnFailure) return firstFailure
+                }
             }
         }
-        return RoutingResult(success = true)
+        return firstFailure ?: RoutingResult(success = true)
     }
 
     private suspend fun flushRouteTables(routeTables: List<Int>): Boolean {
@@ -420,41 +421,79 @@ class TunManager internal constructor(
         )
     }
 
-    private fun removeRoutingUpdateGuardCommand(
-        guardTable: Int,
-        verify: Boolean = false,
-    ): String = listOf(
-        removeUpdateGuardCommand(guardTable, "ip rule", "ip", "ip route", verify),
-        removeUpdateGuardCommand(guardTable, "ip -6 rule", "ip -6", "ip -6 route", verify),
-    ).joinToString(" && ")
+    private suspend fun removeRoutingUpdateGuard(guardTable: Int): RoutingResult {
+        var lastDeletionError: String? = null
+        repeat(ROUTING_UPDATE_GUARD_REMOVAL_ATTEMPTS) {
+            val inspection = inspectRoutingUpdateGuard(guardTable)
+            inspection.failure?.let { return it }
+            if (inspection.deletionCommands.isEmpty()) return flushRoutingUpdateGuardTable(guardTable)
 
-    private fun removeUpdateGuardCommand(
-        guardTable: Int,
-        ruleCommand: String,
-        ipCommand: String,
-        routeCommand: String,
-        verify: Boolean,
-    ): String = buildString {
-        val guardPattern = "^$UPDATE_GUARD_PRIORITY:"
-        append("guard_rules=\$($ruleCommand show table $guardTable 2>/dev/null) || exit 1")
-        append("; batch=\$(printf '%s\\n' \"\$guard_rules\" | while IFS= read -r line; do ")
-        append("case \"\$line\" in \"$UPDATE_GUARD_PRIORITY:\"*) ")
-        append("printf 'rule del pref $UPDATE_GUARD_PRIORITY table $guardTable\\n';; esac; done)")
-        append("; if [ -n \"\$batch\" ]; then printf '%s\\n' \"\$batch\" | ")
-        append("$ipCommand -force -batch - >/dev/null 2>&1 || exit 1; fi")
-        if (verify) {
-            append("; guard_rules=\$($ruleCommand show table $guardTable 2>/dev/null) || exit 1")
-            append("; printf '%s\\n' \"\$guard_rules\" | grep -Eq ${shellQuote(guardPattern)}")
-            append("; guard_status=\$?")
-            append("; if [ \$guard_status -eq 0 ]; then false")
-            append("; elif [ \$guard_status -ne 1 ]; then exit \$guard_status")
-            append("; else if $routeCommand show table $guardTable >/dev/null 2>&1; then ")
-            append("$routeCommand flush table $guardTable; fi; fi")
-        } else {
-            append("; if $routeCommand show table $guardTable >/dev/null 2>&1; then ")
-            append("$routeCommand flush table $guardTable; fi")
+            val deletionResult = executeRoutingCommands(
+                commands = inspection.deletionCommands,
+                force = true,
+                continueOnFailure = true,
+            )
+            if (!deletionResult.success) lastDeletionError = deletionResult.error
         }
+
+        val verification = inspectRoutingUpdateGuard(guardTable)
+        verification.failure?.let { return it }
+        if (verification.deletionCommands.isNotEmpty()) {
+            val details = listOfNotNull(
+                "remaining rule: ${verification.guardRules.first().trim()}",
+                lastDeletionError,
+            ).joinToString(" | ")
+            return RoutingResult(success = false, error = "routing update guard removal verification failed: $details")
+        }
+        return flushRoutingUpdateGuardTable(guardTable)
     }
+
+    private suspend fun inspectRoutingUpdateGuard(guardTable: Int): RoutingUpdateGuardInspection {
+        val guardRules = mutableListOf<String>()
+        val deletionCommands = mutableListOf<String>()
+        for (ruleCommand in listOf("ip rule", "ip -6 rule")) {
+            val inspectionCommand = "$ruleCommand show table $guardTable"
+            val inspectionResult = executeCommand(inspectionCommand)
+            if (!inspectionResult.isSuccess) {
+                return RoutingUpdateGuardInspection(failure = inspectionResult.toRoutingError(inspectionCommand))
+            }
+            guardRules += inspectionResult.output.lineSequence().filter { line ->
+                line.isRoutingUpdateGuardRule(guardTable)
+            }
+            deletionCommands += routingUpdateGuardDeletionCommands(
+                output = inspectionResult.output,
+                ruleCommand = ruleCommand,
+                guardTable = guardTable,
+            )
+        }
+        return RoutingUpdateGuardInspection(
+            guardRules = guardRules,
+            deletionCommands = deletionCommands,
+        )
+    }
+
+    private suspend fun flushRoutingUpdateGuardTable(guardTable: Int): RoutingResult {
+        val flushCommand = listOf(
+            flushRouteTablesCommand(listOf(guardTable), "ip route"),
+            flushRouteTablesCommand(listOf(guardTable), "ip -6 route"),
+        ).joinToString(" && ")
+        val flushResult = executeCommand(flushCommand)
+        return if (flushResult.isSuccess) RoutingResult(success = true) else flushResult.toRoutingError(flushCommand)
+    }
+
+    private fun routingUpdateGuardDeletionCommands(
+        output: String,
+        ruleCommand: String,
+        guardTable: Int,
+    ): List<String> = output.lineSequence().mapNotNull { line ->
+        if (!line.isRoutingUpdateGuardRule(guardTable)) return@mapNotNull null
+        val rule = line.substringAfter(':', missingDelimiterValue = "").trim()
+        rule.takeIf { it.isNotEmpty() }
+            ?.let { "$ruleCommand del pref $UPDATE_GUARD_PRIORITY $it" }
+    }.toList()
+
+    private fun String.isRoutingUpdateGuardRule(guardTable: Int): Boolean = substringBefore(':').trim().toIntOrNull() == UPDATE_GUARD_PRIORITY &&
+        referencesAnyLookupTable(setOf(guardTable))
 
     private fun updateGuardRuleCommands(
         guardTable: Int,
@@ -520,9 +559,15 @@ class TunManager internal constructor(
     private fun String.referencesAnyLookupTable(routeTables: Set<Int>): Boolean {
         val fields = trim().split(Regex("\\s+"))
         return fields.zipWithNext().any { (key, value) ->
-            key == "lookup" && value.toIntOrNull() in routeTables
+            key == "lookup" && (value.toIntOrNull() ?: NAMED_ROUTE_TABLES[value]) in routeTables
         }
     }
+
+    private data class RoutingUpdateGuardInspection(
+        val guardRules: List<String> = emptyList(),
+        val deletionCommands: List<String> = emptyList(),
+        val failure: RoutingResult? = null,
+    )
 
     companion object {
         private const val APP_ROUTE_TABLE_OFFSET = 10
@@ -531,9 +576,11 @@ class TunManager internal constructor(
         private const val APP_UID_RULE_PRIORITY = 12000
         private const val DEFAULT_UID_RULE_PRIORITY = 12010
         private const val UPDATE_GUARD_PRIORITY = 11999
+        private const val ROUTING_UPDATE_GUARD_REMOVAL_ATTEMPTS = 2
         private const val IPV4_RULE_COMMAND_PREFIX = "ip rule "
         private const val IPV6_RULE_COMMAND_PREFIX = "ip -6 rule "
         private const val IP_RULE_BATCH_SIZE = 128
+        private val NAMED_ROUTE_TABLES = mapOf("default" to 253, "main" to 254, "local" to 255)
         const val DEFAULT_TUN_ADDRESS_CIDR = "10.0.0.1/30"
         private const val TUN_WAIT_ATTEMPTS = 120
         private const val TUN_WAIT_POLL_INTERVAL_MS = 50L

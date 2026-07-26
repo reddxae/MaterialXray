@@ -82,7 +82,7 @@ class TunManagerTest {
         )
 
         assertTrue(result.success)
-        assertEquals(7, commands.size)
+        assertEquals(9, commands.size)
         assertEquals(
             "ip route replace unreachable default table 102 && ip -6 route replace unreachable default table 102",
             commands[0],
@@ -101,16 +101,196 @@ class TunManagerTest {
         assertTrue(commands[5].contains("rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
         assertTrue(commands[5].contains("rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
         assertTrue(commands[5].contains("| ip -6 -batch -"))
-        assertTrue(commands[6].contains("rule del pref 11999 table 102"))
-        assertTrue(commands[6].contains("| ip -force -batch -"))
-        assertTrue(commands[6].contains("| ip -6 -force -batch -"))
-        assertTrue(commands[6].contains("ip route flush table 102"))
-        assertTrue(commands[6].contains("ip -6 route flush table 102"))
+        assertEquals("ip rule show table 102", commands[6])
+        assertEquals("ip -6 rule show table 102", commands[7])
+        assertTrue(commands[8].contains("ip route flush table 102"))
+        assertTrue(commands[8].contains("ip -6 route flush table 102"))
         assertTrue(commands[3].contains("if ip route show table 100"))
         assertTrue(commands[3].contains("if ip -6 route show table 100"))
         commands.forEach { command ->
             assertEquals(0, ProcessBuilder("sh", "-n", "-c", command).start().waitFor())
         }
+    }
+
+    @Test
+    fun `routing guard removal deletes exact rules in bounded batches`() = runTest {
+        val commands = mutableListOf<String>()
+        var ipv4GuardInstalled = true
+        var ipv6GuardInstalled = true
+        val guardRules = (10_000..10_128).joinToString("\n") { uid ->
+            "11999:\tfrom all iif lo uidrange $uid-$uid lookup 102"
+        }
+        val manager = TunManager { command ->
+            commands += command
+            when {
+                command == "ip rule show table 102" -> successfulCommand(
+                    if (ipv4GuardInstalled) guardRules else "",
+                )
+                command == "ip -6 rule show table 102" -> successfulCommand(
+                    if (ipv6GuardInstalled) guardRules else "",
+                )
+                command.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
+                    command.contains("| ip -6 -force -batch -") -> {
+                    ipv6GuardInstalled = false
+                    successfulCommand()
+                }
+                command.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
+                    command.contains("| ip -force -batch -") -> {
+                    ipv4GuardInstalled = false
+                    successfulCommand()
+                }
+                else -> successfulCommand()
+            }
+        }
+
+        val result = manager.applyRouting(
+            tunName = "wlan1",
+            fwmark = 255,
+            routeTable = 100,
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+        )
+
+        assertTrue(result.success)
+        assertTrue(
+            commands.any {
+                it.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
+                    it.contains("| ip -force -batch -")
+            },
+        )
+        assertTrue(
+            commands.any {
+                it.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
+                    it.contains("| ip -6 -force -batch -")
+            },
+        )
+        val deletionBatches = commands.filter { it.contains("rule del pref 11999") }
+        assertEquals(4, deletionBatches.size)
+        assertTrue(deletionBatches.all { it.contains("-force") })
+        assertTrue(deletionBatches.all { command -> Regex("rule del pref 11999").findAll(command).count() <= 128 })
+        assertEquals(258, deletionBatches.sumOf { command -> Regex("rule del pref 11999").findAll(command).count() })
+        commands.forEach { command ->
+            assertEquals(0, ProcessBuilder("sh", "-n", "-c", command).start().waitFor())
+        }
+    }
+
+    @Test
+    fun `routing guard removal retries and fails closed when guards remain`() = runTest {
+        val commands = mutableListOf<String>()
+        val guardRule = "11999:\tfrom all iif lo uidrange 10000-99999 lookup 102"
+        val manager = TunManager { command ->
+            commands += command
+            when (command) {
+                "ip rule show table 102", "ip -6 rule show table 102" -> successfulCommand(guardRule)
+                else -> successfulCommand()
+            }
+        }
+
+        val result = manager.applyRouting(
+            tunName = "wlan1",
+            fwmark = 255,
+            routeTable = 100,
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.error.orEmpty().contains("guard removal verification failed"))
+        assertEquals(4, commands.count { it.contains("rule del pref 11999") })
+        assertFalse(commands.any { it.contains("route flush table 102") })
+    }
+
+    @Test
+    fun `routing guard inspection failure stops without deleting or flushing`() = runTest {
+        val commands = mutableListOf<String>()
+        val manager = TunManager { command ->
+            commands += command
+            if (command == "ip rule show table 102") {
+                RootShell.Result(1, "", "inspection failed")
+            } else {
+                successfulCommand()
+            }
+        }
+
+        val result = manager.applyRouting(
+            tunName = "wlan1",
+            fwmark = 255,
+            routeTable = 100,
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.error.orEmpty().contains("inspection failed"))
+        assertFalse(commands.any { it.contains("rule del pref 11999") })
+        assertFalse(commands.any { it.contains("route flush table 102") })
+    }
+
+    @Test
+    fun `routing guard inspection ignores unrelated rules`() = runTest {
+        val commands = mutableListOf<String>()
+        val unrelatedRules = """
+            12010:\tfrom all iif lo uidrange 10000-99999 lookup 100
+            11999:\tfrom all iif lo uidrange 10000-99999 lookup 999
+        """.trimIndent()
+        val manager = TunManager { command ->
+            commands += command
+            when (command) {
+                "ip rule show table 102", "ip -6 rule show table 102" -> successfulCommand(unrelatedRules)
+                else -> successfulCommand()
+            }
+        }
+
+        val result = manager.applyRouting(
+            tunName = "wlan1",
+            fwmark = 255,
+            routeTable = 100,
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+        )
+
+        assertTrue(result.success)
+        assertFalse(commands.any { it.contains("rule del pref 11999") })
+    }
+
+    @Test
+    fun `routing guard removal recognizes named kernel route tables`() = runTest {
+        val commands = mutableListOf<String>()
+        var guardInstalled = true
+        val manager = TunManager { command ->
+            commands += command
+            when {
+                command == "ip rule show table 253" || command == "ip -6 rule show table 253" -> successfulCommand(
+                    if (guardInstalled) "11999:\tfrom all iif lo uidrange 10000-99999 lookup default" else "",
+                )
+                command.contains("rule del pref 11999") -> {
+                    guardInstalled = false
+                    successfulCommand()
+                }
+                else -> successfulCommand()
+            }
+        }
+
+        val result = manager.applyRouting(
+            tunName = "wlan1",
+            fwmark = 255,
+            routeTable = 251,
+            bypassTable = 252,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+        )
+
+        assertTrue(result.success)
+        assertTrue(commands.any { it.contains("rule del pref 11999") && it.contains("lookup default") })
     }
 
     @Test
@@ -157,7 +337,7 @@ class TunManagerTest {
         assertTrue(commands[0].contains("ip -6 route replace unreachable default table 102"))
         assertTrue(commands[1].contains("table 102 prio 11999"))
         assertTrue(commands[2].contains("table 102 prio 11999"))
-        assertFalse(commands.any { it.contains("grep -Eq") })
+        assertFalse(commands.any { it == "ip rule show table 102" })
     }
 
     @Test
@@ -184,7 +364,7 @@ class TunManagerTest {
 
         assertFalse(result.success)
         assertEquals(4, commands.size)
-        assertFalse(commands.any { it.contains("guard_rules=") })
+        assertFalse(commands.any { it == "ip rule show table 102" })
     }
 
     @Test
@@ -280,5 +460,5 @@ class TunManagerTest {
         assertEquals(1, ProcessBuilder("sh", "-c", "$fakeIp\n$command").start().waitFor())
     }
 
-    private fun successfulCommand() = RootShell.Result(0, "", "")
+    private fun successfulCommand(output: String = "") = RootShell.Result(0, output, "")
 }

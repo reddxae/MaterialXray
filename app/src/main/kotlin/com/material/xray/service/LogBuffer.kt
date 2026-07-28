@@ -17,10 +17,9 @@ enum class LogSource { APP, XRAY }
 
 @Singleton
 class LogBuffer @Inject constructor() {
-    private val maxSize = 2000
     private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
     val entries: StateFlow<List<LogEntry>> = _entries
-    private val buffer = ArrayDeque<LogEntry>(maxSize)
+    private val buffer = ArrayDeque<LogEntry>(MAX_SIZE)
     private var nextId = 0L
     private var appEntryCount = 0
 
@@ -41,7 +40,7 @@ class LogBuffer @Inject constructor() {
 
         synchronized(this) {
             messages.forEach { message ->
-                if (buffer.size == maxSize) {
+                if (buffer.size == MAX_SIZE) {
                     val evictionIndex = if (source == LogSource.XRAY && appEntryCount <= MIN_RETAINED_APP_ENTRIES) {
                         buffer.indexOfFirst { entry -> entry.source == LogSource.XRAY }.takeIf { it >= 0 } ?: 0
                     } else {
@@ -84,7 +83,9 @@ class LogBuffer @Inject constructor() {
         "$time [${entry.source.name}] ${entry.message}"
     }
 
-    private companion object {
-        const val MIN_RETAINED_APP_ENTRIES = 256
+    internal companion object {
+        private const val MAX_SIZE = 2000
+        private const val MIN_RETAINED_APP_ENTRIES = 256
+        internal const val XRAY_TAIL_SIZE = MAX_SIZE - MIN_RETAINED_APP_ENTRIES
     }
 }

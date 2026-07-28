@@ -4,10 +4,13 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.material.xray.R
 import com.material.xray.core.locale.localizedString
 import com.material.xray.service.LogBuffer
 import com.material.xray.service.LogEntry
+import com.material.xray.service.XRAY_LOG_FILE_NAME
+import com.material.xray.service.XrayLogStreamer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -26,6 +29,11 @@ class LogsViewModel @Inject constructor(
     private val logBuffer: LogBuffer,
 ) : ViewModel() {
     val entries: StateFlow<List<LogEntry>> = logBuffer.entries
+    private val xrayLogStreamer = XrayLogStreamer(context.filesDir.resolve(XRAY_LOG_FILE_NAME), logBuffer)
+
+    fun onVisible() = xrayLogStreamer.start(viewModelScope)
+
+    fun onHidden() = xrayLogStreamer.stop()
 
     fun clear() = logBuffer.clear()
 
@@ -71,5 +79,10 @@ class LogsViewModel @Inject constructor(
             "${context.packageName}.fileprovider",
             exportFile,
         )
+    }
+
+    override fun onCleared() {
+        xrayLogStreamer.close()
+        super.onCleared()
     }
 }

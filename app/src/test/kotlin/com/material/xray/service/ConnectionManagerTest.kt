@@ -34,7 +34,6 @@ class ConnectionManagerTest {
         assertEquals(1, harness.cleanup.cleanCalls)
         assertEquals(0, harness.rootProcess.startCalls)
         assertEquals(1, harness.userProcess.stopCalls)
-        assertTrue(harness.logReady)
         assertEquals(
             ConnectionState.Error(harness.environment.message(R.string.connection_error_xray_binary_not_found)),
             harness.stateCoordinator.state.value,
@@ -362,8 +361,6 @@ class ConnectionManagerTest {
         val stateCoordinator = ConnectionStateCoordinator()
         val apiClients = FakeApiClients()
         val createdApiEndpoints = mutableListOf<XrayApiEndpoint>()
-        var logReady = false
-
         val manager = ConnectionManager(
             configGenerator = ConfigGenerator(),
             stateCoordinator = stateCoordinator,
@@ -387,7 +384,6 @@ class ConnectionManagerTest {
                     apiClients.clients
                 },
             ),
-            onXrayLogReady = { logReady = true },
         )
     }
 

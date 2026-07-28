@@ -5,6 +5,7 @@ import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,15 +81,12 @@ class XrayProcessSupervisorTest {
     }
 
     @Test
-    fun `readResidentMemoryMb rounds VmRSS kilobytes up to megabytes`() = runTest {
+    fun `readResidentMemoryMb rounds statm resident pages up to megabytes`() = runTest {
         val supervisor = supervisor(
             commandRunner = FakeRootCommandRunner(
                 resultForCommand = { command ->
-                    if (command.contains("/proc/42/status")) {
-                        RootShell.Result(exitCode = 0, output = "2049", error = "")
-                    } else {
-                        RootShell.Result(exitCode = 1, output = "", error = "")
-                    }
+                    assertTrue(command.contains("awk '{ print \$2; exit }' /proc/42/statm"))
+                    RootShell.Result(exitCode = 0, output = "513", error = "")
                 },
             ),
         )
@@ -97,20 +95,52 @@ class XrayProcessSupervisorTest {
     }
 
     @Test
-    fun `readResidentMemoryMb falls back to statm resident pages`() = runTest {
+    fun `readResidentMemoryMb returns null for unavailable statm`() = runTest {
         val supervisor = supervisor(
             commandRunner = FakeRootCommandRunner(
-                resultForCommand = { command ->
-                    if (command.contains("/proc/42/status")) {
-                        RootShell.Result(exitCode = 1, output = "", error = "")
-                    } else {
-                        RootShell.Result(exitCode = 0, output = "512", error = "")
-                    }
+                resultForCommand = {
+                    RootShell.Result(exitCode = 1, output = "", error = "missing")
                 },
             ),
         )
 
-        assertEquals(2L, supervisor.readResidentMemoryMb(42))
+        assertNull(supervisor.readResidentMemoryMb(42))
+    }
+
+    @Test
+    fun `readResidentMemoryMb supports 16 KiB memory pages`() = runTest {
+        val supervisor = supervisor(
+            environment = FakeRuntimeEnvironment(memoryPageSizeKb = 16L),
+            commandRunner = FakeRootCommandRunner(
+                resultForCommand = {
+                    RootShell.Result(exitCode = 0, output = "129", error = "")
+                },
+            ),
+        )
+
+        assertEquals(3L, supervisor.readResidentMemoryMb(42))
+    }
+
+    @Test
+    fun `readResidentMemoryMb does not guess an unavailable page size`() = runTest {
+        val supervisor = supervisor(
+            environment = FakeRuntimeEnvironment(memoryPageSizeKb = null),
+            commandRunner = FakeRootCommandRunner(
+                resultForCommand = {
+                    RootShell.Result(exitCode = 0, output = "513", error = "")
+                },
+            ),
+        )
+
+        assertNull(supervisor.readResidentMemoryMb(42))
+    }
+
+    @Test
+    fun `statm parser reads resident pages without splitting the full line`() {
+        assertEquals(15_950L, parseStatmResidentPages("3102804 15950 7671 3740 0 31099 0"))
+        assertEquals(15_950L, parseStatmResidentPages("3102804\t15950\t7671"))
+        assertNull(parseStatmResidentPages("3102804"))
+        assertNull(parseStatmResidentPages(null))
     }
 
     @Test
@@ -228,6 +258,7 @@ class XrayProcessSupervisorTest {
         override val filesDir: File = File("/tmp/runtime dir"),
         override val packageName: String = "com.material.xray",
         override val packageUid: Int = 12345,
+        override val memoryPageSizeKb: Long? = 4L,
         private val ignoringBatteryOptimizations: Boolean = true,
         private val lowPowerStandbyExempt: Boolean = false,
     ) : XrayRuntimeEnvironment {

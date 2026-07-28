@@ -26,7 +26,6 @@ internal class ConnectionManager(
     private val stateCoordinator: ConnectionStateCoordinator,
     private val log: LogBuffer,
     dependencies: ConnectionManagerDependencies,
-    private val onXrayLogReady: () -> Unit = {},
 ) : XrayHealthProbe {
     private val environment = dependencies.environment
     private val rootRuntime = dependencies.rootRuntime
@@ -240,7 +239,6 @@ internal class ConnectionManager(
         } else {
             userProcessSupervisor.prepareLogFile()
         }
-        onXrayLogReady()
         return tunName
     }
 

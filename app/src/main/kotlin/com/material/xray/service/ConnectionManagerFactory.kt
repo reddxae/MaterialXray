@@ -253,7 +253,7 @@ class ConnectionManagerFactory @Inject constructor(
     private val stateCoordinator: ConnectionStateCoordinator,
     private val log: LogBuffer,
 ) {
-    internal fun create(onXrayLogReady: () -> Unit): ConnectionManager {
+    internal fun create(): ConnectionManager {
         val environment = AndroidConnectionEnvironment(context)
         val xrayBinary = XrayBinaryConnectionAdapter(XrayBinary(context))
         val runtimeEnvironment = AndroidXrayRuntimeEnvironment(context)
@@ -307,7 +307,6 @@ class ConnectionManagerFactory @Inject constructor(
             stateCoordinator = stateCoordinator,
             log = log,
             dependencies = dependencies,
-            onXrayLogReady = onXrayLogReady,
         )
     }
 }

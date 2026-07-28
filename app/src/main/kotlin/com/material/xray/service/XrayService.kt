@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.ConnectivityManager
@@ -21,6 +23,7 @@ import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.material.xray.R
 import com.material.xray.core.locale.appLocaleChanges
 import com.material.xray.core.locale.forAppLanguage
@@ -90,7 +93,6 @@ class XrayService : VpnService() {
     private lateinit var connectionManager: ConnectionManager
     private lateinit var connectionLifecycle: ConnectionLifecycle
     private lateinit var healthWatchdog: XrayHealthWatchdog
-    private lateinit var xrayLogStreamer: XrayLogStreamer
     private val stateFile by lazy { StateFile(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val activeConfig: ServerConfig?
@@ -119,6 +121,21 @@ class XrayService : VpnService() {
     private var notificationMetricsJob: Job? = null
     private var notificationMetricsIntervalMs = 0
     private var lastNotificationContent: NotificationContent? = null
+    private var screenInteractive = true
+    private var screenStateReceiverRegistered = false
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val interactive = when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> true
+                Intent.ACTION_SCREEN_OFF -> false
+                else -> return
+            }
+            if (screenInteractive == interactive) return
+            screenInteractive = interactive
+            updateBalancerSelectionTracker()
+            updateNotificationMetricsJob()
+        }
+    }
     private val networkRetargetWakeLock by lazy {
         getSystemService(PowerManager::class.java).newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -148,10 +165,8 @@ class XrayService : VpnService() {
             showDisconnectAction = false,
         )
 
-        xrayLogStreamer = XrayLogStreamer(filesDir.resolve("xray.log"), logBuffer)
-        connectionManager = connectionManagerFactory.create(
-            onXrayLogReady = { startLogTail() },
-        )
+        screenInteractive = getSystemService(PowerManager::class.java).isInteractive
+        connectionManager = connectionManagerFactory.create()
         connectionLifecycle = ConnectionLifecycle(
             scope = scope,
             maxAttempts = CONNECTION_MAX_ATTEMPTS,
@@ -288,6 +303,16 @@ class XrayService : VpnService() {
             }
         }
 
+        ContextCompat.registerReceiver(
+            this,
+            screenStateReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        screenStateReceiverRegistered = true
         registerNetworkCallback()
     }
 
@@ -308,7 +333,6 @@ class XrayService : VpnService() {
                 launchConnectionCommand {
                     val config = Json.decodeFromString<ServerConfig>(configJson)
                     connectionLifecycle.updateActiveConfig(config)
-                    stopLogTail()
                     connectWithCurrentSettings(config)
                 }
             }
@@ -322,7 +346,6 @@ class XrayService : VpnService() {
                 launchConnectionCommand {
                     val config = Json.decodeFromString<ServerConfig>(configJson)
                     connectionLifecycle.updateActiveConfig(config)
-                    stopLogTail()
                     stopProcessWatchdog()
                     logBuffer.append(LogSource.APP, "Switching to ${config.name}...")
                     updateNotification(localizedString(R.string.notification_status_switching_server))
@@ -384,7 +407,6 @@ class XrayService : VpnService() {
         launchConnectionCommand {
             connectionLifecycle.updateActiveConfig(null)
             activePhysicalNetwork = null
-            stopLogTail()
             stopProcessWatchdog()
             connectionManager.disconnect()
             closeVpnInterface()
@@ -393,6 +415,10 @@ class XrayService : VpnService() {
     }
 
     override fun onDestroy() {
+        if (screenStateReceiverRegistered) {
+            unregisterReceiver(screenStateReceiver)
+            screenStateReceiverRegistered = false
+        }
         unregisterNetworkCallback()
         if (::connectionLifecycle.isInitialized) connectionLifecycle.updateActiveConfig(null)
         activePhysicalNetwork = null
@@ -402,7 +428,6 @@ class XrayService : VpnService() {
         processRecoveryJob?.cancel()
         stopBalancerSelectionTracker()
         stopProcessWatchdog()
-        stopLogTail()
         if (::connectionManager.isInitialized) connectionManager.prepareForServiceDestruction()
         scope.cancel()
         closeVpnInterface()
@@ -410,10 +435,6 @@ class XrayService : VpnService() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
-
-    private fun startLogTail() = xrayLogStreamer.start(scope)
-
-    private fun stopLogTail() = xrayLogStreamer.stop()
 
     private fun launchConnectionCommand(block: suspend () -> Unit) {
         connectionLifecycle.launch(block)
@@ -496,7 +517,6 @@ class XrayService : VpnService() {
         val state = connectionStateCoordinator.state.value
         if (state is ConnectionState.Connected && !connectionManager.isUsingRootRuntime && activeConfig != null) return
 
-        stopLogTail()
         stopProcessWatchdog()
         closeVpnInterface()
 
@@ -559,7 +579,6 @@ class XrayService : VpnService() {
 
     private suspend fun reloadActiveConnection() {
         val config = activeConfig ?: return
-        stopLogTail()
         stopProcessWatchdog()
         logBuffer.append(LogSource.APP, "Applying routing changes...")
         connectionStateCoordinator.markApplyingRoutingChanges()
@@ -600,7 +619,6 @@ class XrayService : VpnService() {
             return
         }
 
-        stopLogTail()
         stopProcessWatchdog()
         logBuffer.append(LogSource.APP, "Restarting Xray to apply app routing topology changes...")
         if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
@@ -710,7 +728,7 @@ class XrayService : VpnService() {
         when (state) {
             is ConnectionState.Connected -> {
                 startProcessWatchdog(state)
-                startBalancerSelectionTracker()
+                updateBalancerSelectionTracker()
             }
             else -> {
                 stopBalancerSelectionTracker()
@@ -722,7 +740,7 @@ class XrayService : VpnService() {
     }
 
     private fun startBalancerSelectionTracker() {
-        stopBalancerSelectionTracker()
+        pauseBalancerSelectionTracker()
         val balancerTag = activeConfig?.primaryBalancerTag() ?: return
 
         balancerSelectionJob = scope.launch(Dispatchers.IO) {
@@ -735,9 +753,21 @@ class XrayService : VpnService() {
     }
 
     private fun stopBalancerSelectionTracker() {
+        pauseBalancerSelectionTracker()
+        connectionStateCoordinator.updateActiveBalancerSelection(null)
+    }
+
+    private fun pauseBalancerSelectionTracker() {
         balancerSelectionJob?.cancel()
         balancerSelectionJob = null
-        connectionStateCoordinator.updateActiveBalancerSelection(null)
+    }
+
+    private fun updateBalancerSelectionTracker() {
+        if (screenInteractive && connectionStateCoordinator.state.value is ConnectionState.Connected) {
+            startBalancerSelectionTracker()
+        } else {
+            pauseBalancerSelectionTracker()
+        }
     }
 
     private fun startProcessWatchdog(state: ConnectionState.Connected) {
@@ -793,11 +823,13 @@ class XrayService : VpnService() {
     }
 
     private fun updateNotificationMetricsJob() {
-        val state = connectionStateCoordinator.state.value
-        if (state is ConnectionState.Connected && notificationSettings.hasDynamicMetrics) {
-            startNotificationMetrics(state)
-        } else {
+        val connectedState = connectionStateCoordinator.state.value as? ConnectionState.Connected
+        if (connectedState == null || !notificationSettings.hasDynamicMetrics) {
             stopNotificationMetrics()
+        } else if (screenInteractive) {
+            startNotificationMetrics(connectedState)
+        } else {
+            pauseNotificationMetrics()
         }
     }
 
@@ -805,7 +837,7 @@ class XrayService : VpnService() {
         val intervalMs = notificationSettings.updateIntervalMs
         if (notificationMetricsJob?.isActive == true && notificationMetricsIntervalMs == intervalMs) return
 
-        stopNotificationMetrics()
+        pauseNotificationMetrics()
         notificationMetricsIntervalMs = intervalMs
         previousTrafficSample = null
         notificationMetricsJob = scope.launch(Dispatchers.IO) {
@@ -825,11 +857,15 @@ class XrayService : VpnService() {
     }
 
     private fun stopNotificationMetrics() {
+        pauseNotificationMetrics()
+        notificationMetrics = NotificationMetrics()
+    }
+
+    private fun pauseNotificationMetrics() {
         notificationMetricsJob?.cancel()
         notificationMetricsJob = null
         notificationMetricsIntervalMs = 0
         previousTrafficSample = null
-        notificationMetrics = NotificationMetrics()
     }
 
     private suspend fun readNotificationMetrics(state: ConnectionState.Connected): NotificationMetrics {
@@ -839,18 +875,26 @@ class XrayService : VpnService() {
         } else {
             null
         }
-        val processMetrics = if (settings.showRamUsage || settings.showConnectionCount) {
+        val processMetrics = if (settings.showRamUsage && settings.showConnectionCount) {
             connectionManager.readProcessMetrics(state.corePid)
         } else {
             null
         }
         val ramMb = if (settings.showRamUsage) {
-            processMetrics?.residentMemoryMb
+            if (processMetrics == null) {
+                connectionManager.readProcessResidentMemoryMb(state.corePid)
+            } else {
+                processMetrics.residentMemoryMb
+            }
         } else {
             null
         }
         val connectionCount = if (settings.showConnectionCount) {
-            processMetrics?.activeConnectionCount
+            if (processMetrics == null) {
+                connectionManager.readActiveConnectionCount(state.corePid)
+            } else {
+                processMetrics.activeConnectionCount
+            }
         } else {
             null
         }
@@ -900,7 +944,6 @@ class XrayService : VpnService() {
                 if (!isConnectedProcess(watchedPid)) return@runConnectionCommand
                 val config = activeConfig ?: return@runConnectionCommand
 
-                stopLogTail()
                 stopProcessWatchdog()
                 logBuffer.append(LogSource.APP, reason)
 
@@ -1192,7 +1235,6 @@ class XrayService : VpnService() {
                 currentRoute.dev,
             ),
         )
-        stopLogTail()
         stopProcessWatchdog()
         connectionStateCoordinator.startConnection(ConnectionState.Connecting)
         if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
@@ -1290,7 +1332,6 @@ class XrayService : VpnService() {
         launchConnectionCommand {
             connectionLifecycle.updateActiveConfig(null)
             activePhysicalNetwork = null
-            stopLogTail()
             stopProcessWatchdog()
             connectionManager.disconnect()
             closeVpnInterface()

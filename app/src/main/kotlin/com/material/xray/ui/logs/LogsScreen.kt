@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -59,6 +60,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.service.LogEntry
@@ -78,6 +82,7 @@ private enum class LogFilter(@param:StringRes val labelRes: Int) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
+    val lifecycleOwner = LocalLifecycleOwner.current
     val allEntries by viewModel.entries.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { LogFilter.entries.size })
     val coroutineScope = rememberCoroutineScope()
@@ -105,6 +110,21 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
     }
     val selectedFilter by remember {
         derivedStateOf { LogFilter.entries[pagerState.targetPage] }
+    }
+
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onVisible()
+                Lifecycle.Event.ON_STOP -> viewModel.onHidden()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.onHidden()
+        }
     }
 
     Scaffold(

@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.os.PowerManager
 import android.system.Os
+import android.system.OsConstants
 import com.material.xray.core.root.RootShell
 import java.io.File
 import java.io.FileOutputStream
@@ -54,6 +55,7 @@ internal interface XrayRuntimeEnvironment {
     val filesDir: File
     val packageName: String
     val packageUid: Int
+    val memoryPageSizeKb: Long?
 
     fun isIgnoringBatteryOptimizations(): Boolean?
     fun isExemptFromLowPowerStandby(): Boolean?
@@ -70,6 +72,13 @@ internal class AndroidXrayRuntimeEnvironment(
 
     override val packageUid: Int
         get() = context.applicationInfo.uid
+
+    override val memoryPageSizeKb: Long? by lazy {
+        runCatching { Os.sysconf(OsConstants._SC_PAGESIZE) }
+            .getOrNull()
+            ?.takeIf { it > 0L && it % BYTES_PER_KILOBYTE == 0L }
+            ?.div(BYTES_PER_KILOBYTE)
+    }
 
     override fun isIgnoringBatteryOptimizations(): Boolean? = context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(packageName)
 
@@ -88,11 +97,11 @@ internal class XrayProcessSupervisor(
     private val log: LogBuffer,
 ) : RootXrayProcessController {
     val logFile: String
-        get() = "${environment.filesDir.absolutePath}/xray.log"
+        get() = environment.filesDir.resolve(XRAY_LOG_FILE_NAME).absolutePath
 
     override suspend fun prepareLogFile() {
         commandRunner.execute("rm -f $logFile")
-        FileOutputStream(environment.filesDir.resolve("xray.log"), false).use { }
+        FileOutputStream(environment.filesDir.resolve(XRAY_LOG_FILE_NAME), false).use { }
     }
 
     override suspend fun start(binDir: String): Int {
@@ -213,16 +222,15 @@ internal class XrayProcessSupervisor(
     private suspend fun readResidentMemoryKb(pid: Int): Long? {
         if (pid <= 0) return null
 
-        val statusResult = commandRunner.execute("awk '/^VmRSS:/ { print \$2 }' /proc/$pid/status 2>/dev/null")
-        statusResult.output.trim().toLongOrNull()?.let { return it }
-
-        val statmResult = commandRunner.execute("awk '{ print \$2 }' /proc/$pid/statm 2>/dev/null")
+        val statmResult = commandRunner.execute(
+            "awk '{ print \$2; exit }' /proc/$pid/statm 2>/dev/null",
+        )
         val rssPages = statmResult.output.trim().toLongOrNull() ?: return null
-        return rssPages * DEFAULT_MEMORY_PAGE_KB
+        val pageSizeKb = environment.memoryPageSizeKb ?: return null
+        return rssPages * pageSizeKb
     }
 
     private companion object {
-        private const val DEFAULT_MEMORY_PAGE_KB = 4L
         private const val KILOBYTES_PER_MEGABYTE = 1024L
         private const val ROOT_CERTIFICATE_BUNDLE_FILE = "xray-ca-certificates.pem"
     }
@@ -235,7 +243,7 @@ internal class UserXrayProcessSupervisor(
 ) : UserXrayProcessController {
     private var pid: Int = -1
     private val logFile: File
-        get() = environment.filesDir.resolve("xray.log")
+        get() = environment.filesDir.resolve(XRAY_LOG_FILE_NAME)
 
     override fun prepareLogFile() {
         FileOutputStream(logFile, false).use { }
@@ -281,14 +289,14 @@ internal class UserXrayProcessSupervisor(
     }
 
     override suspend fun readResidentMemoryMb(pid: Int): Long? {
-        val rssKb = runCatching {
-            File("/proc/$pid/status")
-                .takeIf { it.isFile }
-                ?.useLines { lines -> lines.firstOrNull { it.startsWith("VmRSS:") } }
-                ?.split(Regex("\\s+"))
-                ?.getOrNull(1)
-                ?.toLongOrNull()
+        if (pid <= 0) return null
+        val rssPages = runCatching {
+            File("/proc/$pid/statm").bufferedReader().use { reader ->
+                parseStatmResidentPages(reader.readLine())
+            }
         }.getOrNull() ?: return null
+        val pageSizeKb = environment.memoryPageSizeKb ?: return null
+        val rssKb = rssPages * pageSizeKb
         return (rssKb + KILOBYTES_PER_MEGABYTE - 1) / KILOBYTES_PER_MEGABYTE
     }
 
@@ -328,6 +336,17 @@ internal class UserXrayProcessSupervisor(
             waitUntilStopped(pid, KILL_GRACE_TIMEOUT_MS)
         }
     }
+}
+
+internal fun parseStatmResidentPages(line: String?): Long? {
+    if (line == null) return null
+    var index = line.indexOfFirst(Char::isWhitespace)
+    if (index < 0) return null
+    while (index < line.length && line[index].isWhitespace()) index++
+    val start = index
+    while (index < line.length && !line[index].isWhitespace()) index++
+    if (start == index) return null
+    return line.substring(start, index).toLongOrNull()
 }
 
 internal interface UserXrayProcessLauncher {
@@ -398,3 +417,7 @@ private fun rootXrayEnvironment(assetDir: String, certificateBundlePath: String)
 )
 
 internal fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
+
+internal const val XRAY_LOG_FILE_NAME = "xray.log"
+
+private const val BYTES_PER_KILOBYTE = 1024L

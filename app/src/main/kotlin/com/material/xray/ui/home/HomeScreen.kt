@@ -123,6 +123,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.material.xray.R
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
@@ -941,12 +942,15 @@ private fun ConnectionPanel(
 
 @Composable
 private fun CoreUptime(startTime: Long) {
+    val lifecycleOwner = LocalLifecycleOwner.current
     var currentTime by remember(startTime) { mutableLongStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(startTime) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            delay(CORE_UPTIME_REFRESH_INTERVAL_MS)
+    LaunchedEffect(startTime, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                currentTime = System.currentTimeMillis()
+                delay(CORE_UPTIME_REFRESH_INTERVAL_MS)
+            }
         }
     }
 

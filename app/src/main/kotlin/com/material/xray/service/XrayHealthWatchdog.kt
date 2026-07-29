@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 
 internal data class XrayHealthWatchdogConfig(
     val processIntervalMs: Long,
+    val memoryCheckIntervalMs: Long,
     val apiProbeIntervalMs: Long,
     val snapshotIntervalMs: Long,
     val tunnelFailureThreshold: Int,
@@ -45,7 +46,6 @@ internal class XrayHealthWatchdog(
 ) {
     private var processJob: Job? = null
     private var apiJob: Job? = null
-    private var runtimeModeJob: Job? = null
     private var generation = 0L
 
     @Volatile private var currentSession: HealthWatchdogSession? = null
@@ -53,7 +53,6 @@ internal class XrayHealthWatchdog(
     @Synchronized
     fun start(state: ConnectionState.Connected): Boolean {
         val allJobsActive = processJob?.isActive == true &&
-            runtimeModeJob?.isActive == true &&
             (!passiveMonitoringEnabled() || apiJob?.isActive == true)
         if (currentSession?.pid == state.corePid && allJobsActive) return false
 
@@ -61,7 +60,6 @@ internal class XrayHealthWatchdog(
         val session = HealthWatchdogSession(++generation, state.corePid)
         currentSession = session
         startProcessHealth(session)
-        startRuntimeMode(session)
         if (passiveMonitoringEnabled()) startApiHealth(session)
         return true
     }
@@ -78,8 +76,6 @@ internal class XrayHealthWatchdog(
         processJob = null
         apiJob?.cancel()
         apiJob = null
-        runtimeModeJob?.cancel()
-        runtimeModeJob = null
     }
 
     @Suppress("TooGenericExceptionCaught")
@@ -115,20 +111,6 @@ internal class XrayHealthWatchdog(
         }
     }
 
-    private fun startRuntimeMode(session: HealthWatchdogSession) {
-        runtimeModeJob = scope.launch(dispatcher) {
-            while (isActive && isCurrent(session)) {
-                delay(config.processIntervalMs)
-                val reason = runtimeModeRecoveryReason()
-                if (!isCurrent(session)) return@launch
-                if (reason != null) {
-                    recover(reason, session.pid, null)
-                    return@launch
-                }
-            }
-        }
-    }
-
     @Suppress("TooGenericExceptionCaught")
     private fun startApiHealth(session: HealthWatchdogSession) {
         val healthMonitor = healthMonitor()
@@ -157,6 +139,11 @@ internal class XrayHealthWatchdog(
         val pid = session.pid
         val state = stateCoordinator.state.value as? ConnectionState.Connected ?: return false
         if (!isCurrent(session) || state.corePid != pid) return false
+
+        val reason = runtimeModeRecoveryReason()
+        if (!isCurrent(session)) return false
+        if (reason != null) return !recover(reason, pid, null)
+
         if (!healthProbe.isProcessAlive(pid)) {
             if (!isCurrent(session)) return false
             val reason = healthProbe.readCrashReason()
@@ -167,15 +154,18 @@ internal class XrayHealthWatchdog(
 
         if (passiveMonitoringEnabled() && !checkTunnel(session, state, healthMonitor)) return false
 
-        val residentMemoryMb = healthProbe.readProcessResidentMemoryMb(pid)
-        if (!isCurrent(session)) return false
-        val thresholdMiB = memoryRestartThresholdMiB()
-        if (XrayRuntimeSettings.shouldRestartForMemory(residentMemoryMb, thresholdMiB)) {
-            return !recover(
-                "xray process $pid exceeded $thresholdMiB MiB RSS ($residentMemoryMb MiB); restarting...",
-                pid,
-                pid,
-            )
+        val now = elapsedRealtime()
+        if (healthMonitor.shouldCheckMemory(now)) {
+            val residentMemoryMb = healthProbe.readProcessResidentMemoryMb(pid)
+            if (!isCurrent(session)) return false
+            val thresholdMiB = memoryRestartThresholdMiB()
+            if (XrayRuntimeSettings.shouldRestartForMemory(residentMemoryMb, thresholdMiB)) {
+                return !recover(
+                    "xray process $pid exceeded $thresholdMiB MiB RSS ($residentMemoryMb MiB); restarting...",
+                    pid,
+                    pid,
+                )
+            }
         }
         scheduleNetworkSafetyCheck()
         return true
@@ -243,6 +233,7 @@ internal class XrayHealthWatchdog(
     }
 
     private fun healthMonitor() = LocalXrayHealthMonitor(
+        memoryCheckIntervalMs = config.memoryCheckIntervalMs,
         apiProbeIntervalMs = config.apiProbeIntervalMs,
         snapshotIntervalMs = config.snapshotIntervalMs,
         tunnelFailureThreshold = config.tunnelFailureThreshold,

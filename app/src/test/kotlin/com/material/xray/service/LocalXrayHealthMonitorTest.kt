@@ -45,12 +45,23 @@ class LocalXrayHealthMonitorTest {
         assertTrue(monitor.shouldRecordSnapshot(310_000L))
     }
 
+    @Test
+    fun `memory checks use their own rate limit`() {
+        val monitor = monitor(memoryCheckIntervalMs = 60_000L)
+
+        assertTrue(monitor.shouldCheckMemory(10_000L))
+        assertFalse(monitor.shouldCheckMemory(69_999L))
+        assertTrue(monitor.shouldCheckMemory(70_000L))
+    }
+
     private fun monitor(
+        memoryCheckIntervalMs: Long = 60_000L,
         apiProbeIntervalMs: Long = 60_000L,
         snapshotIntervalMs: Long = 300_000L,
         tunnelFailureThreshold: Int = 2,
         apiFailureThreshold: Int = 3,
     ) = LocalXrayHealthMonitor(
+        memoryCheckIntervalMs = memoryCheckIntervalMs,
         apiProbeIntervalMs = apiProbeIntervalMs,
         snapshotIntervalMs = snapshotIntervalMs,
         tunnelFailureThreshold = tunnelFailureThreshold,

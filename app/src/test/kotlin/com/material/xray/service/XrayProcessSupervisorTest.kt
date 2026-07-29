@@ -139,7 +139,10 @@ class XrayProcessSupervisorTest {
     fun `statm parser reads resident pages without splitting the full line`() {
         assertEquals(15_950L, parseStatmResidentPages("3102804 15950 7671 3740 0 31099 0"))
         assertEquals(15_950L, parseStatmResidentPages("3102804\t15950\t7671"))
+        val bytes = "3102804 15950 7671\n".toByteArray()
+        assertEquals(15_950L, parseStatmResidentPages(bytes, bytes.size))
         assertNull(parseStatmResidentPages("3102804"))
+        assertNull(parseStatmResidentPages(bytes, 0))
         assertNull(parseStatmResidentPages(null))
     }
 

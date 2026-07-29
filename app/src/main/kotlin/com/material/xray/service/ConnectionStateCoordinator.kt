@@ -19,6 +19,7 @@ class ConnectionStateCoordinator @Inject constructor() {
     val events: SharedFlow<ConnectionEvent> = _events.asSharedFlow()
     private val _activeBalancerSelection = MutableStateFlow<ActiveBalancerSelection?>(null)
     internal val activeBalancerSelection: StateFlow<ActiveBalancerSelection?> = _activeBalancerSelection.asStateFlow()
+    internal val activeBalancerSelectionSubscribers: StateFlow<Int> = _activeBalancerSelection.subscriptionCount
 
     fun startConnection(transitionState: ConnectionState) {
         require(

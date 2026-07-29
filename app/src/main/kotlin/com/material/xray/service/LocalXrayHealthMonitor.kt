@@ -7,6 +7,7 @@ internal data class LocalHealthTransition(
 )
 
 internal class LocalXrayHealthMonitor(
+    private val memoryCheckIntervalMs: Long,
     private val apiProbeIntervalMs: Long,
     private val snapshotIntervalMs: Long,
     tunnelFailureThreshold: Int,
@@ -14,10 +15,15 @@ internal class LocalXrayHealthMonitor(
 ) {
     private val tunnelFailures = ConsecutiveFailureDetector(tunnelFailureThreshold)
     private val apiFailures = ConsecutiveFailureDetector(apiFailureThreshold)
+    private var lastMemoryCheckAtMs: Long? = null
     private var lastApiProbeAtMs: Long? = null
     private var lastSnapshotAtMs: Long? = null
 
     fun recordTunnelAvailability(available: Boolean): LocalHealthTransition = tunnelFailures.record(available)
+
+    fun shouldCheckMemory(nowMs: Long): Boolean = isDue(lastMemoryCheckAtMs, nowMs, memoryCheckIntervalMs).also { due ->
+        if (due) lastMemoryCheckAtMs = nowMs
+    }
 
     fun shouldProbeApi(nowMs: Long): Boolean = isDue(lastApiProbeAtMs, nowMs, apiProbeIntervalMs).also { due ->
         if (due) lastApiProbeAtMs = nowMs

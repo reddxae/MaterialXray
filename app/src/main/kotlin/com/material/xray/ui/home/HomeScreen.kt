@@ -222,14 +222,23 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshTunnelInterfaceState()
-                viewModel.resumePendingAppUpdateInstall()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    viewModel.refreshTunnelInterfaceState()
+                    viewModel.resumePendingAppUpdateInstall()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    showQrScanner = false
+                    keepQrScannerDialog = false
+                    viewModel.onHidden()
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.onHidden()
         }
     }
 

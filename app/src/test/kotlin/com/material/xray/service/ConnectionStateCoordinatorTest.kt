@@ -1,10 +1,16 @@
 package com.material.xray.service
 
 import com.material.xray.model.ConnectionState
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionStateCoordinatorTest {
     @Test
     fun `tunnel reconciliation cannot overwrite an active connection transition`() {
@@ -41,6 +47,20 @@ class ConnectionStateCoordinatorTest {
     @Test(expected = IllegalArgumentException::class)
     fun `connection start rejects terminal states`() {
         ConnectionStateCoordinator().startConnection(ConnectionState.Disconnected)
+    }
+
+    @Test
+    fun `balancer subscriber count follows active UI collection`() = runTest {
+        val coordinator = ConnectionStateCoordinator()
+        assertEquals(0, coordinator.activeBalancerSelectionSubscribers.value)
+
+        val collection = backgroundScope.launch { coordinator.activeBalancerSelection.collect { } }
+        runCurrent()
+        assertEquals(1, coordinator.activeBalancerSelectionSubscribers.value)
+
+        collection.cancel()
+        runCurrent()
+        assertEquals(0, coordinator.activeBalancerSelectionSubscribers.value)
     }
 
     private fun connectedState(corePid: Int) = ConnectionState.Connected(

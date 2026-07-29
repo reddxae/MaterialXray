@@ -329,7 +329,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                         selectedRuleIds = selectedRuleIds.toggle(rule.id)
                     },
                 )
-                RoutingTab.Apps -> AppBypassContent()
+                RoutingTab.Apps -> AppBypassContent(active = selectedTab == RoutingTab.Apps.ordinal)
             }
         }
     }

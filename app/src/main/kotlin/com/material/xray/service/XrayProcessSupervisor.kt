@@ -7,6 +7,7 @@ import android.system.Os
 import android.system.OsConstants
 import com.material.xray.core.root.RootShell
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import kotlinx.coroutines.delay
 
@@ -291,9 +292,7 @@ internal class UserXrayProcessSupervisor(
     override suspend fun readResidentMemoryMb(pid: Int): Long? {
         if (pid <= 0) return null
         val rssPages = runCatching {
-            File("/proc/$pid/statm").bufferedReader().use { reader ->
-                parseStatmResidentPages(reader.readLine())
-            }
+            readStatmResidentPages(File("/proc/$pid/statm"))
         }.getOrNull() ?: return null
         val pageSizeKb = environment.memoryPageSizeKb ?: return null
         val rssKb = rssPages * pageSizeKb
@@ -340,14 +339,32 @@ internal class UserXrayProcessSupervisor(
 
 internal fun parseStatmResidentPages(line: String?): Long? {
     if (line == null) return null
-    var index = line.indexOfFirst(Char::isWhitespace)
-    if (index < 0) return null
-    while (index < line.length && line[index].isWhitespace()) index++
-    val start = index
-    while (index < line.length && !line[index].isWhitespace()) index++
-    if (start == index) return null
-    return line.substring(start, index).toLongOrNull()
+    return parseStatmResidentPages(line.toByteArray(Charsets.US_ASCII), line.length)
 }
+
+private fun readStatmResidentPages(file: File): Long? = FileInputStream(file).use { input ->
+    val buffer = ByteArray(STATM_BUFFER_SIZE)
+    val length = input.read(buffer)
+    parseStatmResidentPages(buffer, length)
+}
+
+internal fun parseStatmResidentPages(buffer: ByteArray, length: Int): Long? {
+    if (length <= 0 || length > buffer.size) return null
+    var index = 0
+    while (index < length && !buffer[index].isAsciiWhitespace()) index++
+    if (index == length) return null
+    while (index < length && buffer[index].isAsciiWhitespace()) index++
+    val start = index
+    var value = 0L
+    while (index < length && buffer[index] in ASCII_ZERO..ASCII_NINE) {
+        value = value * 10L + (buffer[index] - ASCII_ZERO)
+        index++
+    }
+    if (start == index) return null
+    return value
+}
+
+private fun Byte.isAsciiWhitespace(): Boolean = this == ASCII_SPACE || this == ASCII_TAB || this == ASCII_NEWLINE
 
 internal interface UserXrayProcessLauncher {
     fun start(
@@ -421,3 +438,9 @@ internal fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")
 internal const val XRAY_LOG_FILE_NAME = "xray.log"
 
 private const val BYTES_PER_KILOBYTE = 1024L
+private const val STATM_BUFFER_SIZE = 128
+private const val ASCII_ZERO: Byte = 48
+private const val ASCII_NINE: Byte = 57
+private const val ASCII_SPACE: Byte = 32
+private const val ASCII_TAB: Byte = 9
+private const val ASCII_NEWLINE: Byte = 10

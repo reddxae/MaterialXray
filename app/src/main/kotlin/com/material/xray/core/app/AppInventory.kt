@@ -11,6 +11,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 data class InstalledApp(
@@ -50,28 +52,30 @@ class AppInventory @Inject constructor(
         val profiles = userProfiles()
         val profileIds = (profiles.mapNotNull { it.identifierOrNull() } + currentProfileId).toSet()
         val appsByKey = linkedMapOf<String, InstalledApp>()
+        val snapshotContext = currentCoroutineContext()
 
-        pm.getInstalledApplications(0)
-            .asSequence()
-            .filterNot { it.packageName == context.packageName }
-            .map { info ->
-                info.toInstalledApp(
-                    rawLabel = if (includeUiMetadata) info.loadLabel(pm) else info.packageName,
-                    icon = if (includeUiMetadata) runCatching { info.loadIcon(pm) }.getOrNull() else null,
-                    currentProfileId = currentProfileId,
-                    includeUiMetadata = includeUiMetadata,
-                )
-            }
-            .forEach { app -> appsByKey[app.appKey] = app }
+        pm.getInstalledApplications(0).forEach { info ->
+            snapshotContext.ensureActive()
+            if (info.packageName == context.packageName) return@forEach
+            val app = info.toInstalledApp(
+                rawLabel = if (includeUiMetadata) info.loadLabel(pm) else info.packageName,
+                icon = if (includeUiMetadata) runCatching { info.loadIcon(pm) }.getOrNull() else null,
+                currentProfileId = currentProfileId,
+                includeUiMetadata = includeUiMetadata,
+            )
+            appsByKey[app.appKey] = app
+        }
 
         val launcherApps = context.getSystemService(LauncherApps::class.java)
         if (launcherApps != null) {
             profiles
                 .filter { it.identifierOrNull() != currentProfileId }
                 .forEach { profile ->
+                    snapshotContext.ensureActive()
                     runCatching { launcherApps.getActivityList(null, profile) }
                         .getOrDefault(emptyList())
                         .forEach { activity ->
+                            snapshotContext.ensureActive()
                             val info = activity.applicationInfo
                             if (info.packageName == context.packageName) return@forEach
                             val app = info.toInstalledApp(

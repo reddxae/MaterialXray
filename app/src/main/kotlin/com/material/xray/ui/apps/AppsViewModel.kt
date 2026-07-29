@@ -30,14 +30,14 @@ import com.material.xray.service.RoutingChangeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class AppItem(
     val appKey: String,
@@ -116,6 +116,9 @@ class AppsViewModel @Inject constructor(
 
     private val _isLoadingApps = MutableStateFlow(true)
     val isLoadingApps: StateFlow<Boolean> = _isLoadingApps
+    private var loadAppsJob: Job? = null
+    private var loadAppsRunId = 0L
+    private var routingRefreshJob: Job? = null
 
     private val effectiveUseRootService = combine(
         settingsRepository.useRootService,
@@ -224,47 +227,78 @@ class AppsViewModel @Inject constructor(
             )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    init {
+    fun refreshApps() {
+        refreshProviderRouting()
         loadApps()
     }
 
-    fun refreshApps() {
-        loadApps()
+    fun onVisible() {
+        refreshProviderRouting()
+        if (installedApps.value.isEmpty() && loadAppsJob?.isActive != true) loadApps()
+    }
+
+    fun onHidden() {
+        loadAppsRunId++
+        val wasLoading = loadAppsJob != null
+        loadAppsJob?.cancel()
+        loadAppsJob = null
+        if (wasLoading) _isLoadingApps.value = false
     }
 
     private fun loadApps() {
-        viewModelScope.launch {
+        loadAppsJob?.cancel()
+        val runId = ++loadAppsRunId
+        loadAppsJob = viewModelScope.launch {
             _isLoadingApps.value = true
-            providerRoutingCoordinator.refreshSelectedServer()
-            val snapshot = runCatching {
-                withContext(Dispatchers.IO) {
-                    appInventory.loadSnapshot()
+            try {
+                val snapshot = appInventory.loadSnapshot()
+                _hasWorkProfileApps.value = snapshot.profileIds.size > 1
+                val apps = snapshot.apps
+                    .filterNot { it.packageName == context.packageName }
+                    .map { app ->
+                        AppItem(
+                            appKey = app.appKey,
+                            packageName = app.packageName,
+                            name = app.name,
+                            uid = app.uid,
+                            icon = app.icon,
+                            systemApp = app.systemApp,
+                            profileId = app.profileId,
+                            workProfile = app.workProfile,
+                            routeKey = DEFAULT_ROUTE_OPTION.key,
+                            routeKind = DEFAULT_ROUTE_OPTION.kind,
+                            customRouted = false,
+                            routeTitle = DEFAULT_ROUTE_OPTION.title,
+                            routeDescription = DEFAULT_ROUTE_OPTION.description,
+                        )
+                    }
+                    .sortedBy { it.name.lowercase() }
+                installedApps.value = apps
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Package metadata is optional UI data; keep the previous snapshot on failure.
+            } finally {
+                if (loadAppsRunId == runId) {
+                    loadAppsJob = null
+                    _isLoadingApps.value = false
                 }
-            }.getOrNull()
-            _hasWorkProfileApps.value = snapshot?.profileIds.orEmpty().size > 1
-            val apps = snapshot?.apps
-                .orEmpty()
-                .filterNot { it.packageName == context.packageName }
-                .map { app ->
-                    AppItem(
-                        appKey = app.appKey,
-                        packageName = app.packageName,
-                        name = app.name,
-                        uid = app.uid,
-                        icon = app.icon,
-                        systemApp = app.systemApp,
-                        profileId = app.profileId,
-                        workProfile = app.workProfile,
-                        routeKey = DEFAULT_ROUTE_OPTION.key,
-                        routeKind = DEFAULT_ROUTE_OPTION.kind,
-                        customRouted = false,
-                        routeTitle = DEFAULT_ROUTE_OPTION.title,
-                        routeDescription = DEFAULT_ROUTE_OPTION.description,
-                    )
-                }
-                .sortedBy { it.name.lowercase() }
-            installedApps.value = apps
-            _isLoadingApps.value = false
+            }
+        }
+    }
+
+    private fun refreshProviderRouting() {
+        if (routingRefreshJob?.isActive == true) return
+        routingRefreshJob = viewModelScope.launch {
+            try {
+                providerRoutingCoordinator.refreshSelectedServer()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Provider refresh is best-effort; the persisted routing remains usable.
+            } finally {
+                routingRefreshJob = null
+            }
         }
     }
 

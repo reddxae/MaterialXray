@@ -114,6 +114,7 @@ class XrayService : VpnService() {
     @Volatile
     private var rootServiceRequested: Boolean? = null
     private var balancerSelectionJob: Job? = null
+    private var balancerSelectionTag: String? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var notificationSettings = NotificationSettings()
     private var notificationMetrics = NotificationMetrics()
@@ -218,6 +219,7 @@ class XrayService : VpnService() {
             log = logBuffer,
             config = XrayHealthWatchdogConfig(
                 processIntervalMs = PROCESS_WATCHDOG_INTERVAL_MS,
+                memoryCheckIntervalMs = MEMORY_HEALTH_CHECK_INTERVAL_MS,
                 apiProbeIntervalMs = LOCAL_API_HEALTH_PROBE_INTERVAL_MS,
                 snapshotIntervalMs = LOCAL_HEALTH_SNAPSHOT_INTERVAL_MS,
                 tunnelFailureThreshold = TUNNEL_FAILURE_THRESHOLD,
@@ -256,6 +258,12 @@ class XrayService : VpnService() {
             connectionStateCoordinator.state.drop(1).collect { state ->
                 handleStateSideEffects(state)
                 updateNotification()
+            }
+        }
+
+        scope.launch {
+            connectionStateCoordinator.activeBalancerSelectionSubscribers.collect {
+                updateBalancerSelectionTracker()
             }
         }
 
@@ -740,8 +748,15 @@ class XrayService : VpnService() {
     }
 
     private fun startBalancerSelectionTracker() {
+        val balancerTag = activeConfig?.primaryBalancerTag()
+        if (balancerTag == null) {
+            pauseBalancerSelectionTracker()
+            return
+        }
+        if (balancerSelectionJob?.isActive == true && balancerSelectionTag == balancerTag) return
+
         pauseBalancerSelectionTracker()
-        val balancerTag = activeConfig?.primaryBalancerTag() ?: return
+        balancerSelectionTag = balancerTag
 
         balancerSelectionJob = scope.launch(Dispatchers.IO) {
             while (isActive && connectionStateCoordinator.state.value is ConnectionState.Connected) {
@@ -760,10 +775,16 @@ class XrayService : VpnService() {
     private fun pauseBalancerSelectionTracker() {
         balancerSelectionJob?.cancel()
         balancerSelectionJob = null
+        balancerSelectionTag = null
     }
 
     private fun updateBalancerSelectionTracker() {
-        if (screenInteractive && connectionStateCoordinator.state.value is ConnectionState.Connected) {
+        val hasUiSubscriber = connectionStateCoordinator.activeBalancerSelectionSubscribers.value > 0
+        if (
+            screenInteractive &&
+            hasUiSubscriber &&
+            connectionStateCoordinator.state.value is ConnectionState.Connected
+        ) {
             startBalancerSelectionTracker()
         } else {
             pauseBalancerSelectionTracker()
@@ -1718,6 +1739,7 @@ class XrayService : VpnService() {
         private const val PERIODIC_ROOT_ROUTE_VERIFICATION_REASON = "periodic root route verification"
         private val NETWORK_RETARGET_RETRY_DELAYS_MS = listOf(250L, 500L, 1_000L, 2_000L, 4_000L, 8_000L)
         private const val LOCAL_API_HEALTH_PROBE_INTERVAL_MS = 60_000L
+        private const val MEMORY_HEALTH_CHECK_INTERVAL_MS = 60_000L
         private const val LOCAL_HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60_000L
         private const val TUNNEL_FAILURE_THRESHOLD = 2
         private const val LOCAL_API_FAILURE_THRESHOLD = 3

@@ -45,6 +45,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -66,13 +67,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.model.RoutingPolicyControl
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
+fun AppBypassContent(active: Boolean, viewModel: AppsViewModel = hiltViewModel()) {
+    val lifecycleOwner = LocalLifecycleOwner.current
     val apps by viewModel.apps.collectAsStateWithLifecycle()
     val routeOptions by viewModel.routeOptions.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
@@ -98,6 +103,21 @@ fun AppBypassContent(viewModel: AppsViewModel = hiltViewModel()) {
     var pendingSpecificServerRoute by remember { mutableStateOf<AppRouteSelection?>(null) }
     val pullToRefreshState = rememberPullToRefreshState()
     val showInitialLoading = isLoadingApps && apps.isEmpty()
+
+    DisposableEffect(lifecycleOwner, viewModel, active) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> if (active) viewModel.onVisible() else viewModel.onHidden()
+                Lifecycle.Event.ON_STOP -> viewModel.onHidden()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.onHidden()
+        }
+    }
 
     LaunchedEffect(routingPolicyControl) {
         if (routingPolicyControl == RoutingPolicyControl.User) {

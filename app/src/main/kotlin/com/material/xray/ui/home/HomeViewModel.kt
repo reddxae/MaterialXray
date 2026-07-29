@@ -197,7 +197,7 @@ class HomeViewModel @Inject constructor(
             ?: selectedConfig.maskedBalancerOutboundAddress(selection.outboundTag)
             ?: return@combine null
         ActiveBalancerServerState(title = title, latencyMs = selection.latencyMs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), null)
 
     private val refreshOperations = MutableStateFlow(0)
     val isRefreshing: StateFlow<Boolean> = refreshOperations
@@ -476,14 +476,23 @@ class HomeViewModel @Inject constructor(
         restartLatencyTests(allServers.value)
     }
 
-    private fun restartLatencyTests(servers: List<ServerEntity>, sortDuringTest: Boolean = false) {
+    fun onHidden() {
+        latencyRunId++
+        val canceledServerIds = activeLatencyServerIds
+        activeLatencyServerIds = emptySet()
         latencyJob?.cancel()
+        latencyJob = null
+        latencyByServerId.update { current -> current - canceledServerIds }
+    }
 
+    private fun restartLatencyTests(servers: List<ServerEntity>, sortDuringTest: Boolean = false) {
         val runId = ++latencyRunId
+        val previouslyActiveServerIds = activeLatencyServerIds
+        latencyJob?.cancel()
         val pingMethod = defaultPingMethod.value
         val targetServers = servers.distinctBy { it.id }
         val targetServerIds = targetServers.map { it.id }.toSet()
-        val canceledOnlyServerIds = activeLatencyServerIds - targetServerIds
+        val canceledOnlyServerIds = previouslyActiveServerIds - targetServerIds
         activeLatencyServerIds = targetServerIds
 
         latencyByServerId.update { current ->

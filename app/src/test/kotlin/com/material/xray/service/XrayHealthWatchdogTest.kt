@@ -84,6 +84,40 @@ class XrayHealthWatchdogTest {
     }
 
     @Test
+    fun `expensive process checks use their own slower schedule`() = runTest {
+        val stateCoordinator = ConnectionStateCoordinator()
+        val probe = FakeHealthProbe(processAlive = true)
+        var runtimeModeChecks = 0
+        val watchdog = XrayHealthWatchdog(
+            scope = backgroundScope,
+            stateCoordinator = stateCoordinator,
+            healthProbe = probe,
+            log = LogBuffer(),
+            config = config(),
+            passiveMonitoringEnabled = { false },
+            memoryRestartThresholdMiB = { 1_000 },
+            elapsedRealtime = { testScheduler.currentTime },
+            tunnelAvailable = { true },
+            runtimeModeRecoveryReason = {
+                runtimeModeChecks++
+                null
+            },
+            scheduleNetworkSafetyCheck = {},
+            recover = { _, _, _ -> true },
+            dispatcher = StandardTestDispatcher(testScheduler),
+        )
+        stateCoordinator.markConnected(connectedState())
+
+        watchdog.start(connectedState())
+        advanceTimeBy(450)
+        runCurrent()
+
+        assertEquals(4, probe.aliveChecks)
+        assertEquals(1, probe.memoryChecks)
+        assertEquals(4, runtimeModeChecks)
+    }
+
+    @Test
     fun `restarted watchdog rejects stale result when pid is reused`() = runTest {
         val stateCoordinator = ConnectionStateCoordinator()
         val firstProbeStarted = CompletableDeferred<Unit>()
@@ -148,6 +182,7 @@ class XrayHealthWatchdogTest {
         private val sysStats: XraySysStats? = null,
     ) : XrayHealthProbe {
         var aliveChecks = 0
+        var memoryChecks = 0
         var sysStatsChecks = 0
 
         override suspend fun isProcessAlive(pid: Int): Boolean {
@@ -156,7 +191,10 @@ class XrayHealthWatchdogTest {
         }
 
         override suspend fun readCrashReason(): String = "crashed"
-        override suspend fun readProcessResidentMemoryMb(pid: Int): Long = 1
+        override suspend fun readProcessResidentMemoryMb(pid: Int): Long {
+            memoryChecks++
+            return 1
+        }
         override suspend fun readXraySysStats(): XraySysStats? {
             sysStatsChecks++
             return sysStats
@@ -166,6 +204,7 @@ class XrayHealthWatchdogTest {
     private companion object {
         fun config() = XrayHealthWatchdogConfig(
             processIntervalMs = 100,
+            memoryCheckIntervalMs = 500,
             apiProbeIntervalMs = 100,
             snapshotIntervalMs = 500,
             tunnelFailureThreshold = 2,

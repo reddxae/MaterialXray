@@ -1273,19 +1273,18 @@ class XrayService : VpnService() {
             return null
         }
 
+        val networkPlan = planRootlessVpnNetwork(runtimeSettings.allowIpv6)
         val builder = Builder()
             .setSession(localizedString(R.string.app_name))
             .setMtu(runtimeSettings.tunMtu)
-            .addAddress(VPN_ADDRESS, VPN_PREFIX_LENGTH)
-            .addRoute("0.0.0.0", 0)
 
-        runtimeSettings.dnsServers
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && it.any(Char::isDigit) }
-            .forEach { dnsServer ->
-                runCatching { builder.addDnsServer(dnsServer) }
-            }
+        networkPlan.addresses.forEach { prefix ->
+            builder.addAddress(prefix.address, prefix.prefixLength)
+        }
+        networkPlan.routes.forEach { prefix ->
+            builder.addRoute(prefix.address, prefix.prefixLength)
+        }
+        networkPlan.dnsServers.forEach(builder::addDnsServer)
 
         addDisallowedPackage(builder, packageName, ignoreMissing = true)
         val appRouteAssignments = withContext(Dispatchers.IO) { appBypassDao.getAll() }
@@ -1750,8 +1749,6 @@ class XrayService : VpnService() {
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
-        private const val VPN_ADDRESS = "10.10.14.1"
-        private const val VPN_PREFIX_LENGTH = 30
         private const val ROOTLESS_TUN_NAME = "tun0"
         private const val VPN_SERVICE_INTERFACE_LABEL = "VpnService"
         private const val TRANSPORT_LABEL_WIFI = "wifi"

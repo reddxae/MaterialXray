@@ -11,9 +11,9 @@
     <string name="settings_default_outbound_label">Исходящее соединение по умолчанию</string>
     <string name="settings_dns_servers_label">DNS-серверы</string>
     <string name="settings_dns_servers_placeholder">Оставьте пустым, чтобы использовать системный DNS</string>
-    <string name="settings_dns_servers_supporting_text">Через запятую, например: 1.1.1.1,1.0.0.1</string>
+    <string name="settings_dns_servers_supporting_text">IPv4- или IPv6-адреса через запятую</string>
     <string name="settings_domestic_dns_label">DNS для российских доменов</string>
-    <string name="settings_domestic_dns_supporting_text">Используется для российских доменов с прямым подключением, например: 77.88.8.8,77.88.8.1</string>
+    <string name="settings_domestic_dns_supporting_text">IPv4- или IPv6-адреса через запятую для российских доменов с прямым подключением</string>
     <string name="settings_sort_outbounds_by_latency_title">Сортировать серверы по задержке</string>
     <string name="settings_sort_outbounds_by_latency_description">Показывать доступные серверы от быстрых к медленным, а недоступные — в конце</string>
     <string name="settings_xray_log_level_label">Уровень журналирования Xray</string>

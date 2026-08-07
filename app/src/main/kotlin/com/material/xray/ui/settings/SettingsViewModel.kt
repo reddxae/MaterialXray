@@ -23,6 +23,7 @@ import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.isInProgress
+import com.material.xray.model.normalizeDnsServersForIpv6
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.DatabaseResetManager
@@ -203,8 +204,18 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
-    fun setDnsServers(servers: String) = updateXrayConfigStringSetting(servers, dnsServers.value, settingsRepo::setDnsServers)
-    fun setDomesticDnsServers(servers: String) = updateXrayConfigStringSetting(servers, domesticDnsServers.value, settingsRepo::setDomesticDnsServers)
+    fun normalizeDnsServers(servers: String): String = normalizeDnsServersForIpv6(servers, allowIpv6.value)
+
+    fun setDnsServers(servers: String) = updateXrayConfigStringSetting(
+        normalizeDnsServers(servers),
+        dnsServers.value,
+        settingsRepo::setDnsServers,
+    )
+    fun setDomesticDnsServers(servers: String) = updateXrayConfigStringSetting(
+        normalizeDnsServers(servers),
+        domesticDnsServers.value,
+        settingsRepo::setDomesticDnsServers,
+    )
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
     fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
         if (enabled == useRootService.value) return@launch

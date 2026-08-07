@@ -46,6 +46,7 @@ internal interface TunRoutingGateway {
     suspend fun configureTun(
         tunName: String,
         addressCidr: String,
+        ipv6AddressCidr: String?,
         isProcessAlive: suspend () -> Boolean,
     ): TunManager.TunSetupResult
 
@@ -92,8 +93,14 @@ internal class TunManagerRoutingGateway(
     override suspend fun configureTun(
         tunName: String,
         addressCidr: String,
+        ipv6AddressCidr: String?,
         isProcessAlive: suspend () -> Boolean,
-    ): TunManager.TunSetupResult = tunManager.configureTun(tunName, addressCidr, isProcessAlive)
+    ): TunManager.TunSetupResult = tunManager.configureTun(
+        tunName = tunName,
+        addressCidr = addressCidr,
+        ipv6AddressCidr = ipv6AddressCidr,
+        isProcessAlive = isProcessAlive,
+    )
 
     override suspend fun applyRouting(
         tunName: String,
@@ -179,11 +186,24 @@ internal class ActiveRoutingUpdater(
             return false
         }
 
+        val mainTunSetup = timedStep("Main TUN check") {
+            tunGateway.configureTun(
+                tunName = tunName,
+                addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
+                ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR.takeIf { allowIpv6 },
+            ) { processProbe.isAlive(connectedState.corePid) }
+        }
+        if (!mainTunSetup.success) {
+            log.append(LogSource.APP, "Fast app routing update skipped: ${mainTunSetup.error ?: "main TUN $tunName is unavailable"}")
+            return false
+        }
+
         appRoutingPlan.tunRoutes.forEachIndexed { index, route ->
             val appTunSetup = timedStep("App TUN check ${index + 1}") {
                 tunGateway.configureTun(
                     tunName = route.tunName,
                     addressCidr = TunManager.appTunAddressCidr(index + 1),
+                    ipv6AddressCidr = TunManager.appTunIpv6AddressCidr(index + 1).takeIf { allowIpv6 },
                 ) { processProbe.isAlive(connectedState.corePid) }
             }
             if (!appTunSetup.success) {

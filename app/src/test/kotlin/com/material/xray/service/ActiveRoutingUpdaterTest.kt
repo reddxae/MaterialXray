@@ -168,6 +168,7 @@ class ActiveRoutingUpdaterTest {
         override suspend fun configureTun(
             tunName: String,
             addressCidr: String,
+            ipv6AddressCidr: String?,
             isProcessAlive: suspend () -> Boolean,
         ): TunManager.TunSetupResult = TunManager.TunSetupResult(success = isProcessAlive())
 

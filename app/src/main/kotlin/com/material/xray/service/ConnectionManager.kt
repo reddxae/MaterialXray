@@ -491,7 +491,7 @@ internal class ConnectionManager(
         )
     }
 
-    private suspend fun waitForRootTun(useRootService: Boolean, tunName: String, pid: Int): Boolean {
+    private suspend fun waitForRootTun(useRootService: Boolean, tunName: String, allowIpv6: Boolean, pid: Int): Boolean {
         if (!useRootService) return true
 
         log.append(LogSource.APP, "Waiting for TUN interface '$tunName'...")
@@ -499,6 +499,7 @@ internal class ConnectionManager(
             tunGateway.configureTun(
                 tunName = tunName,
                 addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
+                ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR.takeIf { allowIpv6 },
             ) { isProcessAlive(pid) }
         }
         if (!tunSetup.success) {
@@ -520,8 +521,17 @@ internal class ConnectionManager(
         appRoutingPlan: AppRoutingPlan,
         pid: Int,
     ): Boolean {
-        if (!waitForRootTun(useRootService, tunName, pid)) return false
-        if (!waitForAppTuns(appRoutingPlan, pid)) return false
+        if (
+            !waitForRootTun(
+                useRootService = useRootService,
+                tunName = tunName,
+                allowIpv6 = allowIpv6,
+                pid = pid,
+            )
+        ) {
+            return false
+        }
+        if (!waitForAppTuns(appRoutingPlan = appRoutingPlan, allowIpv6 = allowIpv6, pid = pid)) return false
         if (
             !applyRootRouting(
                 useRootService,
@@ -539,13 +549,14 @@ internal class ConnectionManager(
         return waitForXrayApiReady(pid)
     }
 
-    private suspend fun waitForAppTuns(appRoutingPlan: AppRoutingPlan, pid: Int): Boolean {
+    private suspend fun waitForAppTuns(appRoutingPlan: AppRoutingPlan, allowIpv6: Boolean, pid: Int): Boolean {
         appRoutingPlan.tunRoutes.forEachIndexed { index, route ->
             log.append(LogSource.APP, "Waiting for app TUN interface '${route.tunName}'...")
             val appTunSetup = timedStep("App TUN setup ${index + 1}") {
                 tunGateway.configureTun(
                     tunName = route.tunName,
                     addressCidr = TunManager.appTunAddressCidr(index + 1),
+                    ipv6AddressCidr = TunManager.appTunIpv6AddressCidr(index + 1).takeIf { allowIpv6 },
                 ) { isProcessAlive(pid) }
             }
             if (!appTunSetup.success) {

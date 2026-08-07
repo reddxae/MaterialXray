@@ -19,7 +19,7 @@ class SettingsDefaultMigrationTest {
         val migrated = migration.migrate(preferences)
 
         assertNull(migrated[SettingsRepository.XRAY_BUFFER_SIZE_KIB])
-        assertEquals(3, migrated[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(4, migrated[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
@@ -38,7 +38,7 @@ class SettingsDefaultMigrationTest {
         val migrated = SettingsDefaultMigration().migrate(preferences)
 
         assertNull(migrated[SettingsRepository.TUN_NAME])
-        assertEquals(3, migrated[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(4, migrated[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
@@ -52,7 +52,7 @@ class SettingsDefaultMigrationTest {
         val migrated = SettingsDefaultMigration().migrate(preferences)
 
         assertNull(migrated[latencyDnsServers])
-        assertEquals(3, migrated[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(4, migrated[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
@@ -81,8 +81,59 @@ class SettingsDefaultMigrationTest {
     }
 
     @Test
+    fun `IPv6 DNS migration persists mapped resolvers when IPv6 is enabled`() = runTest {
+        val preferences = mutablePreferencesOf(
+            SETTINGS_DEFAULTS_REVISION to 3,
+            SettingsRepository.ALLOW_IPV6 to true,
+            SettingsRepository.DNS_SERVERS to "1.1.1.1,1.0.0.1",
+            SettingsRepository.DOMESTIC_DNS_SERVERS to "77.88.8.8,77.88.8.1",
+        )
+
+        val migrated = SettingsDefaultMigration().migrate(preferences)
+
+        assertEquals(
+            "1.1.1.1,1.0.0.1,2606:4700:4700::1111,2606:4700:4700::1001",
+            migrated[SettingsRepository.DNS_SERVERS],
+        )
+        assertEquals(
+            "77.88.8.8,77.88.8.1,2a02:6b8::feed:0ff,2a02:6b8:0:1::feed:0ff",
+            migrated[SettingsRepository.DOMESTIC_DNS_SERVERS],
+        )
+    }
+
+    @Test
+    fun `IPv6 DNS migration removes IPv6 resolvers when IPv6 is disabled`() = runTest {
+        val preferences = mutablePreferencesOf(
+            SETTINGS_DEFAULTS_REVISION to 3,
+            SettingsRepository.ALLOW_IPV6 to false,
+            SettingsRepository.DNS_SERVERS to "1.1.1.1,2606:4700:4700::1111",
+        )
+
+        val migrated = SettingsDefaultMigration().migrate(preferences)
+
+        assertEquals("1.1.1.1", migrated[SettingsRepository.DNS_SERVERS])
+        assertNull(migrated[SettingsRepository.DOMESTIC_DNS_SERVERS])
+    }
+
+    @Test
+    fun `DNS normalization repairs current revision backup values`() {
+        val preferences = mutablePreferencesOf(
+            SETTINGS_DEFAULTS_REVISION to 4,
+            SettingsRepository.ALLOW_IPV6 to true,
+            SettingsRepository.DNS_SERVERS to "1.1.1.1,1.0.0.1",
+        )
+
+        normalizeStoredDnsSettings(preferences)
+
+        assertEquals(
+            "1.1.1.1,1.0.0.1,2606:4700:4700::1111,2606:4700:4700::1001",
+            preferences[SettingsRepository.DNS_SERVERS],
+        )
+    }
+
+    @Test
     fun `current revision does not rerun migrations`() = runTest {
-        val preferences = mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 3)
+        val preferences = mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 4)
 
         assertFalse(SettingsDefaultMigration().shouldMigrate(preferences))
     }
@@ -100,7 +151,7 @@ class SettingsDefaultMigrationTest {
     @Test(expected = IllegalArgumentException::class)
     fun `DataStore lifecycle rejects newer settings revision`() = runTest {
         SettingsDefaultMigration().shouldMigrate(
-            mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 4),
+            mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 5),
         )
     }
 

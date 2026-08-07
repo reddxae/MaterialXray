@@ -3,6 +3,8 @@ package com.material.xray.core.xray
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.SubscriptionRouting
+import com.material.xray.model.isIpv4DnsServerLiteral
+import com.material.xray.model.isIpv6DnsServerLiteral
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -23,7 +25,7 @@ internal fun buildDns(
     allowIpv6: Boolean = false,
 ) = buildJsonObject {
     val domesticDomains = directDomains(routingRules, bypassLan)
-    val defaultServers = servers.commaSeparatedValues().applyIpv6DnsPolicy(allowIpv6)
+    val defaultServers = servers.commaSeparatedValues().map(String::toReliableXrayDnsAddress)
     if (!allowIpv6) {
         put("queryStrategy", "UseIPv4")
     }
@@ -39,7 +41,7 @@ internal fun buildDns(
                 defaultServers.forEach { add(it) }
             }
             if (domesticDomains.isNotEmpty()) {
-                domesticServers.commaSeparatedValues().applyIpv6DnsPolicy(allowIpv6).forEach { domesticServer ->
+                domesticServers.commaSeparatedValues().map(String::toReliableXrayDnsAddress).forEach { domesticServer ->
                     add(
                         buildJsonObject {
                             put("address", domesticServer)
@@ -62,7 +64,6 @@ internal fun buildRouting(
     domesticDnsServers: String = "",
     domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     domainMatcher: String? = null,
-    allowIpv6: Boolean = false,
 ) = buildJsonObject {
     val hasDomesticDomains = directDomains(routingRules, bypassLan).isNotEmpty()
     put("domainStrategy", SubscriptionRouting.normalizeDomainStrategy(domainStrategy))
@@ -72,12 +73,12 @@ internal fun buildRouting(
         buildJsonArray {
             add(dnsRoutingRule(appProxyRoutes))
             add(dnsOverTlsRoutingRule(appProxyRoutes))
-            if (dnsServers.commaSeparatedValues().applyIpv6DnsPolicy(allowIpv6).isNotEmpty()) {
+            if (dnsServers.commaSeparatedValues().isNotEmpty()) {
                 add(defaultDnsRoutingRule())
             }
             if (
                 hasDomesticDomains &&
-                domesticDnsServers.commaSeparatedValues().applyIpv6DnsPolicy(allowIpv6).isNotEmpty()
+                domesticDnsServers.commaSeparatedValues().isNotEmpty()
             ) {
                 add(domesticDnsRoutingRule())
             }
@@ -215,87 +216,34 @@ private fun buildOrRules(rule: RoutingRule): List<JsonObject> {
 
 private fun String.commaSeparatedValues(): List<String> = split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
-private fun List<String>.applyIpv6DnsPolicy(allowIpv6: Boolean): List<String> {
-    if (!allowIpv6) return filterNot(::isIpv6Literal)
-    if (isEmpty() || any(::isIpv6Literal) || !all(::isIpv4Literal)) return this
+// Xray-core #2248 can permanently cache empty Cloudflare UDP responses for individual names.
+private fun String.toReliableXrayDnsAddress(): String {
+    val host = numericDnsHostOrNull() ?: return this
+    if (host !in CLOUDFLARE_IPV4_DNS && !host.lowercase().startsWith(CLOUDFLARE_IPV6_DNS_PREFIX)) return this
 
-    val mappedServers = mapNotNull(IPV4_TO_IPV6_DNS::get)
-    return (this + mappedServers.ifEmpty { listOf(DEFAULT_IPV6_DNS_SERVER) }).distinct()
-}
-
-private fun isIpv4Literal(value: String): Boolean {
-    val parts = value.split('.')
-    return parts.size == 4 &&
-        parts.all { part ->
-            part.isNotEmpty() && part.all(Char::isDigit) && part.toIntOrNull() in 0..255
-        }
-}
-
-private fun isIpv6Literal(value: String): Boolean {
-    val address = if (value.startsWith('[')) {
-        value.substringAfter('[').substringBefore(']', missingDelimiterValue = "")
-    } else {
-        value
-    }.substringBefore('%')
-    if (address.count { it == ':' } < 2) return false
-    if (address.contains('.') && !isIpv4Literal(address.substringAfterLast(':'))) return false
-
-    val compressionIndex = address.indexOf("::")
-    if (compressionIndex >= 0 && address.indexOf("::", compressionIndex + 2) >= 0) return false
-
-    val groups = if (compressionIndex >= 0) {
-        val leadingGroups = address.substring(0, compressionIndex).ipv6GroupCount() ?: return false
-        val trailingGroups = address.substring(compressionIndex + 2).ipv6GroupCount() ?: return false
-        leadingGroups + trailingGroups
-    } else {
-        address.ipv6GroupCount() ?: return false
+    return when {
+        isIpv4DnsServerLiteral(this) || isIpv4DnsServerWithPort() -> "tcp://$this"
+        startsWith('[') -> "tcp://${replace("%", "%25")}"
+        else -> "tcp://[${replace("%", "%25")}]"
     }
-
-    return if (compressionIndex >= 0) groups < IPV6_GROUP_COUNT else groups == IPV6_GROUP_COUNT
 }
 
-private fun String.ipv6GroupCount(): Int? {
-    if (isEmpty()) return 0
-    val groups = split(':')
-    if (groups.any(String::isEmpty)) return null
-
-    return groups.mapIndexed { index, group ->
-        when {
-            group.contains('.') && index == groups.lastIndex && isIpv4Literal(group) -> IPV4_EMBEDDED_GROUP_COUNT
-            group.length in 1..IPV6_GROUP_HEX_LENGTH && group.all(Char::isHexDigit) -> 1
-            else -> return null
-        }
-    }.sum()
+private fun String.numericDnsHostOrNull(): String? = when {
+    isIpv4DnsServerLiteral(this) -> this
+    isIpv4DnsServerWithPort() -> substringBeforeLast(':')
+    isIpv6DnsServerLiteral(this) && startsWith('[') -> substringAfter('[').substringBefore(']').substringBefore('%')
+    isIpv6DnsServerLiteral(this) -> substringBefore('%')
+    else -> null
 }
 
-private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
+private fun String.isIpv4DnsServerWithPort(): Boolean {
+    if (count { it == ':' } != 1) return false
+    val host = substringBeforeLast(':')
+    val port = substringAfterLast(':').toIntOrNull()
+    return isIpv4DnsServerLiteral(host) && port != null && port in 1..65535
+}
 
-private const val DEFAULT_IPV6_DNS_SERVER = "2606:4700:4700::1111"
-private const val IPV6_GROUP_COUNT = 8
-private const val IPV6_GROUP_HEX_LENGTH = 4
-private const val IPV4_EMBEDDED_GROUP_COUNT = 2
-
-private val IPV4_TO_IPV6_DNS = mapOf(
-    "1.1.1.1" to "2606:4700:4700::1111",
-    "1.0.0.1" to "2606:4700:4700::1001",
-    "1.1.1.2" to "2606:4700:4700::1112",
-    "1.0.0.2" to "2606:4700:4700::1002",
-    "1.1.1.3" to "2606:4700:4700::1113",
-    "1.0.0.3" to "2606:4700:4700::1003",
-    "8.8.8.8" to "2001:4860:4860::8888",
-    "8.8.4.4" to "2001:4860:4860::8844",
-    "9.9.9.9" to "2620:fe::fe",
-    "149.112.112.112" to "2620:fe::9",
-    "77.88.8.8" to "2a02:6b8::feed:0ff",
-    "77.88.8.1" to "2a02:6b8:0:1::feed:0ff",
-    "77.88.8.88" to "2a02:6b8::feed:bad",
-    "77.88.8.2" to "2a02:6b8:0:1::feed:bad",
-    "77.88.8.7" to "2a02:6b8::feed:a11",
-    "77.88.8.3" to "2a02:6b8:0:1::feed:a11",
-    "94.140.14.14" to "2a10:50c0::ad1:ff",
-    "94.140.15.15" to "2a10:50c0::ad2:ff",
-    "208.67.222.222" to "2620:119:35::35",
-    "208.67.220.220" to "2620:119:53::53",
-)
+private val CLOUDFLARE_IPV4_DNS = setOf("1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3")
+private const val CLOUDFLARE_IPV6_DNS_PREFIX = "2606:4700:4700::"
 
 private fun List<String>.cleanEntries(): List<String> = map { it.trim() }.filter { it.isNotEmpty() }

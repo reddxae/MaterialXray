@@ -77,7 +77,6 @@ internal class RawConfigTunInjector(
                 domesticDnsServers = domesticDnsServers,
                 domainStrategy = routingDomainStrategy,
                 domainMatcher = routingDomainMatcher,
-                allowIpv6 = allowIpv6,
             ),
             raw = original["routing"] as? JsonObject,
         )

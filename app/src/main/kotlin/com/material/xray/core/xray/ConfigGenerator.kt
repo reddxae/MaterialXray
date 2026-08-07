@@ -98,7 +98,6 @@ class ConfigGenerator {
                     domesticDnsServers = domesticDnsServers,
                     domainStrategy = routingDomainStrategy,
                     domainMatcher = routingDomainMatcher,
-                    allowIpv6 = allowIpv6,
                 ),
             )
         }

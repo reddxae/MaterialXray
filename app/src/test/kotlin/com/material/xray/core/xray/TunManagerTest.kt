@@ -47,6 +47,76 @@ class TunManagerTest {
     }
 
     @Test
+    fun `TUN setup assigns IPv6 address when provided`() = runTest {
+        val commands = mutableListOf<String>()
+        val manager = TunManager { command ->
+            commands += command
+            when {
+                command.startsWith("ip link show") -> successfulCommand(output = "wlan1")
+                command.startsWith("ip -6 addr show") -> successfulCommand(
+                    output = "    inet6 fd10:10:14::1/64 scope global nodad",
+                )
+                else -> successfulCommand()
+            }
+        }
+
+        val result = manager.configureTun(
+            tunName = "wlan1",
+            addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
+            ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR,
+        )
+
+        assertTrue(result.success)
+        assertEquals(3, commands.size)
+        assertTrue(commands[1].contains("ip -6 addr replace 'fd10:10:14::1/64' dev 'wlan1' nodad"))
+        assertEquals("ip -6 addr show dev 'wlan1'", commands[2])
+    }
+
+    @Test
+    fun `TUN setup leaves IPv6 untouched when no IPv6 address is provided`() = runTest {
+        val commands = mutableListOf<String>()
+        val manager = TunManager { command ->
+            commands += command
+            successfulCommand(output = "wlan1")
+        }
+
+        val result = manager.configureTun(tunName = "wlan1")
+
+        assertTrue(result.success)
+        assertEquals(2, commands.size)
+        assertTrue("ip -6" !in commands[1])
+    }
+
+    @Test
+    fun `TUN setup rejects an IPv6 address that remains tentative`() = runTest {
+        val manager = TunManager { command ->
+            when {
+                command.startsWith("ip link show") -> successfulCommand(output = "wlan1")
+                command.startsWith("ip -6 addr show") -> successfulCommand(
+                    output = "    inet6 fd10:10:14::1/64 scope global tentative",
+                )
+                else -> successfulCommand()
+            }
+        }
+
+        val result = manager.configureTun(
+            tunName = "wlan1",
+            ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR,
+        )
+
+        assertFalse(result.success)
+        assertTrue(result.error.orEmpty().contains(TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR))
+    }
+
+    @Test
+    fun `app TUN IPv6 addresses use distinct bounded subnets`() {
+        assertEquals("fd10:10:14:1::1/64", TunManager.appTunIpv6AddressCidr(1))
+        assertEquals("fd10:10:14:fe::1/64", TunManager.appTunIpv6AddressCidr(254))
+        assertEquals(TunManager.appTunIpv6AddressCidr(1), TunManager.appTunIpv6AddressCidr(0))
+        assertEquals(TunManager.appTunIpv6AddressCidr(254), TunManager.appTunIpv6AddressCidr(255))
+    }
+
+    @Test
     fun `IPv6 route uses TUN when IPv6 is allowed`() {
         assertEquals(
             "ip -6 route replace default dev wlan1a1 table 110",

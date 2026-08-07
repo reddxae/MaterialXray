@@ -535,7 +535,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 supportingText = { Text(stringResource(R.string.settings_dns_servers_supporting_text)) },
             )
             if (hasDnsChanges) {
-                Button(onClick = { viewModel.setDnsServers(editingDns) }) {
+                Button(
+                    onClick = {
+                        editingDns = viewModel.normalizeDnsServers(editingDns)
+                        viewModel.setDnsServers(editingDns)
+                    },
+                ) {
                     Text(stringResource(R.string.settings_save))
                 }
             }
@@ -550,7 +555,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 supportingText = { Text(stringResource(R.string.settings_domestic_dns_supporting_text)) },
             )
             if (hasDomesticDnsChanges) {
-                Button(onClick = { viewModel.setDomesticDnsServers(editingDomesticDns) }) {
+                Button(
+                    onClick = {
+                        editingDomesticDns = viewModel.normalizeDnsServers(editingDomesticDns)
+                        viewModel.setDomesticDnsServers(editingDomesticDns)
+                    },
+                ) {
                     Text(stringResource(R.string.settings_save))
                 }
             }

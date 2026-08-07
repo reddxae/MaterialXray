@@ -327,6 +327,7 @@ class ConnectionManagerTest {
         )
 
         assertTrue(harness.tunGateway.lastAllowIpv6)
+        assertTrue(TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR in harness.tunGateway.configuredIpv6Addresses)
     }
 
     @Test
@@ -456,6 +457,7 @@ class ConnectionManagerTest {
         var availableWlanName: String? = "wlan0"
         var nameDetectionCalls = 0
         var lastAllowIpv6 = false
+        val configuredIpv6Addresses = mutableListOf<String>()
         val detectedRouteTunNames = mutableListOf<String>()
 
         override suspend fun findAvailableWlanName(): String? {
@@ -475,8 +477,12 @@ class ConnectionManagerTest {
         override suspend fun configureTun(
             tunName: String,
             addressCidr: String,
+            ipv6AddressCidr: String?,
             isProcessAlive: suspend () -> Boolean,
-        ): TunManager.TunSetupResult = configureResult
+        ): TunManager.TunSetupResult {
+            ipv6AddressCidr?.let(configuredIpv6Addresses::add)
+            return configureResult
+        }
 
         override suspend fun applyRouting(
             tunName: String,

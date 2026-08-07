@@ -45,6 +45,7 @@ class TunManager internal constructor(
     suspend fun configureTun(
         tunName: String,
         addressCidr: String = DEFAULT_TUN_ADDRESS_CIDR,
+        ipv6AddressCidr: String? = null,
         isProcessAlive: suspend () -> Boolean = { true },
     ): TunSetupResult {
         var attempts = 0
@@ -65,13 +66,42 @@ class TunManager internal constructor(
             }
         }
 
-        val upCommand = "ip addr add $addressCidr dev $tunName 2>/dev/null; ip link set $tunName up"
+        val quotedTunName = shellQuote(tunName)
+        val upCommand = buildList {
+            ipv6AddressCidr?.let {
+                val disableIpv6Path = shellQuote("/proc/sys/net/ipv6/conf/$tunName/disable_ipv6")
+                add("{ [ ! -e $disableIpv6Path ] || echo 0 > $disableIpv6Path; } 2>/dev/null || true")
+            }
+            add("ip addr replace ${shellQuote(addressCidr)} dev $quotedTunName")
+            ipv6AddressCidr?.let {
+                add("ip -6 addr replace ${shellQuote(it)} dev $quotedTunName nodad")
+            }
+            add("ip link set $quotedTunName up")
+        }.joinToString(" && ")
         val upResult = executeCommand(upCommand)
-        return if (upResult.isSuccess) {
-            TunSetupResult(success = true)
-        } else {
-            TunSetupResult(success = false, error = upResult.toCommandError(upCommand))
+        if (!upResult.isSuccess) {
+            return TunSetupResult(success = false, error = upResult.toCommandError(upCommand))
         }
+
+        if (ipv6AddressCidr != null) {
+            val inspectCommand = "ip -6 addr show dev $quotedTunName"
+            val inspectResult = executeCommand(inspectCommand)
+            val configured = inspectResult.output.lineSequence().any { line ->
+                val normalized = line.trim()
+                normalized.startsWith("inet6 $ipv6AddressCidr ") &&
+                    "tentative" !in normalized &&
+                    "dadfailed" !in normalized
+            }
+            if (!inspectResult.isSuccess || !configured) {
+                val detail = inspectResult.toCommandError(inspectCommand)
+                return TunSetupResult(
+                    success = false,
+                    error = "IPv6 address $ipv6AddressCidr was not configured on $tunName: $detail",
+                )
+            }
+        }
+
+        return TunSetupResult(success = true)
     }
 
     suspend fun detectPhysicalRoute(tunName: String): PhysicalRoute? {
@@ -582,6 +612,7 @@ class TunManager internal constructor(
         private const val IP_RULE_BATCH_SIZE = 128
         private val NAMED_ROUTE_TABLES = mapOf("default" to 253, "main" to 254, "local" to 255)
         const val DEFAULT_TUN_ADDRESS_CIDR = "10.0.0.1/30"
+        const val DEFAULT_TUN_IPV6_ADDRESS_CIDR = "fd10:10:14::1/64"
         private const val TUN_WAIT_ATTEMPTS = 120
         private const val TUN_WAIT_POLL_INTERVAL_MS = 50L
 
@@ -594,6 +625,8 @@ class TunManager internal constructor(
         fun appRouteTable(baseRouteTable: Int, index: Int): Int = baseRouteTable + APP_ROUTE_TABLE_OFFSET + index - 1
 
         fun appTunAddressCidr(index: Int): String = "10.0.${index.coerceIn(1, 254)}.1/30"
+
+        fun appTunIpv6AddressCidr(index: Int): String = "fd10:10:14:${index.coerceIn(1, 254).toString(16)}::1/64"
 
         internal fun nextAvailableWlanName(interfaceNames: Sequence<String>): String {
             val occupiedNames = interfaceNames.toSet()

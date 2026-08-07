@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.material.xray.model.BackupData
+import com.material.xray.model.normalizeDnsServersForIpv6
 
 internal val SETTINGS_DEFAULTS_REVISION = intPreferencesKey("__settings_defaults_revision")
 
@@ -100,7 +101,7 @@ private fun validateSettingsDefaultsRevision(
     }
 }
 
-private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 3
+private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 4
 private const val PREVIOUS_XRAY_BUFFER_SIZE_KIB = 512
 private const val PREVIOUS_TUN_NAME = "xray0"
 
@@ -120,4 +121,38 @@ private val SETTINGS_DEFAULT_CHANGES = listOf(
         revision = 3,
         key = stringPreferencesKey("latency_dns_servers"),
     ),
+    object : SettingDefaultChange {
+        override val revision = 4
+
+        override fun apply(preferences: MutablePreferences) {
+            normalizeStoredDnsSettings(preferences)
+        }
+    },
 )
+
+internal fun normalizeStoredDnsSettings(preferences: MutablePreferences) {
+    val allowIpv6 = preferences[SettingsRepository.ALLOW_IPV6] ?: false
+    preferences.normalizeDnsSetting(
+        key = SettingsRepository.DNS_SERVERS,
+        defaultValue = SettingsRepository.DEFAULT_DNS_SERVERS,
+        allowIpv6 = allowIpv6,
+    )
+    preferences.normalizeDnsSetting(
+        key = SettingsRepository.DOMESTIC_DNS_SERVERS,
+        defaultValue = SettingsRepository.DEFAULT_DOMESTIC_DNS_SERVERS,
+        allowIpv6 = allowIpv6,
+    )
+}
+
+private fun MutablePreferences.normalizeDnsSetting(
+    key: Preferences.Key<String>,
+    defaultValue: String,
+    allowIpv6: Boolean,
+) {
+    val storedValue = this[key]
+    val currentValue = storedValue ?: defaultValue
+    val normalizedValue = normalizeDnsServersForIpv6(currentValue, allowIpv6)
+    if (storedValue != null || normalizedValue != currentValue) {
+        this[key] = normalizedValue
+    }
+}

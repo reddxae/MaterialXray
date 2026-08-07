@@ -20,6 +20,7 @@ import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
+import com.material.xray.model.normalizeDnsServersForIpv6
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -228,8 +229,12 @@ class SettingsRepository @Inject constructor(
     )
 
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
-    suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }
-    suspend fun setDomesticDnsServers(servers: String) = store.edit { it[DOMESTIC_DNS_SERVERS] = servers }
+    suspend fun setDnsServers(servers: String) = store.edit { prefs ->
+        prefs[DNS_SERVERS] = normalizeDnsServersForIpv6(servers, prefs[ALLOW_IPV6] ?: false)
+    }
+    suspend fun setDomesticDnsServers(servers: String) = store.edit { prefs ->
+        prefs[DOMESTIC_DNS_SERVERS] = normalizeDnsServersForIpv6(servers, prefs[ALLOW_IPV6] ?: false)
+    }
     suspend fun setXrayBufferSizeKiB(bufferSizeKiB: Int) {
         require(XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB))
         store.edit { it[XRAY_BUFFER_SIZE_KIB] = bufferSizeKiB }
@@ -247,7 +252,14 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
     suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
-    suspend fun setAllowIpv6(enabled: Boolean) = store.edit { it[ALLOW_IPV6] = enabled }
+    suspend fun setAllowIpv6(enabled: Boolean) = store.edit { prefs ->
+        prefs[DNS_SERVERS] = normalizeDnsServersForIpv6(prefs[DNS_SERVERS] ?: DEFAULT_DNS_SERVERS, enabled)
+        prefs[DOMESTIC_DNS_SERVERS] = normalizeDnsServersForIpv6(
+            prefs[DOMESTIC_DNS_SERVERS] ?: DEFAULT_DOMESTIC_DNS_SERVERS,
+            enabled,
+        )
+        prefs[ALLOW_IPV6] = enabled
+    }
     suspend fun setLastServerId(id: Long) = store.edit { it[LAST_SERVER_ID] = id }
     suspend fun compareAndSetLastServerId(expectedId: Long, id: Long): Boolean {
         var updated = false
@@ -480,6 +492,7 @@ class SettingsRepository @Inject constructor(
                 preferences = prefs,
                 sourceRevision = settingsDefaultsRevisionFromBackup(map, sourceBackupVersion),
             )
+            normalizeStoredDnsSettings(prefs)
         }
     }
 

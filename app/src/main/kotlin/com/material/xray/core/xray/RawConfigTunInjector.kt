@@ -22,6 +22,7 @@ internal class RawConfigTunInjector(
         fwmark: Int,
         dnsServers: String,
         domesticDnsServers: String,
+        bootstrapDnsHosts: Map<String, List<String>> = emptyMap(),
         logLevel: XrayLogLevel,
         defaultOutbound: XrayOutbound,
         bypassLan: Boolean,
@@ -42,12 +43,15 @@ internal class RawConfigTunInjector(
         val proxyOutbound = normalizedOutbounds.firstOrNull { outbound ->
             outbound["tag"]?.jsonPrimitive?.contentOrNull.equals("proxy", ignoreCase = true)
         } ?: error("Raw JSON config has no proxy outbound")
+        val proxyOutboundTag = requireNotNull(proxyOutbound["tag"]?.jsonPrimitive?.contentOrNull)
 
         val appProxyOutbounds = appProxyRoutes.filterNot { it.applyRoutingRules }.map { route ->
             buildProxyOutbound(route.server, fwmark, physicalInterface, route.outboundTag, allowIpv6)
         }
+        val managedOutboundTags = managedOutboundTags(appProxyRoutes)
         val unmanagedOutbounds = normalizedOutbounds.filterNot { outbound ->
-            outbound["tag"]?.jsonPrimitive?.contentOrNull?.let { it in managedOutboundTags(appProxyRoutes) } == true
+            val tag = outbound["tag"]?.jsonPrimitive?.contentOrNull
+            tag != null && managedOutboundTags.any { managedTag -> managedTag.equals(tag, ignoreCase = true) }
         }
 
         original["outbounds"] = JsonArray(
@@ -61,7 +65,14 @@ internal class RawConfigTunInjector(
             ) + unmanagedOutbounds,
         )
         original["log"] = buildLogConfig(logLevel)
-        original["dns"] = buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6)
+        original["dns"] = buildDns(
+            dnsServers,
+            domesticDnsServers,
+            bootstrapDnsHosts,
+            routingRules,
+            bypassLan,
+            allowIpv6,
+        )
         original["api"] = buildStatsApi(
             endpoint = xrayApiEndpoint,
             enableObservatory = original["observatory"] is JsonObject || original["burstObservatory"] is JsonObject,
@@ -77,6 +88,7 @@ internal class RawConfigTunInjector(
                 domesticDnsServers = domesticDnsServers,
                 domainStrategy = routingDomainStrategy,
                 domainMatcher = routingDomainMatcher,
+                defaultDnsOutboundTag = proxyOutboundTag,
             ),
             raw = original["routing"] as? JsonObject,
         )

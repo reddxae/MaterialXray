@@ -35,6 +35,7 @@ class ConfigGenerator {
         xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
         tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
     ): String {
+        val bootstrapDnsHosts = bootstrapDnsHosts(server, appProxyRoutes)
         if (server.rawConfigJson.isNotBlank()) {
             return injectTunIntoRawConfig(
                 rawJson = server.rawConfigJson,
@@ -42,6 +43,7 @@ class ConfigGenerator {
                 fwmark = fwmark,
                 dnsServers = dnsServers,
                 domesticDnsServers = domesticDnsServers,
+                bootstrapDnsHosts = bootstrapDnsHosts,
                 logLevel = logLevel,
                 defaultOutbound = defaultOutbound,
                 bypassLan = bypassLan,
@@ -60,7 +62,7 @@ class ConfigGenerator {
 
         val config = buildJsonObject {
             put("log", buildLogConfig(logLevel))
-            put("dns", buildDns(dnsServers, domesticDnsServers, routingRules, bypassLan, allowIpv6))
+            put("dns", buildDns(dnsServers, domesticDnsServers, bootstrapDnsHosts, routingRules, bypassLan, allowIpv6))
             put(
                 "inbounds",
                 buildJsonArray {
@@ -110,6 +112,7 @@ class ConfigGenerator {
         fwmark: Int = 255,
         dnsServers: String = "1.1.1.1,1.0.0.1",
         domesticDnsServers: String = "",
+        bootstrapDnsHosts: Map<String, List<String>> = emptyMap(),
         logLevel: XrayLogLevel = XrayLogLevel.default,
         defaultOutbound: XrayOutbound = XrayOutbound.default,
         bypassLan: Boolean = true,
@@ -129,6 +132,7 @@ class ConfigGenerator {
         fwmark = fwmark,
         dnsServers = dnsServers,
         domesticDnsServers = domesticDnsServers,
+        bootstrapDnsHosts = bootstrapDnsHosts,
         logLevel = logLevel,
         defaultOutbound = routingFallbackOutbound ?: defaultOutbound,
         bypassLan = bypassLan,
@@ -142,4 +146,12 @@ class ConfigGenerator {
         xrayBufferSizeKiB = xrayBufferSizeKiB,
         tunMtu = tunMtu,
     )
+
+    private fun bootstrapDnsHosts(
+        server: ServerConfig,
+        appProxyRoutes: List<AppProxyRoute>,
+    ): Map<String, List<String>> = (listOf(server) + appProxyRoutes.map { it.server })
+        .flatMap { it.bootstrapDnsHosts.entries }
+        .groupBy({ it.key }, { it.value })
+        .mapValues { (_, addressLists) -> addressLists.flatten().distinct() }
 }

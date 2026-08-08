@@ -370,24 +370,21 @@ internal class ConnectionManager(
     }
 
     private suspend fun resolveServer(server: ServerConfig, allowIpv6: Boolean): ServerConfig? {
-        val resolvedServer = if (server.rawConfigJson.isNotBlank()) {
-            log.append(LogSource.APP, "Skipping endpoint pre-resolution for raw JSON subscription config")
-            ServerResolution(
-                server = server,
-                attempted = false,
-                selectedAddress = null,
-                candidates = emptyList(),
-            )
-        } else {
-            timedStep("Server address resolution") {
-                serverResolver.resolve(server, allowIpv6)
-            }
+        val resolvedServer = timedStep("Server address resolution") {
+            serverResolver.resolve(server, allowIpv6)
         }
         if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
-            fail(environment.localizedString(R.string.connection_error_server_address_unresolved, server.address))
+            val unresolvedHost = resolvedServer.unresolvedHosts.firstOrNull() ?: server.address
+            fail(environment.localizedString(R.string.connection_error_server_address_unresolved, unresolvedHost))
             return null
         }
-        if (resolvedServer.selectedAddress != null) {
+        if (resolvedServer.server.bootstrapDnsHosts.isNotEmpty()) {
+            log.append(
+                LogSource.APP,
+                "Resolved ${resolvedServer.server.bootstrapDnsHosts.size} raw config endpoint hostname(s) " +
+                    "(${resolvedServer.candidates.size} candidates)",
+            )
+        } else if (resolvedServer.selectedAddress != null) {
             log.append(
                 LogSource.APP,
                 "Resolved ${server.address} to ${resolvedServer.selectedAddress} (${resolvedServer.candidates.size} candidates)",

@@ -202,16 +202,12 @@ internal class AppRoutingPlanner(
         parsedServer: ServerConfig,
         allowIpv6: Boolean,
     ): AppProxyRoute {
-        val routedServer = if (parsedServer.rawConfigJson.isNotBlank()) {
-            log.append(LogSource.APP, "Using raw outbound from ${parsedServer.name} for app routing")
-            parsedServer
-        } else {
-            val resolvedServer = serverAddressResolver.resolve(parsedServer, allowIpv6)
-            if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
-                error("Could not resolve ${parsedServer.address} for app route ${parsedServer.name}")
-            }
-            resolvedServer.server
+        val resolvedServer = serverAddressResolver.resolve(parsedServer, allowIpv6)
+        if (resolvedServer.attempted && resolvedServer.selectedAddress == null) {
+            val unresolvedHost = resolvedServer.unresolvedHosts.firstOrNull() ?: parsedServer.address
+            error("Could not resolve $unresolvedHost for app route ${parsedServer.name}")
         }
+        val routedServer = resolvedServer.server
 
         return AppProxyRoute(
             inboundTag = "app-in-$serverId",

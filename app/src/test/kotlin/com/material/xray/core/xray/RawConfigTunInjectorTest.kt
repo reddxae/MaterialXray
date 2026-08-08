@@ -118,6 +118,36 @@ class RawConfigTunInjectorTest {
     }
 
     @Test
+    fun `inject routes default DNS through case-variant proxy tags`() {
+        val result = injector.inject(
+            rawJson = """
+                {
+                  "outbounds": [{"tag":"Proxy","protocol":"vless","settings":{}}]
+                }
+            """.trimIndent(),
+            tunName = "xray0",
+            fwmark = 1,
+            dnsServers = "1.1.1.1",
+            domesticDnsServers = "",
+            logLevel = XrayLogLevel.Error,
+            defaultOutbound = XrayOutbound.Proxy,
+            bypassLan = false,
+            routingRules = emptyList(),
+            appProxyRoutes = emptyList(),
+            physicalInterface = null,
+        )
+
+        val root = json.parseToJsonElement(result).jsonObject
+        val outboundTags = root.getValue("outbounds").jsonArray.map { it.jsonObject.getValue("tag").jsonPrimitive.content }
+        assertEquals(1, outboundTags.count { it.equals("proxy", ignoreCase = true) })
+        assertEquals("Proxy", outboundTags.first())
+        val defaultDnsRule = root.getValue("routing").jsonObject.getValue("rules").jsonArray.first {
+            it.jsonObject["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
+        }
+        assertEquals("Proxy", defaultDnsRule.jsonObject.getValue("outboundTag").jsonPrimitive.content)
+    }
+
+    @Test
     fun `inject preserves raw routing for multi-outbound profiles`() {
         val result = injector.inject(
             rawJson = """
@@ -161,7 +191,7 @@ class RawConfigTunInjectorTest {
         val defaultDnsRule = rules.first {
             it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
         }
-        assertEquals("direct", defaultDnsRule.getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("proxy", defaultDnsRule.getValue("outboundTag").jsonPrimitive.content)
         assertEquals("balance", rules.last().getValue("balancerTag").jsonPrimitive.content)
         assertEquals("balance", routing.getValue("balancers").jsonArray.single().jsonObject.getValue("tag").jsonPrimitive.content)
         assertEquals(

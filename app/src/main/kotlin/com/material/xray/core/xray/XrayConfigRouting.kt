@@ -20,6 +20,7 @@ private const val SYSTEM_DNS_SERVER = "localhost"
 internal fun buildDns(
     servers: String,
     domesticServers: String = "",
+    bootstrapHosts: Map<String, List<String>> = emptyMap(),
     routingRules: List<RoutingRule> = emptyList(),
     bypassLan: Boolean = false,
     allowIpv6: Boolean = false,
@@ -31,6 +32,16 @@ internal fun buildDns(
     }
     if (defaultServers.isNotEmpty()) {
         put("tag", DEFAULT_DNS_TAG)
+    }
+    if (bootstrapHosts.isNotEmpty()) {
+        put(
+            "hosts",
+            buildJsonObject {
+                bootstrapHosts.toSortedMap().forEach { (host, addresses) ->
+                    put(host, buildJsonArray { addresses.distinct().forEach { add(it) } })
+                }
+            },
+        )
     }
     put(
         "servers",
@@ -64,6 +75,7 @@ internal fun buildRouting(
     domesticDnsServers: String = "",
     domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     domainMatcher: String? = null,
+    defaultDnsOutboundTag: String = "proxy",
 ) = buildJsonObject {
     val hasDomesticDomains = directDomains(routingRules, bypassLan).isNotEmpty()
     put("domainStrategy", SubscriptionRouting.normalizeDomainStrategy(domainStrategy))
@@ -74,7 +86,7 @@ internal fun buildRouting(
             add(dnsRoutingRule(appProxyRoutes))
             add(dnsOverTlsRoutingRule(appProxyRoutes))
             if (dnsServers.commaSeparatedValues().isNotEmpty()) {
-                add(defaultDnsRoutingRule())
+                add(defaultDnsRoutingRule(defaultDnsOutboundTag))
             }
             if (
                 hasDomesticDomains &&
@@ -141,10 +153,10 @@ private fun dnsOverTlsRoutingRule(appProxyRoutes: List<AppProxyRoute>) = buildJs
     put("outboundTag", "direct")
 }
 
-private fun defaultDnsRoutingRule() = buildJsonObject {
+private fun defaultDnsRoutingRule(outboundTag: String) = buildJsonObject {
     put("type", "field")
     put("inboundTag", buildJsonArray { add(DEFAULT_DNS_TAG) })
-    put("outboundTag", "direct")
+    put("outboundTag", outboundTag)
 }
 
 private fun domesticDnsRoutingRule() = buildJsonObject {

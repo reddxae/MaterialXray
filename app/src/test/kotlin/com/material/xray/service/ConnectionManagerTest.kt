@@ -18,6 +18,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -139,6 +143,46 @@ class ConnectionManagerTest {
         assertEquals(XrayApiEndpoint.LoopbackTcp(48_123), harness.createdApiEndpoints.single())
         assertEquals(48_123, harness.stateStore.state?.xrayApiPort)
         assertEquals(listOf(48_123 to harness.environment.appUid), harness.rootRuntime.protectedApis)
+    }
+
+    @Test
+    fun `raw connection propagates bootstrap hosts into proxied default DNS`() = runTest {
+        val rawServer = server().copy(
+            protocol = Protocol.RAW,
+            address = "proxy.example",
+            rawConfigJson = """
+                {
+                  "outbounds": [
+                    {"tag":"proxy","protocol":"vless","settings":{}}
+                  ]
+                }
+            """.trimIndent(),
+        )
+        val resolvedServer = rawServer.copy(
+            bootstrapDnsHosts = mapOf("proxy.example" to listOf("192.0.2.20")),
+        )
+        val harness = Harness().apply {
+            serverResolver.result = ServerResolution(
+                server = resolvedServer,
+                attempted = true,
+                selectedAddress = "192.0.2.20",
+                candidates = listOf("192.0.2.20"),
+            )
+        }
+
+        harness.manager.connect(rawServer, runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        val config = Json.parseToJsonElement(requireNotNull(harness.binary.configJson)).jsonObject
+        val hosts = config.getValue("dns").jsonObject.getValue("hosts").jsonObject
+        assertEquals(
+            listOf("192.0.2.20"),
+            hosts.getValue("proxy.example").jsonArray.map { it.jsonPrimitive.content },
+        )
+        val defaultDnsRule = config.getValue("routing").jsonObject.getValue("rules").jsonArray.first {
+            it.jsonObject["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
+        }
+        assertEquals("proxy", defaultDnsRule.jsonObject.getValue("outboundTag").jsonPrimitive.content)
+        assertEquals(listOf(rawServer), harness.serverResolver.servers)
     }
 
     @Test
@@ -361,6 +405,7 @@ class ConnectionManagerTest {
         val activeRouting = FakeActiveRoutingController()
         val stateCoordinator = ConnectionStateCoordinator()
         val apiClients = FakeApiClients()
+        val serverResolver = FakeServerResolver()
         val createdApiEndpoints = mutableListOf<XrayApiEndpoint>()
         val manager = ConnectionManager(
             configGenerator = ConfigGenerator(),
@@ -371,7 +416,7 @@ class ConnectionManagerTest {
                 rootRuntime = rootRuntime,
                 xrayBinary = binary,
                 routingData = FakeRoutingData(),
-                serverResolver = FakeServerResolver(),
+                serverResolver = serverResolver,
                 tunGateway = tunGateway,
                 cleanup = cleanup,
                 stateStore = stateStore,
@@ -442,12 +487,18 @@ class ConnectionManagerTest {
     }
 
     private class FakeServerResolver : ConnectionServerResolver {
-        override suspend fun resolve(server: ServerConfig, allowIpv6: Boolean) = ServerResolution(
-            server = server,
-            attempted = false,
-            selectedAddress = null,
-            candidates = emptyList(),
-        )
+        var result: ServerResolution? = null
+        val servers = mutableListOf<ServerConfig>()
+
+        override suspend fun resolve(server: ServerConfig, allowIpv6: Boolean): ServerResolution {
+            servers += server
+            return result ?: ServerResolution(
+                server = server,
+                attempted = false,
+                selectedAddress = null,
+                candidates = emptyList(),
+            )
+        }
     }
 
     private class FakeTunGateway : TunRoutingGateway {

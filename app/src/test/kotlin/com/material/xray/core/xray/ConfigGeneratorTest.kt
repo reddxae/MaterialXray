@@ -193,6 +193,42 @@ class ConfigGeneratorTest {
     }
 
     @Test
+    fun `raw config includes bootstrap DNS hosts for every proxy route`() {
+        val rawServer = vlessReality.copy(
+            rawConfigJson = """
+                {
+                  "outbounds": [
+                    {"tag":"proxy","protocol":"vless","settings":{}}
+                  ]
+                }
+            """.trimIndent(),
+            bootstrapDnsHosts = mapOf("main.example" to listOf("192.0.2.1")),
+        )
+        val appRoute = AppProxyRoute(
+            inboundTag = "app-in-1",
+            tunName = "xray1",
+            outboundTag = "app-proxy-1",
+            server = vlessReality.copy(
+                bootstrapDnsHosts = mapOf(
+                    "main.example" to listOf("192.0.2.2"),
+                    "app.example" to listOf("192.0.2.3"),
+                ),
+            ),
+        )
+
+        val dns = Json.parseToJsonElement(
+            generator.generate(rawServer, appProxyRoutes = listOf(appRoute)),
+        ).jsonObject.getValue("dns").jsonObject
+        val hosts = dns.getValue("hosts").jsonObject
+
+        assertEquals(listOf("192.0.2.3"), hosts.getValue("app.example").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(
+            listOf("192.0.2.1", "192.0.2.2"),
+            hosts.getValue("main.example").jsonArray.map { it.jsonPrimitive.content },
+        )
+    }
+
+    @Test
     fun `generates VLESS REALITY outbound correctly`() {
         val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255)
         val json = Json.parseToJsonElement(config).jsonObject
@@ -232,8 +268,8 @@ class ConfigGeneratorTest {
         val upstreamRule = rules.firstOrNull {
             it.jsonObject["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
         }
-        assertNotNull("Default DNS queries should be routed directly", upstreamRule)
-        assertEquals("direct", upstreamRule!!.jsonObject["outboundTag"]!!.jsonPrimitive.content)
+        assertNotNull("Default DNS queries should be routed through the proxy", upstreamRule)
+        assertEquals("proxy", upstreamRule!!.jsonObject["outboundTag"]!!.jsonPrimitive.content)
     }
 
     @Test

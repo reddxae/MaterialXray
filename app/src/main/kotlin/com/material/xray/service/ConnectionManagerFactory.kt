@@ -153,6 +153,7 @@ internal data class ServerResolution(
     val attempted: Boolean,
     val selectedAddress: String?,
     val candidates: List<String>,
+    val unresolvedHosts: List<String> = emptyList(),
 )
 
 internal interface ConnectionServerResolver {
@@ -170,6 +171,7 @@ internal class ServerAddressConnectionResolver(
                 attempted = result.attempted,
                 selectedAddress = result.selectedAddress,
                 candidates = result.candidates,
+                unresolvedHosts = result.unresolvedHosts,
             )
         }
 }

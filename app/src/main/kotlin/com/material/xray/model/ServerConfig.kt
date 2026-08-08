@@ -1,6 +1,7 @@
 package com.material.xray.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -19,6 +20,7 @@ data class ServerConfig(
     val extra: Map<String, String> = emptyMap(),
     val rawUri: String = "",
     val rawConfigJson: String = "",
+    @Transient val bootstrapDnsHosts: Map<String, List<String>> = emptyMap(),
 ) {
     @Serializable
     data class Transport(

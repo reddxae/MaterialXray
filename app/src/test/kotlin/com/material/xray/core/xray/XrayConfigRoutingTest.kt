@@ -83,6 +83,22 @@ class XrayConfigRoutingTest {
     }
 
     @Test
+    fun `buildDns includes pre-resolved proxy endpoint hosts`() {
+        val dns = buildDns(
+            servers = "1.1.1.1",
+            bootstrapHosts = mapOf(
+                "second.example" to listOf("2001:db8::2"),
+                "first.example" to listOf("192.0.2.1", "192.0.2.1"),
+            ),
+        )
+
+        val hosts = dns.getValue("hosts").jsonObject
+        assertEquals(listOf("first.example", "second.example"), hosts.keys.toList())
+        assertEquals(listOf("192.0.2.1"), hosts.getValue("first.example").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("2001:db8::2"), hosts.getValue("second.example").jsonArray.map { it.jsonPrimitive.content })
+    }
+
+    @Test
     fun `buildRouting adds dns app lan custom and apply-rules routes in order`() {
         val routing = buildRouting(
             routingRules = listOf(orRule()),
@@ -104,7 +120,7 @@ class XrayConfigRoutingTest {
         assertEquals("tcp", rules[1].getValue("network").jsonPrimitive.content)
         assertEquals("direct", rules[1].getValue("outboundTag").jsonPrimitive.content)
         assertEquals("default-dns", rules[2].array("inboundTag").single())
-        assertEquals("direct", rules[2].getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("proxy", rules[2].getValue("outboundTag").jsonPrimitive.content)
         assertEquals("domestic-dns", rules[3].array("inboundTag").single())
         assertEquals("app-in-direct", rules[4].array("inboundTag").single())
         assertEquals("geoip:private", rules[5].array("ip").single())

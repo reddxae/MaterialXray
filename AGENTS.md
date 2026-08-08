@@ -18,7 +18,7 @@
 
 ## Native Assets
 - Only arm64 is wired: `abiFilters += "arm64-v8a"`, `app/src/main/assets/xray_arm64` for root service mode, and `app/src/main/jniLibs/arm64-v8a/libxray.so` for rootless mode.
-- Update bundled Xray binaries with `./scripts/download-xray.sh v26.3.27` or another Xray tag; the script writes both arm64 destinations and fixes permissions.
+- Update the Xray binaries with `./scripts/download-xray.sh` for the recorded version or pass another Xray tag; the script writes both arm64 destinations and fixes permissions.
 - Rootless mode starts Xray through `app/src/main/cpp/xray_launcher.c` via CMake and `System.loadLibrary("xray_launcher")`; native changes need an Android build, not only JVM tests.
 
 ## Data And Generated Code

@@ -1,5 +1,8 @@
 syntax = "proto3";
 
+// SPDX-License-Identifier: MPL-2.0
+// Derived from Xray-core protocol definitions.
+
 package xray.core.app.observatory;
 option java_package = "com.xray.app.observatory";
 option java_multiple_files = true;

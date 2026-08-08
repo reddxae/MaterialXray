@@ -160,6 +160,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var showFieldStyleDialog by remember { mutableStateOf(false) }
     var showUpdateFrequencyDialog by remember { mutableStateOf(false) }
     var showResetDatabaseDialog by remember { mutableStateOf(false) }
+    var showOpenSourceLicensesDialog by remember { mutableStateOf(false) }
     var showAdvancedOptionsRowTop by remember { mutableStateOf<Int?>(null) }
     var pendingAdvancedOptionsScrollAnchor by remember { mutableStateOf<AdvancedOptionsScrollAnchor?>(null) }
     val rootServiceAvailable = rootAvailable == true
@@ -880,6 +881,11 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 inProgress = appUpdateCheckInProgress,
                 onClick = viewModel::checkForAppUpdate,
             )
+            SettingsActionRow(
+                title = stringResource(R.string.settings_open_source_licenses),
+                subtitle = stringResource(R.string.settings_open_source_licenses_description),
+                onClick = { showOpenSourceLicensesDialog = true },
+            )
             Text(
                 text = if (appVersion == null) {
                     stringResource(R.string.settings_app_version_unknown, stringResource(R.string.app_name))
@@ -917,6 +923,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         onUpdateFrequency = viewModel::setNotificationUpdateIntervalMs,
         onSelectFieldStyle = viewModel::setNotificationStyle,
     )
+    if (showOpenSourceLicensesDialog) {
+        OpenSourceLicensesDialog(onDismiss = { showOpenSourceLicensesDialog = false })
+    }
 }
 
 @Composable
@@ -1391,6 +1400,92 @@ private fun xrayCoreVersionText(xrayCoreVersion: String?): String = when (xrayCo
     "unknown" -> stringResource(R.string.settings_xray_core_version_unknown)
     else -> stringResource(R.string.settings_xray_core_version, xrayCoreVersion)
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val legalDocuments = legalDocuments()
+    var selectedDocumentPath by remember { mutableStateOf(legalDocuments.first().assetPath) }
+    val selectedDocument = legalDocuments.first { it.assetPath == selectedDocumentPath }
+    var documentMenuExpanded by remember { mutableStateOf(false) }
+    val documentText = remember(context, selectedDocument) {
+        context.assets.open(selectedDocument.assetPath).bufferedReader().use { it.readText() }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_open_source_licenses)) },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(min = 320.dp, max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ExposedDropdownMenuBox(
+                    expanded = documentMenuExpanded,
+                    onExpandedChange = { documentMenuExpanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = selectedDocument.label,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.settings_legal_document)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = documentMenuExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = documentMenuExpanded,
+                        onDismissRequest = { documentMenuExpanded = false },
+                    ) {
+                        legalDocuments.forEach { document ->
+                            DropdownMenuItem(
+                                text = { Text(document.label) },
+                                onClick = {
+                                    selectedDocumentPath = document.assetPath
+                                    documentMenuExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+                key(selectedDocument) {
+                    Text(
+                        text = documentText,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.settings_done))
+            }
+        },
+    )
+}
+
+private data class LegalDocument(
+    val label: String,
+    val assetPath: String,
+)
+
+@Composable
+private fun legalDocuments(): List<LegalDocument> = listOf(
+    LegalDocument(stringResource(R.string.settings_legal_third_party_notices), "legal/THIRD_PARTY_NOTICES.md"),
+    LegalDocument(stringResource(R.string.settings_legal_gpl), "legal/licenses/GPL-3.0-or-later.txt"),
+    LegalDocument(stringResource(R.string.settings_legal_mpl), "legal/licenses/MPL-2.0.txt"),
+    LegalDocument(stringResource(R.string.settings_legal_apache), "legal/licenses/Apache-2.0.txt"),
+    LegalDocument(stringResource(R.string.settings_legal_bsd), "legal/licenses/BSD-3-Clause.txt"),
+    LegalDocument(stringResource(R.string.settings_legal_mit), "legal/licenses/MIT.txt"),
+    LegalDocument(stringResource(R.string.settings_legal_xray_source), "legal/xray/SOURCE.md"),
+    LegalDocument(stringResource(R.string.settings_legal_xray_version), "legal/xray/VERSION"),
+    LegalDocument(stringResource(R.string.settings_legal_xray_checksums), "legal/xray/CHECKSUMS.sha256"),
+)
 
 @Composable
 private fun RootTunNameSetting(

@@ -22,6 +22,11 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
@@ -79,10 +84,24 @@ jobs:
           echo "apk_path=$apk_path" >> "$GITHUB_OUTPUT"
           echo "version_tag=v$version_name" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare Xray corresponding source
+        id: xray-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          xray_version="$(< third_party/xray/VERSION)"
+          source_name="Xray-core-${xray_version}-source.tar.gz"
+          source_path="app/build/outputs/xray-source/${source_name}"
+          ./scripts/prepare-xray-source.sh "$xray_version" "$source_path"
+          echo "source_name=$source_name" >> "$GITHUB_OUTPUT"
+          echo "source_path=$source_path" >> "$GITHUB_OUTPUT"
+
       - name: Attest build provenance
         uses: actions/attest@v4
         with:
-          subject-path: ${{ steps.artifact.outputs.apk_path }}
+          subject-path: |
+            ${{ steps.artifact.outputs.apk_path }}
+            ${{ steps.xray-source.outputs.source_path }}
 
       - name: Upload release APK
         uses: actions/upload-artifact@v7
@@ -91,18 +110,38 @@ jobs:
           path: ${{ steps.artifact.outputs.apk_path }}
           if-no-files-found: error
 
+      - name: Upload Xray corresponding source
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.xray-source.outputs.source_name }}
+          path: ${{ steps.xray-source.outputs.source_path }}
+          if-no-files-found: error
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION_TAG: ${{ steps.artifact.outputs.version_tag }}
           APK_PATH: ${{ steps.artifact.outputs.apk_path }}
           APK_NAME: ${{ steps.artifact.outputs.apk_name }}
+          XRAY_SOURCE_PATH: ${{ steps.xray-source.outputs.source_path }}
+          XRAY_SOURCE_NAME: ${{ steps.xray-source.outputs.source_name }}
         run: |
           set -euo pipefail
           if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
-            gh release upload "$VERSION_TAG" "$APK_PATH#${APK_NAME}" --clobber
+            git fetch --no-tags origin "refs/tags/${VERSION_TAG}:refs/tags/${VERSION_TAG}"
+            tag_commit="$(git rev-list -n 1 "$VERSION_TAG")"
+            if [ "$tag_commit" != "$GITHUB_SHA" ]; then
+              echo "$VERSION_TAG already points to $tag_commit, not $GITHUB_SHA" >&2
+              exit 1
+            fi
+            gh release upload "$VERSION_TAG" \
+              "$APK_PATH#${APK_NAME}" \
+              "$XRAY_SOURCE_PATH#${XRAY_SOURCE_NAME}" \
+              --clobber
           else
-            gh release create "$VERSION_TAG" "$APK_PATH#${APK_NAME}" \
+            gh release create "$VERSION_TAG" \
+              "$APK_PATH#${APK_NAME}" \
+              "$XRAY_SOURCE_PATH#${XRAY_SOURCE_NAME}" \
               --target "$GITHUB_SHA" \
               --title "$VERSION_TAG" \
               --generate-notes

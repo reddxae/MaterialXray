@@ -26,7 +26,7 @@ This project is AI-assisted.
 - Android SDK and a JDK compatible with the Gradle wrapper.
 - A connected Android device or emulator for install/debug flows.
 
-The app currently bundles:
+The app includes:
 
 - `app/src/main/assets/xray_arm64` for root service mode.
 - `app/src/main/jniLibs/arm64-v8a/libxray.so` for rootless `VpnService` mode.
@@ -107,7 +107,7 @@ app/src/main/kotlin/com/material/xray/
 The repository includes a helper script for downloading Xray releases:
 
 ```sh
-./scripts/download-xray.sh v26.3.27
+./scripts/download-xray.sh
 ```
 
 The script downloads two arm64 builds:
@@ -117,6 +117,16 @@ The script downloads two arm64 builds:
 
 The Android binary is stored under `jniLibs` so Android extracts it into the executable native library directory at install time.
 
+The downloader verifies each release archive against Xray's published SHA-256 digest, preserves Xray's license, and records the archive and executable hashes under `third_party/xray/`. Release builds also publish a corresponding-source archive containing Xray-core and its vendored Go modules.
+
 ## Status
 
 This is an early implementation. Expect device-specific behavior around Android policy routing, root shell behavior, `VpnService`, and network namespace handling.
+
+## License
+
+Copyright (C) 2026 Material Xray contributors.
+
+Material Xray's original repository material, including its source code, documentation, and artwork, is free software licensed under the [GNU General Public License, version 3 or later](LICENSE). You may redistribute and modify it under those terms. Material Xray is distributed without any warranty; see the license for details.
+
+Third-party components and files derived from other projects remain under their respective licenses. See [Third-Party Notices](THIRD_PARTY_NOTICES.md) for attribution, license details, and corresponding-source information.

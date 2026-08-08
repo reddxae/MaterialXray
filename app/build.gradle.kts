@@ -1,6 +1,18 @@
 import java.io.File
 import java.util.Properties
+import javax.inject.Inject
+import org.gradle.api.DefaultTask
 import org.gradle.api.artifacts.VersionCatalogsExtension
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import org.jlleitschuh.gradle.ktlint.reporter.ReporterType
 
 plugins {
@@ -12,6 +24,59 @@ plugins {
     alias(libs.plugins.protobuf)
     id("dev.detekt") version ("2.0.0-alpha.5")
     id("org.jlleitschuh.gradle.ktlint") version ("14.2.0")
+}
+
+@CacheableTask
+abstract class GenerateLegalAssets @Inject constructor(
+    private val fileSystemOperations: FileSystemOperations,
+) : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val projectLicense: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val thirdPartyNotices: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val thirdPartyLicenses: DirectoryProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val xrayLicense: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val xrayMetadata: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        fileSystemOperations.sync {
+            into(outputDirectory)
+            from(thirdPartyNotices) {
+                into("legal")
+            }
+            from(projectLicense) {
+                into("legal/licenses")
+                rename { "GPL-3.0-or-later.txt" }
+            }
+            from(thirdPartyLicenses) {
+                into("legal/licenses")
+            }
+            from(xrayLicense) {
+                into("legal/licenses")
+                rename { "MPL-2.0.txt" }
+            }
+            from(xrayMetadata) {
+                exclude("LICENSE")
+                into("legal/xray")
+            }
+        }
+    }
 }
 
 val localProperties = Properties().apply {
@@ -47,6 +112,14 @@ val hasReleaseSigning = listOf(
 ).all { !it.isNullOrBlank() }
 val libsCatalog = extensions.getByType<VersionCatalogsExtension>().named("libs")
 val grpcVersion = libsCatalog.findVersion("grpc").get().requiredVersion
+val generateLegalAssets by tasks.registering(GenerateLegalAssets::class) {
+    projectLicense.set(rootProject.layout.projectDirectory.file("LICENSE"))
+    thirdPartyNotices.set(rootProject.layout.projectDirectory.file("THIRD_PARTY_NOTICES.md"))
+    thirdPartyLicenses.set(rootProject.layout.projectDirectory.dir("third_party/licenses"))
+    xrayLicense.set(rootProject.layout.projectDirectory.file("third_party/xray/LICENSE"))
+    xrayMetadata.set(rootProject.layout.projectDirectory.dir("third_party/xray"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/legalAssets"))
+}
 
 android {
     namespace = "com.material.xray"
@@ -132,6 +205,15 @@ tasks.named("preBuild") {
 
 tasks.named("check") {
     dependsOn("ktlintFormat")
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            generateLegalAssets,
+            GenerateLegalAssets::outputDirectory,
+        )
+    }
 }
 
 protobuf {

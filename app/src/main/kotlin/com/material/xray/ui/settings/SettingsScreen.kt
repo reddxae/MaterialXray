@@ -56,7 +56,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -91,9 +90,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.core.locale.setAppLocales
@@ -110,6 +106,7 @@ import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.isInProgress
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.components.SettingsSwitchRow
+import com.material.xray.ui.components.rememberSystemState
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
 import java.util.Locale
@@ -906,25 +903,16 @@ private fun NotificationSettingsSection(
     onConfigureFrequency: () -> Unit,
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var permissionRevision by remember { mutableStateOf(0) }
     var showAccessDialog by remember { mutableStateOf(false) }
-    val access = remember(context, permissionRevision) { notificationAccess(context) }
+    val accessState = rememberSystemState { notificationAccess(it) }
+    val access = accessState.value
     val effectiveEnabled = settings.enabled && access == NotificationAccess.Available
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         context.recordNotificationPermissionRequest()
-        permissionRevision++
+        accessState.refresh()
         if (granted) onEnabledChange(true)
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) permissionRevision++
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     SettingsNestedSection(title = stringResource(R.string.settings_notification_title)) {

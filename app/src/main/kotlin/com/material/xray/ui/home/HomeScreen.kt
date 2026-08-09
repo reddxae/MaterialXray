@@ -136,6 +136,7 @@ import com.material.xray.service.AppUpdateInstallStage
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.components.SelectableOptionRow
+import com.material.xray.ui.components.rememberSystemState
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
 import java.util.Locale
@@ -481,29 +482,20 @@ private fun QrScannerDialogHost(
 @Composable
 private fun QrScannerPermissionGate(onGranted: () -> Unit): () -> Unit {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var permissionRevision by remember { mutableStateOf(0) }
     var promptAccess by remember { mutableStateOf<CameraPermissionAccess?>(null) }
-    val access = remember(context, permissionRevision) { cameraPermissionAccess(context) }
+    val accessState = rememberSystemState { cameraPermissionAccess(it) }
+    val access = accessState.value
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         context.recordCameraPermissionRequest()
-        permissionRevision++
+        accessState.refresh()
         if (granted) {
             promptAccess = null
             onGranted()
         } else {
             promptAccess = cameraPermissionAccess(context)
         }
-    }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) permissionRevision++
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     promptAccess?.let { requestedAccess ->

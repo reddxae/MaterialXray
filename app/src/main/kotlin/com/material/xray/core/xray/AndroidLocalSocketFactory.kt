@@ -50,10 +50,12 @@ private class AndroidLocalSocket(
     @Synchronized
     override fun close() {
         if (closed) return
-        if (!inputShutdown) shutdownInput()
-        if (!outputShutdown) shutdownOutput()
-        localSocket.close()
         closed = true
+        // Shutdown is best-effort: a torn-down peer can make either call throw, and that must
+        // not keep the underlying descriptor from being released below.
+        if (!inputShutdown) runCatching { shutdownInput() }
+        if (!outputShutdown) runCatching { shutdownOutput() }
+        localSocket.close()
     }
 
     override fun connect(endpoint: SocketAddress?) {

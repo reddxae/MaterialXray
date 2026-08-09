@@ -22,11 +22,7 @@ import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.XrayService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -36,7 +32,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -59,7 +54,7 @@ class BackupManager @Inject constructor(
         prettyPrint = true
     }
     private val operationMutex = Mutex()
-    private val journalFile = File(context.filesDir, RESTORE_JOURNAL_FILE_NAME)
+    private val journalStore = BackupRestoreJournalStore(context.filesDir, json)
 
     suspend fun export(uri: Uri): BackupSummary = operationMutex.withLock {
         recoverInterruptedRestoreLocked()
@@ -82,12 +77,12 @@ class BackupManager @Inject constructor(
         recoverInterruptedRestoreLocked()
         disconnectActiveConnection()
         val previous = createSnapshot()
-        writeJournal(BackupRestoreJournal(previous))
+        journalStore.write(BackupRestoreJournal(previous))
 
         val result = runCatching {
             applyPlan(prepared.plan)
             applyExternalSettings()
-            deleteJournal()
+            journalStore.delete()
         }
         result.exceptionOrNull()?.let { error ->
             if (error is CancellationException) {
@@ -104,11 +99,10 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun recoverInterruptedRestoreLocked(): Boolean {
-        if (!journalFile.isFile) return false
-        val journal = json.decodeFromString<BackupRestoreJournal>(journalFile.readText())
+        val journal = journalStore.read() ?: return false
         applyPlan(BackupImportPlanner.create(journal.previous))
         applyExternalSettings()
-        deleteJournal()
+        journalStore.delete()
         return true
     }
 
@@ -246,28 +240,9 @@ class BackupManager @Inject constructor(
             withContext(NonCancellable) {
                 applyPlan(BackupImportPlanner.create(previous))
                 applyExternalSettings()
-                deleteJournal()
+                journalStore.delete()
             }
         }.exceptionOrNull()?.let(original::addSuppressed)
-    }
-
-    private fun writeJournal(journal: BackupRestoreJournal) {
-        val temporary = File(journalFile.parentFile, "$RESTORE_JOURNAL_FILE_NAME.tmp")
-        val bytes = json.encodeToString(journal).toByteArray(Charsets.UTF_8)
-        FileOutputStream(temporary).use { output ->
-            output.write(bytes)
-            output.fd.sync()
-        }
-        Files.move(
-            temporary.toPath(),
-            journalFile.toPath(),
-            StandardCopyOption.ATOMIC_MOVE,
-            StandardCopyOption.REPLACE_EXISTING,
-        )
-    }
-
-    private fun deleteJournal() {
-        check(!journalFile.exists() || journalFile.delete()) { "Unable to remove the completed restore journal" }
     }
 
     private fun readLimited(input: java.io.InputStream): ByteArray {
@@ -323,11 +298,7 @@ class BackupManager @Inject constructor(
         -> false
     }
 
-    @Serializable
-    private data class BackupRestoreJournal(val previous: BackupData)
-
     private companion object {
-        const val RESTORE_JOURNAL_FILE_NAME = "backup-restore-journal.json"
         const val LAST_SERVER_ID_SETTING = "last_server_id"
         const val MAX_BACKUP_BYTES = 16 * 1024 * 1024
         const val DISCONNECT_TIMEOUT_MILLIS = 10_000L

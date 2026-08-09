@@ -359,11 +359,7 @@ class XrayService : VpnService() {
                     stopProcessWatchdog()
                     logBuffer.append(LogSource.APP, "Switching to ${config.name}...")
                     updateNotification(localizedString(R.string.notification_status_switching_server))
-                    if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) {
-                        return@launchConnectionCommand
-                    }
-                    closeVpnInterface()
-                    connectWithCurrentSettings(
+                    restartRuntime(
                         config = config,
                         transitionState = ConnectionState.ApplyingRoutingChanges,
                         preparation = ConnectionPreparation.FastServerSwitch,
@@ -476,6 +472,28 @@ class XrayService : VpnService() {
                 preparation = preparation,
             ),
         )
+    }
+
+    /**
+     * Stops the running core and connects [config] again without publishing a disconnected state,
+     * so the change reads as one continuous transition rather than a drop followed by a connect.
+     *
+     * Returns false when the runtime could not be stopped, which leaves the previous connection
+     * state untouched and means the caller must not treat the restart as having happened.
+     */
+    private suspend fun restartRuntime(
+        config: ServerConfig,
+        transitionState: ConnectionState = ConnectionState.Connecting,
+        preparation: ConnectionPreparation = ConnectionPreparation.ReusePreparedRuntime,
+        reconnectDelayMs: Long = 0,
+    ): Boolean {
+        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return false
+        // A no-op in root mode, where the tunnel belongs to the system rather than to this
+        // process. Rootless reconnects establish a fresh descriptor either way.
+        closeVpnInterface()
+        if (reconnectDelayMs > 0) delay(reconnectDelayMs)
+        connectWithCurrentSettings(config, transitionState, preparation)
+        return true
     }
 
     private suspend fun connectOnceWithCurrentSettings(
@@ -599,13 +617,7 @@ class XrayService : VpnService() {
         logBuffer.append(LogSource.APP, "Applying routing changes...")
         connectionStateCoordinator.markApplyingRoutingChanges()
         updateNotification()
-        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
-        closeVpnInterface()
-        connectWithCurrentSettings(
-            config,
-            ConnectionState.ApplyingRoutingChanges,
-            preparation = ConnectionPreparation.ReusePreparedRuntime,
-        )
+        restartRuntime(config, ConnectionState.ApplyingRoutingChanges)
     }
 
     private suspend fun reloadAppRouting() {
@@ -637,12 +649,7 @@ class XrayService : VpnService() {
 
         stopProcessWatchdog()
         logBuffer.append(LogSource.APP, "Restarting Xray to apply app routing topology changes...")
-        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
-        connectWithCurrentSettings(
-            config,
-            ConnectionState.ApplyingRoutingChanges,
-            preparation = ConnectionPreparation.ReusePreparedRuntime,
-        )
+        restartRuntime(config, ConnectionState.ApplyingRoutingChanges)
     }
 
     private suspend fun restoreRunningConnectionStatus() {
@@ -681,8 +688,8 @@ class XrayService : VpnService() {
             val config = activeConfig
             if (config != null) {
                 logBuffer.append(LogSource.APP, "Restarting Xray to migrate its control API")
-                if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
-                connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
+                stopProcessWatchdog()
+                restartRuntime(config)
                 return
             }
             logBuffer.append(LogSource.APP, "Could not secure the restored Xray API; stopping Xray")
@@ -982,9 +989,7 @@ class XrayService : VpnService() {
 
                 connectionStateCoordinator.startConnection(ConnectionState.Connecting)
                 updateNotification(localizedString(R.string.notification_status_recovering_core))
-                if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return@runConnectionCommand
-                delay(PROCESS_RESTART_DELAY_MS)
-                connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
+                restartRuntime(config, reconnectDelayMs = PROCESS_RESTART_DELAY_MS)
             }
         }
         return true
@@ -1266,9 +1271,7 @@ class XrayService : VpnService() {
         )
         stopProcessWatchdog()
         connectionStateCoordinator.startConnection(ConnectionState.Connecting)
-        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
-        closeVpnInterface()
-        connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
+        restartRuntime(config)
     }
 
     private suspend fun setupVpnInterface(runtimeSettings: XrayRuntimeSettings): ParcelFileDescriptor? {

@@ -359,7 +359,7 @@ class XrayService : VpnService() {
                     stopProcessWatchdog()
                     logBuffer.append(LogSource.APP, "Switching to ${config.name}...")
                     updateNotification(localizedString(R.string.notification_status_switching_server))
-                    if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) {
+                    if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) {
                         return@launchConnectionCommand
                     }
                     closeVpnInterface()
@@ -540,7 +540,7 @@ class XrayService : VpnService() {
         val rootModeConfigured = settingsRepo.useRootService.first()
         when {
             state is ConnectionState.Connected -> {
-                if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+                if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
             }
             rootModeConfigured ||
                 persistedState != null &&
@@ -599,7 +599,7 @@ class XrayService : VpnService() {
         logBuffer.append(LogSource.APP, "Applying routing changes...")
         connectionStateCoordinator.markApplyingRoutingChanges()
         updateNotification()
-        if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
         closeVpnInterface()
         connectWithCurrentSettings(
             config,
@@ -637,7 +637,7 @@ class XrayService : VpnService() {
 
         stopProcessWatchdog()
         logBuffer.append(LogSource.APP, "Restarting Xray to apply app routing topology changes...")
-        if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
         connectWithCurrentSettings(
             config,
             ConnectionState.ApplyingRoutingChanges,
@@ -668,7 +668,7 @@ class XrayService : VpnService() {
         connectionLifecycle.updateActiveConfig(loadServerConfig(restoredServerId))
         if (activeConfig == null) {
             logBuffer.append(LogSource.APP, "Stopping restored Xray runtime without selected server config")
-            if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+            if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
             if (restoredServerId >= 0) {
                 settingsRepo.compareAndSetLastServerId(restoredServerId, -1)
             }
@@ -681,12 +681,12 @@ class XrayService : VpnService() {
             val config = activeConfig
             if (config != null) {
                 logBuffer.append(LogSource.APP, "Restarting Xray to migrate its control API")
-                if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+                if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
                 connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
                 return
             }
             logBuffer.append(LogSource.APP, "Could not secure the restored Xray API; stopping Xray")
-            if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+            if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
             connectionStateCoordinator.markDisconnected()
             updateNotification()
             stopSelf()
@@ -982,7 +982,7 @@ class XrayService : VpnService() {
 
                 connectionStateCoordinator.startConnection(ConnectionState.Connecting)
                 updateNotification(localizedString(R.string.notification_status_recovering_core))
-                if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return@runConnectionCommand
+                if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return@runConnectionCommand
                 delay(PROCESS_RESTART_DELAY_MS)
                 connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
             }
@@ -1266,7 +1266,7 @@ class XrayService : VpnService() {
         )
         stopProcessWatchdog()
         connectionStateCoordinator.startConnection(ConnectionState.Connecting)
-        if (!connectionManager.disconnect(updateState = false, fastRootCleanup = true)) return
+        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
         closeVpnInterface()
         connectWithCurrentSettings(config, preparation = ConnectionPreparation.ReusePreparedRuntime)
     }
@@ -1367,7 +1367,7 @@ class XrayService : VpnService() {
         val message = localizedString(R.string.notification_unknown_connection_error)
         stopProcessWatchdog()
         withContext(NonCancellable) {
-            runCatching { connectionManager.disconnect(updateState = false, fastRootCleanup = true) }
+            runCatching { connectionManager.disconnect(updateState = false, fastCleanup = true) }
         }
         closeVpnInterface()
         connectionStateCoordinator.markError(message, retryable = true)
@@ -1779,7 +1779,6 @@ class XrayService : VpnService() {
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
         private const val ROOTLESS_TUN_NAME = "tun0"
-        internal const val VPN_SERVICE_INTERFACE_LABEL = "VpnService"
         private const val TRANSPORT_LABEL_WIFI = "wifi"
         private const val TRANSPORT_LABEL_ETHERNET = "ethernet"
         private const val TRANSPORT_LABEL_CELLULAR = "cellular"
@@ -1856,4 +1855,4 @@ internal fun selectRestoredPhysicalRoute(
  * Reports whether this state describes a tunnel owned by a root-managed core, which survives the
  * service that started it.
  */
-private fun ConnectionState.describesRootManagedTunnel(): Boolean = this is ConnectionState.Connected && physicalInterface != XrayService.VPN_SERVICE_INTERFACE_LABEL
+private fun ConnectionState.describesRootManagedTunnel(): Boolean = this is ConnectionState.Connected && physicalInterface != VPN_SERVICE_INTERFACE_LABEL

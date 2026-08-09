@@ -4,7 +4,6 @@ import android.os.ParcelFileDescriptor
 import com.material.xray.R
 import com.material.xray.core.xray.ConfigGenerator
 import com.material.xray.core.xray.TunManager
-import com.material.xray.core.xray.XRAY_API_SOCKET_NAME_PREFIX
 import com.material.xray.core.xray.XrayApiEndpoint
 import com.material.xray.core.xray.XrayState
 import com.material.xray.core.xray.XraySysStats
@@ -42,6 +41,18 @@ internal class ConnectionManager(
     private val activeRouting = dependencies.activeRouting
     private val apiClientFactory = dependencies.apiClientFactory
 
+    private val rootStrategy: XrayRuntimeStrategy = RootXrayRuntimeStrategy(
+        processSupervisor = processSupervisor,
+        rootRuntime = rootRuntime,
+        cleanup = cleanup,
+        xrayBinary = xrayBinary,
+    )
+    private val vpnServiceStrategy: XrayRuntimeStrategy = VpnServiceXrayRuntimeStrategy(
+        processSupervisor = userProcessSupervisor,
+        stateStore = stateStore,
+        xrayBinary = xrayBinary,
+    )
+
     @Volatile private var xrayStatsClient: ConnectionStatsClient? = null
 
     @Volatile private var xrayRoutingClient: ConnectionRoutingClient? = null
@@ -54,8 +65,10 @@ internal class ConnectionManager(
 
     @Volatile private var runtimeState: XrayRuntimeState = XrayRuntimeState.Inactive
 
+    // Root is the only runtime that installs routing outside the process; the rootless runtime
+    // gets it from Android's VpnService.
     val isUsingRootRuntime: Boolean
-        get() = runtimeState.mode == XrayRuntimeMode.Root
+        get() = runtimeState.strategy?.managesSystemRouting == true
 
     suspend fun connect(
         server: ServerConfig,
@@ -72,22 +85,22 @@ internal class ConnectionManager(
         val bypassTable = routeTable + 1
         log.clear(LogSource.XRAY)
         log.append(LogSource.APP, "Connecting to ${server.name} (${server.address}:${server.port})")
-        val useRootService = runtimeSettings.useRootService
-        val runtimeMode = XrayRuntimeMode.fromRootServiceSetting(useRootService)
-        runtimeState = XrayRuntimeState.Starting(runtimeMode)
+        val strategy = strategyFor(useRootService = runtimeSettings.useRootService)
+        val managesSystemRouting = strategy.managesSystemRouting
+        runtimeState = XrayRuntimeState.Starting(strategy)
 
         try {
             val tunName = prepareRuntime(
-                useRootService = useRootService,
+                strategy = strategy,
                 vpnInterface = vpnInterface,
                 preparation = preparation,
                 configuredTunName = runtimeSettings.tunName,
             ) ?: return
             val effectiveRuntimeSettings = runtimeSettings.copy(tunName = tunName)
-            if (prepareXrayBinary(useRootService, preparation) == null) return
+            if (prepareXrayBinary(strategy, preparation) == null) return
             prepareRoutingData(preparation, transitionState)
 
-            val physicalRouteResult = detectPhysicalRoute(useRootService, tunName)
+            val physicalRouteResult = detectPhysicalRoute(managesSystemRouting, tunName)
             if (!physicalRouteResult.success) return
 
             val xrayServer = resolveServer(server, runtimeSettings.allowIpv6) ?: return
@@ -95,8 +108,8 @@ internal class ConnectionManager(
             val appRoutingPlan = appRoutingPlanner.build(
                 baseTunName = tunName,
                 baseRouteTable = routeTable,
-                includeProxyRoutes = useRootService,
-                includeTunRoutes = useRootService,
+                includeProxyRoutes = managesSystemRouting,
+                includeTunRoutes = managesSystemRouting,
                 defaultProxyServer = xrayServer,
                 allowIpv6 = runtimeSettings.allowIpv6,
             )
@@ -104,26 +117,26 @@ internal class ConnectionManager(
                 logAppRoutingPlan(appRoutingPlan)
             }
 
-            val xrayApiEndpoint = nextXrayApiEndpoint(useRootService)
+            val xrayApiEndpoint = strategy.nextApiEndpoint(environment)
             if (!prepareXrayApiAccess(xrayApiEndpoint)) return
             replaceXrayApiClients(xrayApiEndpoint)
 
             writeXrayConfig(
                 xrayServer,
                 effectiveRuntimeSettings,
-                useRootService,
+                managesSystemRouting,
                 appRoutingPlan,
                 physicalRouteResult.route,
                 xrayApiEndpoint,
             )
-            val pid = startXrayProcess(useRootService, vpnInterface)
+            val pid = startXrayProcess(strategy, vpnInterface)
 
             if (pid <= 0) {
                 fail(environment.localizedString(R.string.connection_error_missing_process_id))
                 return
             }
             runtimeState = XrayRuntimeState.Active(
-                mode = runtimeMode,
+                strategy = strategy,
                 pid = pid,
                 tunName = tunName,
                 apiEndpoint = xrayApiEndpoint,
@@ -146,7 +159,7 @@ internal class ConnectionManager(
 
             if (
                 !finishRuntimeSetup(
-                    useRootService,
+                    managesSystemRouting,
                     tunName,
                     fwmark,
                     routeTable,
@@ -170,7 +183,7 @@ internal class ConnectionManager(
                 bypassTable = bypassTable,
                 appRoutingPlan = appRoutingPlan,
                 physicalRoute = physicalRouteResult.route,
-                ipRulesApplied = useRootService,
+                ipRulesApplied = managesSystemRouting,
                 connectStartedAt = connectStartedAt,
                 xrayApiEndpoint = xrayApiEndpoint,
             )
@@ -194,13 +207,13 @@ internal class ConnectionManager(
         plan.directUids.isNotEmpty()
 
     private suspend fun prepareRuntime(
-        useRootService: Boolean,
+        strategy: XrayRuntimeStrategy,
         vpnInterface: ParcelFileDescriptor?,
         preparation: ConnectionPreparation,
         configuredTunName: String,
     ): String? {
         val customTunName = configuredTunName.trim()
-        if (preparation.cleansPreviousState && useRootService) {
+        if (preparation.cleansPreviousState && strategy.managesSystemRouting) {
             log.append(LogSource.APP, "Cleaning up previous state...")
             val cleaned = timedStep("Cleanup") {
                 cleanup.ensureCleanState(fallbackTunName = customTunName.ifEmpty { LEGACY_DEFAULT_TUN_NAME })
@@ -211,14 +224,14 @@ internal class ConnectionManager(
             }
         }
 
-        val ready = if (useRootService) {
+        val ready = if (strategy.managesSystemRouting) {
             prepareRootRuntime(preparation)
         } else {
             prepareVpnServiceRuntime(vpnInterface)
         }
         if (!ready) return null
 
-        val tunName = if (useRootService && customTunName.isEmpty()) {
+        val tunName = if (strategy.managesSystemRouting && customTunName.isEmpty()) {
             timedStep("TUN interface name detection") {
                 tunGateway.findAvailableWlanName()
             }?.also { selectedName ->
@@ -234,11 +247,7 @@ internal class ConnectionManager(
             customTunName
         }
 
-        if (useRootService) {
-            processSupervisor.prepareLogFile()
-        } else {
-            userProcessSupervisor.prepareLogFile()
-        }
+        strategy.prepareLogFile()
         return tunName
     }
 
@@ -298,28 +307,21 @@ internal class ConnectionManager(
         stateStore.delete()
     }
 
-    private suspend fun prepareXrayBinary(useRootService: Boolean, preparation: ConnectionPreparation): String? {
-        if (preparation.reusesStaticRuntime) {
-            log.append(LogSource.APP, "xray binary extraction skipped for fast reconnect")
-        } else {
+    private suspend fun prepareXrayBinary(strategy: XrayRuntimeStrategy, preparation: ConnectionPreparation): String? {
+        val verifyAvailable = !preparation.reusesStaticRuntime
+        if (verifyAvailable) {
             log.append(LogSource.APP, "Extracting xray binary...")
-            val xrayReady = timedStep("xray binary setup") {
-                if (useRootService) {
-                    xrayBinary.ensureRootBinaryExtracted()
-                } else {
-                    xrayBinary.ensureAndroidBinaryAvailable()
-                }
-            }
-            if (!xrayReady) {
-                fail(environment.localizedString(R.string.connection_error_xray_binary_not_found))
-                return null
-            }
-        }
-
-        val activeBinaryPath = if (useRootService) {
-            xrayBinary.rootBinaryPath
         } else {
-            requireNotNull(xrayBinary.androidBinaryPath)
+            log.append(LogSource.APP, "xray binary extraction skipped for fast reconnect")
+        }
+        val activeBinaryPath = if (verifyAvailable) {
+            timedStep("xray binary setup") { strategy.prepareBinary(verifyAvailable = true) }
+        } else {
+            strategy.prepareBinary(verifyAvailable = false)
+        }
+        if (activeBinaryPath == null) {
+            fail(environment.localizedString(R.string.connection_error_xray_binary_not_found))
+            return null
         }
         log.append(LogSource.APP, "xray binary ready at $activeBinaryPath")
         return activeBinaryPath
@@ -350,8 +352,8 @@ internal class ConnectionManager(
         }
     }
 
-    private suspend fun detectPhysicalRoute(useRootService: Boolean, tunName: String): PhysicalRouteResult {
-        if (!useRootService) return PhysicalRouteResult(success = true, route = null)
+    private suspend fun detectPhysicalRoute(managesSystemRouting: Boolean, tunName: String): PhysicalRouteResult {
+        if (!managesSystemRouting) return PhysicalRouteResult(success = true, route = null)
 
         val route = timedStep("Physical route detection") {
             tunGateway.detectPhysicalRoute(tunName)
@@ -396,7 +398,7 @@ internal class ConnectionManager(
     private suspend fun writeXrayConfig(
         xrayServer: ServerConfig,
         runtimeSettings: XrayRuntimeSettings,
-        useRootService: Boolean,
+        managesSystemRouting: Boolean,
         appRoutingPlan: AppRoutingPlan,
         physicalRoute: TunManager.PhysicalRoute?,
         xrayApiEndpoint: XrayApiEndpoint,
@@ -406,7 +408,7 @@ internal class ConnectionManager(
                 configGenerator.generate(
                     server = xrayServer,
                     tunName = runtimeSettings.tunName,
-                    fwmark = runtimeSettings.fwmark.takeIf { useRootService } ?: 0,
+                    fwmark = runtimeSettings.fwmark.takeIf { managesSystemRouting } ?: 0,
                     dnsServers = runtimeSettings.dnsServers,
                     domesticDnsServers = runtimeSettings.domesticDnsServers,
                     logLevel = runtimeSettings.logLevel,
@@ -440,18 +442,10 @@ internal class ConnectionManager(
         )
     }
 
-    private suspend fun startXrayProcess(useRootService: Boolean, vpnInterface: ParcelFileDescriptor?): Int {
+    private suspend fun startXrayProcess(strategy: XrayRuntimeStrategy, vpnInterface: ParcelFileDescriptor?): Int {
         log.append(LogSource.APP, "Starting xray process...")
-        val binDir = environment.binDir
         return timedStep("xray process launch") {
-            if (useRootService) {
-                processSupervisor.start(binDir)
-            } else {
-                userProcessSupervisor.start(
-                    binDir = binDir,
-                    tunFd = requireNotNull(vpnInterface).fd,
-                )
-            }
+            strategy.startProcess(binDir = environment.binDir, vpnInterface = vpnInterface)
         }
     }
 
@@ -488,8 +482,8 @@ internal class ConnectionManager(
         )
     }
 
-    private suspend fun waitForRootTun(useRootService: Boolean, tunName: String, allowIpv6: Boolean, pid: Int): Boolean {
-        if (!useRootService) return true
+    private suspend fun waitForRootTun(managesSystemRouting: Boolean, tunName: String, allowIpv6: Boolean, pid: Int): Boolean {
+        if (!managesSystemRouting) return true
 
         log.append(LogSource.APP, "Waiting for TUN interface '$tunName'...")
         val tunSetup = timedStep("TUN setup") {
@@ -508,7 +502,7 @@ internal class ConnectionManager(
     }
 
     private suspend fun finishRuntimeSetup(
-        useRootService: Boolean,
+        managesSystemRouting: Boolean,
         tunName: String,
         fwmark: Int,
         routeTable: Int,
@@ -520,7 +514,7 @@ internal class ConnectionManager(
     ): Boolean {
         if (
             !waitForRootTun(
-                useRootService = useRootService,
+                managesSystemRouting = managesSystemRouting,
                 tunName = tunName,
                 allowIpv6 = allowIpv6,
                 pid = pid,
@@ -531,7 +525,7 @@ internal class ConnectionManager(
         if (!waitForAppTuns(appRoutingPlan = appRoutingPlan, allowIpv6 = allowIpv6, pid = pid)) return false
         if (
             !applyRootRouting(
-                useRootService,
+                managesSystemRouting,
                 tunName,
                 fwmark,
                 routeTable,
@@ -574,7 +568,7 @@ internal class ConnectionManager(
         val stage = if (tunSetup.processExited) "$diagnosticsStage-exit" else "$diagnosticsStage-failure"
         diagnostics.logNamespaceDiagnostics(stage = stage, tunName = tunName, xrayPid = pid)
         if (tunSetup.processExited) {
-            fail(environment.localizedString(R.string.connection_error_xray_crashed, processSupervisor.readCrashReason()))
+            fail(environment.localizedString(R.string.connection_error_xray_crashed, readCrashReason()))
         } else {
             fail(
                 tunSetup.error
@@ -584,7 +578,7 @@ internal class ConnectionManager(
     }
 
     private suspend fun applyRootRouting(
-        useRootService: Boolean,
+        managesSystemRouting: Boolean,
         tunName: String,
         fwmark: Int,
         routeTable: Int,
@@ -593,7 +587,7 @@ internal class ConnectionManager(
         allowIpv6: Boolean,
         appRoutingPlan: AppRoutingPlan,
     ): Boolean {
-        if (!useRootService) return true
+        if (!managesSystemRouting) return true
 
         val bypassUids = runtimeBypassUids(appRoutingPlan.directUids)
         log.append(
@@ -735,8 +729,11 @@ internal class ConnectionManager(
         }
         if (!rootRuntime.protectLoopbackApi(endpoint.port, environment.appUid)) return false
         val state = stateStore.read() ?: return false
+        // A record left by the rootless runtime describes a core that died with its process, so
+        // there is nothing here to reattach to.
+        if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) return false
         runtimeState = XrayRuntimeState.Active(
-            mode = XrayRuntimeMode.Root,
+            strategy = rootStrategy,
             pid = state.xrayPid,
             tunName = state.tunName,
             apiEndpoint = endpoint,
@@ -746,32 +743,18 @@ internal class ConnectionManager(
         return true
     }
 
-    suspend fun disconnect(): Boolean = disconnect(updateState = true, fastRootCleanup = true)
+    suspend fun disconnect(): Boolean = disconnect(updateState = true, fastCleanup = true)
 
-    suspend fun disconnect(updateState: Boolean, fastRootCleanup: Boolean = false): Boolean {
+    suspend fun disconnect(updateState: Boolean, fastCleanup: Boolean = false): Boolean {
         if (updateState) {
             stateCoordinator.markDisconnecting()
             log.append(LogSource.APP, "Disconnecting...")
         }
-        val runtimeMode = runtimeState.mode ?: persistedRuntimeMode()
-        userProcessSupervisor.stop()
-        val cleaned = if (runtimeMode == XrayRuntimeMode.VpnService) {
-            stateStore.delete()
-            true
-        } else {
-            val hasRootState = stateStore.read() != null
-            val requiresFallbackCleanup = hasRootState || runtimeMode == XrayRuntimeMode.Root
-            val knownStateStopped = if (fastRootCleanup && requiresFallbackCleanup) {
-                cleanup.ensureKnownStateStopped()
-            } else {
-                false
-            }
-            if (knownStateStopped || !requiresFallbackCleanup) {
-                true
-            } else {
-                cleanup.ensureCleanState()
-            }
-        }
+        // With no runtime of our own and nothing recorded by an earlier one, there is nothing
+        // installed to take back.
+        val cleaned = (runtimeState.strategy ?: persistedRuntimeStrategy())
+            ?.release(fastCleanup = fastCleanup)
+            ?: true
         runtimeState = XrayRuntimeState.Inactive
         closeXrayApiClients()
         if (!cleaned) {
@@ -786,7 +769,7 @@ internal class ConnectionManager(
     }
 
     fun prepareForServiceDestruction() {
-        if (runtimeState.mode == XrayRuntimeMode.VpnService) userProcessSupervisor.requestStop()
+        runtimeState.strategy?.requestStop()
         requestXrayApiClientClose()
     }
 
@@ -805,14 +788,9 @@ internal class ConnectionManager(
         log.append(LogSource.APP, "ERROR: $message")
         var finalMessage = message
         if (cleanState) {
-            userProcessSupervisor.stop()
-            if (runtimeState.mode != XrayRuntimeMode.VpnService) {
-                if (!cleanup.ensureCleanState()) {
-                    finalMessage = environment.localizedString(R.string.connection_error_cleanup_failed)
-                    log.append(LogSource.APP, "ERROR: $finalMessage")
-                }
-            } else {
-                stateStore.delete()
+            if (!releaseStartedRuntime()) {
+                finalMessage = environment.localizedString(R.string.connection_error_cleanup_failed)
+                log.append(LogSource.APP, "ERROR: $finalMessage")
             }
             runtimeState = XrayRuntimeState.Inactive
         }
@@ -824,10 +802,7 @@ internal class ConnectionManager(
     private suspend fun cleanCancelledConnectionAttempt() {
         val cleanupErrors = mutableListOf<Exception>()
         try {
-            userProcessSupervisor.stop()
-            if (runtimeState.mode == XrayRuntimeMode.VpnService) {
-                stateStore.delete()
-            } else if (!cleanup.ensureCleanState()) {
+            if (!releaseStartedRuntime()) {
                 log.append(LogSource.APP, "ERROR: Could not clean up cancelled Xray startup")
             }
         } catch (error: Exception) {
@@ -845,40 +820,17 @@ internal class ConnectionManager(
         }
     }
 
-    override suspend fun isProcessAlive(pid: Int): Boolean = when (activeModeFor(pid)) {
-        XrayRuntimeMode.Root -> processSupervisor.isAlive(pid)
-        XrayRuntimeMode.VpnService -> userProcessSupervisor.isAlive(pid)
-        null -> false
-    }
+    override suspend fun isProcessAlive(pid: Int): Boolean = processFor(pid)?.isAlive(pid) ?: false
 
     suspend fun isRestorableRootProcessAlive(pid: Int): Boolean = processSupervisor.isAlive(pid)
 
-    suspend fun killProcess(pid: Int, signal: Int = 15): Boolean = when (activeModeFor(pid)) {
-        XrayRuntimeMode.Root -> processSupervisor.kill(pid, signal)
-        XrayRuntimeMode.VpnService -> userProcessSupervisor.kill(pid, signal)
-        null -> false
-    }
+    suspend fun killProcess(pid: Int, signal: Int = 15): Boolean = processFor(pid)?.kill(pid, signal) ?: false
 
-    override suspend fun readProcessResidentMemoryMb(pid: Int): Long? = when (activeModeFor(pid)) {
-        XrayRuntimeMode.Root -> processSupervisor.readResidentMemoryMb(pid)
-        XrayRuntimeMode.VpnService -> userProcessSupervisor.readResidentMemoryMb(pid)
-        null -> null
-    }
+    override suspend fun readProcessResidentMemoryMb(pid: Int): Long? = processFor(pid)?.readResidentMemoryMb(pid)
 
-    suspend fun readActiveConnectionCount(pid: Int): Int? = when (activeModeFor(pid)) {
-        XrayRuntimeMode.Root -> rootRuntime.readActiveConnectionCount(pid)
-        XrayRuntimeMode.VpnService -> withContext(Dispatchers.IO) { userProcessSupervisor.readActiveConnectionCount(pid) }
-        null -> null
-    }
+    suspend fun readActiveConnectionCount(pid: Int): Int? = processFor(pid)?.readActiveConnectionCount(pid)
 
-    suspend fun readProcessMetrics(pid: Int): ProcessMetrics? = when (activeModeFor(pid)) {
-        XrayRuntimeMode.Root -> rootRuntime.readProcessMetrics(pid)
-        XrayRuntimeMode.VpnService -> ProcessMetrics(
-            residentMemoryMb = userProcessSupervisor.readResidentMemoryMb(pid),
-            activeConnectionCount = withContext(Dispatchers.IO) { userProcessSupervisor.readActiveConnectionCount(pid) },
-        )
-        null -> null
-    }
+    suspend fun readProcessMetrics(pid: Int): ProcessMetrics? = processFor(pid)?.readProcessMetrics(pid)
 
     suspend fun readOutboundTrafficStatsBytes(): Map<String, Long> = withXrayApiClients {
         xrayStatsClient?.queryOutboundTrafficStatsBytes().orEmpty()
@@ -887,12 +839,8 @@ internal class ConnectionManager(
     override suspend fun readXraySysStats(): XraySysStats? = withXrayApiClients { xrayStatsClient?.getSysStats() }
 
     override suspend fun readCrashReason(): String = runCatching {
-        when (runtimeState.mode) {
-            XrayRuntimeMode.Root -> processSupervisor.readCrashReason()
-            XrayRuntimeMode.VpnService -> userProcessSupervisor.readCrashReason()
-            null -> "xray process exited"
-        }
-    }.getOrDefault("xray process exited")
+        runtimeState.strategy?.readCrashReason()
+    }.getOrNull() ?: "xray process exited"
 
     internal suspend fun readBalancerSelection(balancerTag: String) = withXrayApiClients {
         xrayRoutingClient?.queryBalancerSelection(balancerTag)
@@ -955,17 +903,30 @@ internal class ConnectionManager(
         return if (appUid > 0) directUids + appUid else directUids
     }
 
-    private fun activeModeFor(pid: Int): XrayRuntimeMode? = (runtimeState as? XrayRuntimeState.Active)
-        ?.takeIf { it.pid == pid }
-        ?.mode
-
-    private suspend fun persistedRuntimeMode(): XrayRuntimeMode? = stateStore.read()?.let { state ->
-        if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) {
-            XrayRuntimeMode.VpnService
-        } else {
-            XrayRuntimeMode.Root
-        }
+    private fun strategyFor(useRootService: Boolean): XrayRuntimeStrategy = if (useRootService) {
+        rootStrategy
+    } else {
+        vpnServiceStrategy
     }
+
+    /** Resolves the core that [pid] belongs to, or null when this manager did not start it. */
+    private fun processFor(pid: Int): XrayRuntimeProcess? = (runtimeState as? XrayRuntimeState.Active)
+        ?.takeIf { it.pid == pid }
+        ?.strategy
+
+    private suspend fun persistedRuntimeStrategy(): XrayRuntimeStrategy? = stateStore.read()?.let { state ->
+        strategyFor(useRootService = state.physicalInterface != VPN_SERVICE_INTERFACE_LABEL)
+    }
+
+    /**
+     * Releases the runtime a connection attempt had already started.
+     *
+     * The root fallback covers teardown after the runtime was already reset, which happens when a
+     * failure is itself cancelled part-way through; root cleanup is the safe choice there because
+     * it is the only runtime that can leave routing behind.
+     */
+    private suspend fun releaseStartedRuntime(): Boolean = (runtimeState.strategy ?: rootStrategy)
+        .release(fastCleanup = false)
 
     private fun selectPersistedPhysicalRoute(state: XrayState): TunManager.PhysicalRoute? = state.physicalInterface
         ?.takeIf { it.isNotBlank() && it != VPN_SERVICE_INTERFACE_LABEL }
@@ -977,12 +938,6 @@ internal class ConnectionManager(
             )
         }
 
-    private fun nextXrayApiEndpoint(useRootService: Boolean): XrayApiEndpoint = if (useRootService) {
-        XrayApiEndpoint.LoopbackTcp(environment.allocateLoopbackApiPort())
-    } else {
-        XrayApiEndpoint.UnixSocket("$XRAY_API_SOCKET_NAME_PREFIX-${environment.processId}-${environment.elapsedRealtime()}")
-    }
-
     private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
         val startedAt = environment.elapsedRealtime()
         return try {
@@ -993,29 +948,19 @@ internal class ConnectionManager(
     }
 }
 
-private enum class XrayRuntimeMode {
-    Root,
-    VpnService,
-    ;
-
-    companion object {
-        fun fromRootServiceSetting(useRootService: Boolean): XrayRuntimeMode = if (useRootService) Root else VpnService
-    }
-}
-
 private sealed interface XrayRuntimeState {
-    val mode: XrayRuntimeMode?
+    val strategy: XrayRuntimeStrategy?
 
     data object Inactive : XrayRuntimeState {
-        override val mode: XrayRuntimeMode? = null
+        override val strategy: XrayRuntimeStrategy? = null
     }
 
     data class Starting(
-        override val mode: XrayRuntimeMode,
+        override val strategy: XrayRuntimeStrategy,
     ) : XrayRuntimeState
 
     data class Active(
-        override val mode: XrayRuntimeMode,
+        override val strategy: XrayRuntimeStrategy,
         val pid: Int,
         val tunName: String,
         val apiEndpoint: XrayApiEndpoint,
@@ -1023,7 +968,6 @@ private sealed interface XrayRuntimeState {
     ) : XrayRuntimeState
 }
 
-private const val VPN_SERVICE_INTERFACE_LABEL = "VpnService"
 private const val LEGACY_DEFAULT_TUN_NAME = "xray0"
 private const val XRAY_API_READY_TIMEOUT_MS = 10_000L
 private const val XRAY_API_READY_RETRY_DELAY_MS = 250L

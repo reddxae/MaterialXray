@@ -24,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,7 +38,7 @@ class ConnectionManagerTest {
 
         assertEquals(1, harness.cleanup.cleanCalls)
         assertEquals(0, harness.rootProcess.startCalls)
-        assertEquals(1, harness.userProcess.stopCalls)
+        assertEquals(0, harness.userProcess.stopCalls)
         assertEquals(
             ConnectionState.Error(harness.environment.message(R.string.connection_error_xray_binary_not_found)),
             harness.stateCoordinator.state.value,
@@ -85,11 +86,11 @@ class ConnectionManagerTest {
             cleanup.knownStateStopped = false
         }
 
-        harness.manager.disconnect(updateState = true, fastRootCleanup = true)
+        harness.manager.disconnect(updateState = true, fastCleanup = true)
 
         assertEquals(1, harness.cleanup.knownStateStopCalls)
         assertEquals(1, harness.cleanup.cleanCalls)
-        assertEquals(1, harness.userProcess.stopCalls)
+        assertEquals(0, harness.userProcess.stopCalls)
         assertEquals(ConnectionState.Disconnected, harness.stateCoordinator.state.value)
     }
 
@@ -97,7 +98,7 @@ class ConnectionManagerTest {
     fun `disconnect without runtime or persisted state is already clean`() = runTest {
         val harness = Harness().apply { cleanup.knownStateStopped = false }
 
-        harness.manager.disconnect(updateState = false, fastRootCleanup = true)
+        harness.manager.disconnect(updateState = false, fastCleanup = true)
 
         assertEquals(0, harness.cleanup.knownStateStopCalls)
         assertEquals(0, harness.cleanup.cleanCalls)
@@ -111,7 +112,7 @@ class ConnectionManagerTest {
             cleanup.cleanResult = false
         }
 
-        val disconnected = harness.manager.disconnect(updateState = true, fastRootCleanup = true)
+        val disconnected = harness.manager.disconnect(updateState = true, fastCleanup = true)
 
         assertFalse(disconnected)
         assertEquals(
@@ -390,6 +391,44 @@ class ConnectionManagerTest {
         )
 
         assertEquals("wlan2", harness.activeRouting.lastTunName)
+    }
+
+    @Test
+    fun `rootless teardown stops the child instead of reclaiming root state`() = runTest {
+        val harness = Harness()
+        harness.stateStore.state = XrayState(xrayPid = 42, physicalInterface = VPN_SERVICE_INTERFACE_LABEL)
+
+        harness.manager.disconnect(updateState = true, fastCleanup = true)
+
+        assertEquals(1, harness.userProcess.stopCalls)
+        assertEquals(0, harness.cleanup.knownStateStopCalls)
+        assertEquals(0, harness.cleanup.cleanCalls)
+        assertNull(harness.stateStore.state)
+        assertEquals(ConnectionState.Disconnected, harness.stateCoordinator.state.value)
+    }
+
+    @Test
+    fun `a rootless connection without a tunnel is rejected without reclaiming root state`() = runTest {
+        val harness = Harness()
+        harness.stateStore.state = XrayState(xrayPid = 42, physicalInterface = VPN_SERVICE_INTERFACE_LABEL)
+
+        harness.manager.connect(
+            server(),
+            runtimeSettings().copy(useRootService = false, tunName = "tun0"),
+            vpnInterface = null,
+        )
+
+        assertEquals(1, harness.userProcess.stopCalls)
+        assertEquals(0, harness.cleanup.cleanCalls)
+        assertEquals(0, harness.cleanup.knownStateStopCalls)
+        assertNull(harness.stateStore.state)
+        assertEquals(
+            ConnectionState.Error(
+                harness.environment.message(R.string.connection_error_vpn_permission_required),
+                retryable = false,
+            ),
+            harness.stateCoordinator.state.value,
+        )
     }
 
     private class Harness {

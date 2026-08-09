@@ -3,6 +3,7 @@ package com.material.xray.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.CleanupManager
 import com.material.xray.data.repository.ServerRepository
@@ -28,24 +29,32 @@ class BootReceiver : BroadcastReceiver() {
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val autoConnect = settingsRepo.autoConnect.first()
-                if (!autoConnect) return@launch
-
-                val useRootService = settingsRepo.useRootService.first()
-                if (useRootService) {
-                    CleanupManager(context, rootShell).ensureCleanState()
-                }
-
-                val lastServerId = settingsRepo.lastServerId.first()
-                if (lastServerId < 0) return@launch
-
-                val serverEntity = serverRepository.getById(lastServerId) ?: return@launch
-                val config = serverRepository.parseConfig(serverEntity)
-                XrayService.connect(context, config)
-            } finally {
-                pendingResult.finish()
-            }
+            // A detached coroutine has no other handler; an escaped exception here would crash
+            // the whole app process in the middle of boot handling.
+            runCatching { autoConnectIfConfigured(context) }
+                .onFailure { error -> Log.e(TAG, "Auto-connect after boot failed", error) }
+            pendingResult.finish()
         }
+    }
+
+    private suspend fun autoConnectIfConfigured(context: Context) {
+        val autoConnect = settingsRepo.autoConnect.first()
+        if (!autoConnect) return
+
+        val useRootService = settingsRepo.useRootService.first()
+        if (useRootService) {
+            CleanupManager(context, rootShell).ensureCleanState()
+        }
+
+        val lastServerId = settingsRepo.lastServerId.first()
+        if (lastServerId < 0) return
+
+        val serverEntity = serverRepository.getById(lastServerId) ?: return
+        val config = serverRepository.parseConfig(serverEntity)
+        XrayService.connect(context, config)
+    }
+
+    private companion object {
+        private const val TAG = "BootReceiver"
     }
 }

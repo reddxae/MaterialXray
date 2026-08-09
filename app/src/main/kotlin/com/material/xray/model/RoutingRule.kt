@@ -38,6 +38,19 @@ data class RoutingRule(
         if (cleanProtocols.isNotEmpty()) put("protocol", cleanProtocols.asJsonArray())
     }
 
+    /**
+     * Reports whether this rule carries no matching condition at all.
+     *
+     * Xray rules match on domains, IPs, ports, or protocols. When none of those are set, both
+     * [toXrayRule] and the OR expansion emit a rule that contains only `type` and `outboundTag`,
+     * which Xray treats as matching every connection and routes it to [outboundTag]. Because
+     * routing rules are evaluated in order, such a rule also shadows every rule after it.
+     */
+    fun matchesAllTraffic(): Boolean = domains.cleanEntries().isEmpty() &&
+        ips.cleanEntries().isEmpty() &&
+        port.isNullOrBlank() &&
+        protocols.cleanEntries().isEmpty()
+
     private fun List<String>.cleanEntries(): List<String> = map { it.trim() }.filter { it.isNotEmpty() }
 
     private fun List<String>.asJsonArray(): JsonArray = buildJsonArray {

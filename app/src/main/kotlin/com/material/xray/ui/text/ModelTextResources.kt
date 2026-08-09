@@ -71,6 +71,15 @@ val XrayOutbound.descriptionResource: Int
         XrayOutbound.Block -> R.string.xray_outbound_block_description
     }
 
+/** Describes what happens when a routing rule with no matching condition sends traffic here. */
+@get:StringRes
+val XrayOutbound.catchAllEffectResource: Int
+    get() = when (this) {
+        XrayOutbound.Proxy -> R.string.routing_catch_all_effect_proxy
+        XrayOutbound.Direct -> R.string.routing_catch_all_effect_direct
+        XrayOutbound.Block -> R.string.routing_catch_all_effect_block
+    }
+
 @get:StringRes
 val XrayLogLevel.labelResource: Int
     get() = when (this) {

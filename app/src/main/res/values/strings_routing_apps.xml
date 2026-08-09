@@ -47,6 +47,13 @@
     <string name="routing_protocols_empty_description">If nothing is selected, all traffic is matched.</string>
     <string name="routing_open_selector">Open %1$s</string>
     <string name="routing_no_match_content">No match content</string>
+    <string name="routing_catch_all_warning_title">This rule matches all traffic</string>
+    <string name="routing_catch_all_warning_description">No domains, IPs, ports, or protocols are set, so this rule has no conditions left to match on. Every connection will match it, and rules listed below it will never be reached.</string>
+    <string name="routing_catch_all_effect_proxy">All traffic will be sent through the proxy.</string>
+    <string name="routing_catch_all_effect_direct">All traffic will bypass the proxy and leave your device unprotected.</string>
+    <string name="routing_catch_all_effect_block">All traffic will be blocked and you will lose connectivity.</string>
+    <string name="routing_catch_all_save_anyway">Save anyway</string>
+    <string name="routing_catch_all_keep_editing">Keep editing</string>
     <plurals name="routing_rule_domains">
         <item quantity="one">Domain: %1$s</item>
         <item quantity="other">Domains: %1$s</item>

@@ -211,7 +211,7 @@ private fun buildOrRules(rule: RoutingRule): List<JsonObject> {
             },
         )
     }
-    rule.protocols.takeIf { it.isNotEmpty() }?.let { protocols ->
+    rule.protocols.cleanEntries().takeIf { it.isNotEmpty() }?.let { protocols ->
         rules += JsonObject(
             base().apply {
                 put("protocol", buildJsonArray { protocols.forEach { add(it) } })

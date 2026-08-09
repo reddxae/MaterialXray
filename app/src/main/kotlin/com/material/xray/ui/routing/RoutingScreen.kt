@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -90,6 +91,7 @@ import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 import com.material.xray.ui.apps.AppRoutingMenuActions
+import com.material.xray.ui.text.catchAllEffectResource
 import com.material.xray.ui.text.descriptionResource
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -606,6 +608,7 @@ private fun EditRoutingRuleDialog(
     var selectedOutbound by remember(rule.id) { mutableStateOf(rule.outboundTag) }
     var selectedOperator by remember(rule.id) { mutableStateOf(rule.operator) }
     var selectedProtocols by remember(rule.id) { mutableStateOf(rule.protocols.toSet()) }
+    var pendingCatchAllRule by remember(rule.id) { mutableStateOf<RoutingRule?>(null) }
     val outboundOption = remember(selectedOutbound) { XrayOutbound.fromTag(selectedOutbound) }
     val matchModeOption = remember(selectedOperator) { matchModeOptions.first { it.value == selectedOperator } }
     val outboundDescription = stringResource(outboundOption.descriptionResource)
@@ -623,22 +626,27 @@ private fun EditRoutingRuleDialog(
     }
     val scrollState = rememberScrollState()
 
+    fun editedRule(): RoutingRule = rule.copy(
+        name = name.text.trim().ifEmpty { rule.name },
+        outboundTag = selectedOutbound,
+        domains = splitCsv(domains.text),
+        ips = splitCsv(ips.text),
+        port = port.text.trim().ifEmpty { null },
+        protocols = protocolOptions.filter { it in selectedProtocols },
+        operator = selectedOperator,
+    )
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(
-                        rule.copy(
-                            name = name.text.trim().ifEmpty { rule.name },
-                            outboundTag = selectedOutbound,
-                            domains = splitCsv(domains.text),
-                            ips = splitCsv(ips.text),
-                            port = port.text.trim().ifEmpty { null },
-                            protocols = protocolOptions.filter { it in selectedProtocols },
-                            operator = selectedOperator,
-                        ),
-                    )
+                    val edited = editedRule()
+                    if (edited.matchesAllTraffic()) {
+                        pendingCatchAllRule = edited
+                    } else {
+                        onSave(edited)
+                    }
                 },
             ) {
                 Text(stringResource(R.string.routing_save))
@@ -774,6 +782,49 @@ private fun EditRoutingRuleDialog(
                         .fillMaxHeight()
                         .width(4.dp),
                 )
+            }
+        },
+    )
+
+    pendingCatchAllRule?.let { candidate ->
+        CatchAllRuleWarningDialog(
+            outbound = XrayOutbound.fromTag(candidate.outboundTag),
+            onKeepEditing = { pendingCatchAllRule = null },
+            onSaveAnyway = {
+                pendingCatchAllRule = null
+                onSave(candidate)
+            },
+        )
+    }
+}
+
+@Composable
+private fun CatchAllRuleWarningDialog(
+    outbound: XrayOutbound,
+    onKeepEditing: () -> Unit,
+    onSaveAnyway: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onKeepEditing,
+        icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+        title = { Text(stringResource(R.string.routing_catch_all_warning_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.routing_catch_all_warning_description))
+                Text(
+                    text = stringResource(outbound.catchAllEffectResource),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSaveAnyway) {
+                Text(stringResource(R.string.routing_catch_all_save_anyway))
+            }
+        },
+        dismissButton = {
+            Button(onClick = onKeepEditing) {
+                Text(stringResource(R.string.routing_catch_all_keep_editing))
             }
         },
     )

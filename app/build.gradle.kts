@@ -170,6 +170,14 @@ android {
         compose = true
     }
 
+    lint {
+        // Analysing the test sources costs more than the rest of the build put together, and it
+        // reruns on every main-source edit because the test classes depend on them. detekt and
+        // ktlint already cover the test sources, and the Android-specific checks lint adds are
+        // about shipped code.
+        ignoreTestSources = true
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -212,10 +220,10 @@ ktlint {
     }
 }
 
-tasks.named("preBuild") {
-    dependsOn("ktlintFormat")
-}
-
+// Formatting is a source mutation, so it does not belong on the path that compiles the sources:
+// rewriting a file mid-build invalidates the up-to-date checks of everything downstream, and it
+// races an editor that has the same file open. The prek hook formats on commit, and `check` still
+// enforces it here.
 tasks.named("check") {
     dependsOn("ktlintFormat")
 }

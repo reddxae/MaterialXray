@@ -7,6 +7,8 @@
 - Single test class: `./gradlew :app:testDebugUnitTest --tests com.material.xray.core.xray.ConfigGeneratorTest`.
 - Single Kotlin backtick-named test: `./gradlew :app:testDebugUnitTest --tests "com.material.xray.core.xray.ConfigGeneratorTest.generates TUN inbound with correct name and MTU"`.
 - Lint and broader local verification: `./gradlew :app:lintDebug` and `./gradlew :app:check`.
+- Formatting is not applied by building. `prek` verifies it with `ktlintCheck`; fix it with `./gradlew :app:ktlintFormat`.
+- Iterate with `./gradlew :app:testDebugUnitTest :app:assembleDebug` (a few seconds) and keep `lintDebug` for the end; lint analysis alone is around 45 seconds and reruns on any source change.
 - Device-only flows need a connected device/emulator: `./gradlew :app:installDebug` and `./gradlew :app:connectedDebugAndroidTest`.
 - Release signing is read from env vars, Gradle properties, then `local.properties`: `RELEASE_KEYSTORE_PATH`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`, `RELEASE_STORE_PASSWORD`.
 

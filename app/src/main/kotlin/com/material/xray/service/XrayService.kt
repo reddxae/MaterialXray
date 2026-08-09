@@ -54,6 +54,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -211,6 +212,7 @@ class XrayService : VpnService() {
                     showConnectionFailureNotification(failure.message)
                 }
             },
+            onCommandFailure = ::handleUnexpectedCommandFailure,
         )
         healthWatchdog = XrayHealthWatchdog(
             scope = scope,
@@ -1343,6 +1345,27 @@ class XrayService : VpnService() {
     private fun closeVpnInterface() {
         runCatching { vpnInterface?.close() }
         vpnInterface = null
+    }
+
+    /**
+     * Tears the runtime down after a connection command failed for a reason nothing anticipated.
+     *
+     * Closing the tunnel descriptor is not enough on its own: the rootless core holds a duplicate
+     * of it and a root-managed core owns the routing outright, so the runtime is stopped first.
+     * The failure is then reported the same way an exhausted connection attempt is, which keeps
+     * an always-on VPN retrying instead of silently staying down.
+     */
+    private suspend fun handleUnexpectedCommandFailure(error: Throwable) {
+        val description = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+        logBuffer.append(LogSource.APP, "Connection command failed unexpectedly: $description")
+        val message = localizedString(R.string.notification_unknown_connection_error)
+        stopProcessWatchdog()
+        withContext(NonCancellable) {
+            runCatching { connectionManager.disconnect(updateState = false, fastRootCleanup = true) }
+        }
+        closeVpnInterface()
+        connectionStateCoordinator.markError(message, retryable = true)
+        if (isRunningAlwaysOnVpn()) scheduleAlwaysOnRetry() else showConnectionFailureNotification(message)
     }
 
     override fun onRevoke() {

@@ -5,7 +5,9 @@ import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.job
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -90,12 +92,35 @@ class ConnectionLifecycleTest {
         assertEquals(listOf("first-start", "first-end", "second"), order)
     }
 
+    @Test
+    fun `an unexpected command failure is reported instead of escaping the scope`() = runTest {
+        val commandOrder = mutableListOf<String>()
+        val failures = mutableListOf<Throwable>()
+        val lifecycle = lifecycle(
+            attempts = 1,
+            runAttempt = { true },
+            onCommandFailure = { error ->
+                commandOrder += "failure"
+                failures += error
+            },
+        )
+
+        lifecycle.launch { throw IllegalStateException("boom") }
+        lifecycle.launch { commandOrder += "next" }
+        runCurrent()
+
+        assertEquals(listOf("failure", "next"), commandOrder)
+        assertEquals(listOf("boom"), failures.map { it.message })
+        assertTrue(backgroundScope.coroutineContext.job.isActive)
+    }
+
     private fun TestScope.lifecycle(
         attempts: Int,
         runAttempt: suspend (ConnectionRequest) -> Boolean,
         currentFailure: () -> ConnectionFailure = { ConnectionFailure("failed", retryable = true) },
         onRetry: (Int, Int, ConnectionState) -> Unit = { _, _, _ -> },
         onExhausted: (ConnectionFailure) -> Unit = {},
+        onCommandFailure: suspend (Throwable) -> Unit = {},
     ) = ConnectionLifecycle(
         scope = backgroundScope,
         maxAttempts = attempts,
@@ -107,6 +132,7 @@ class ConnectionLifecycleTest {
         onRetry = onRetry,
         onConnected = {},
         onExhausted = onExhausted,
+        onCommandFailure = onCommandFailure,
         waitBeforeRetry = {},
     )
 

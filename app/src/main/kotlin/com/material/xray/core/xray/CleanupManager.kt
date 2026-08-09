@@ -33,7 +33,7 @@ class CleanupManager(
 
     private suspend fun removeRuntimeState(state: XrayState?, fallbackTunName: String): Boolean {
         val firewallRemoved = apiFirewall.remove(appUid)
-        val nftablesRemoved = nftables.remove(required = state?.nftTableCreated == true)
+        val nftablesRemoved = nftables.remove()
 
         val tunName = state?.tunName ?: fallbackTunName
         val fwmark = state?.fwmark ?: 255

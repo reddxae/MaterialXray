@@ -5,13 +5,8 @@ import org.junit.Test
 
 class NftablesManagerTest {
     @Test
-    fun `cleanup tolerates missing nft when no table was persisted`() {
-        assertEquals(0, executeWithoutPath(nftablesRemovalCommand(required = false)))
-    }
-
-    @Test
-    fun `cleanup reports missing nft when a table was persisted`() {
-        assertEquals(1, executeWithoutPath(nftablesRemovalCommand(required = true)))
+    fun `cleanup tolerates a missing nft binary`() {
+        assertEquals(0, executeWithoutPath(nftablesRemovalCommand()))
     }
 
     private fun executeWithoutPath(command: String): Int = ProcessBuilder(

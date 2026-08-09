@@ -14,7 +14,6 @@ data class XrayState(
     val xrayApiPort: Int? = null,
     val tunName: String = "xray0",
     val serverName: String = "",
-    val nftTableCreated: Boolean = false,
     val ipRulesApplied: Boolean = false,
     val appProxyServerIds: List<Long> = emptyList(),
     val routeTable: Int = 100,

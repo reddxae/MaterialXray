@@ -468,7 +468,6 @@ internal class ConnectionManager(
                 xrayApiPort = (xrayApiEndpoint as? XrayApiEndpoint.LoopbackTcp)?.port,
                 tunName = tunName,
                 serverName = serverName,
-                nftTableCreated = false,
                 ipRulesApplied = ipRulesApplied,
                 fwmark = fwmark,
                 routeMark = routeMark,

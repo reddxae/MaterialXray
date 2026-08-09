@@ -180,6 +180,19 @@ android {
     }
 }
 
+// Room exports one JSON schema per database version. They are committed so that
+// DatabaseMigrationChainTest can replay the migration chain and compare the result against the
+// schema Room generates from the entities.
+val roomSchemaDirectory = layout.projectDirectory.dir("schemas")
+
+ksp {
+    arg("room.schemaLocation", roomSchemaDirectory.asFile.path)
+}
+
+tasks.withType<Test>().configureEach {
+    systemProperty("room.schemaLocation", roomSchemaDirectory.asFile.path)
+}
+
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(rootProject.files("config/detekt/detekt.yml"))

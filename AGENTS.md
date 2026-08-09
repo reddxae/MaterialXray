@@ -22,7 +22,9 @@
 - Rootless mode starts Xray through `app/src/main/cpp/xray_launcher.c` via CMake and `System.loadLibrary("xray_launcher")`; native changes need an Android build, not only JVM tests.
 
 ## Data And Generated Code
-- Room schema version is in `AppDatabase`; when changing entities, add a migration there and register it in `DatabaseModule` alongside the existing `MIGRATION_1_2` through `MIGRATION_7_8`.
+- Room schema version is in `AppDatabase`. When changing entities, bump that version and append the SQL for the new step to `DatabaseMigrations.sqlByStartVersion`; `DatabaseModule` registers the whole chain, so nothing else needs editing.
+- Room exports one JSON schema per version into `app/schemas`; commit the new file after building. `DatabaseMigrationChainTest` replays every migration and compares the result against it, so a migration that drifts from the entities fails `testDebugUnitTest`.
+- Only a downgrade falls back to recreating the tables. A failed upgrade throws instead of wiping the user's data, so a broken migration must be fixed rather than absorbed.
 - Hilt and Room use KSP from `app/build.gradle.kts`; prefer Gradle tasks for verification so generated code is produced.
 - `local.properties`, Gradle outputs, `.cxx`, and most local IDE state are gitignored; do not depend on local-only values except SDK path or local signing credentials.
 

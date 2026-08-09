@@ -3,6 +3,7 @@ package com.material.xray.di
 import android.content.Context
 import androidx.room.Room
 import com.material.xray.data.db.AppDatabase
+import com.material.xray.data.db.DatabaseMigrations
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.dao.ServerDao
 import com.material.xray.data.db.dao.SubscriptionDao
@@ -24,21 +25,13 @@ object DatabaseModule {
         AppDatabase::class.java,
         AppDatabase.DATABASE_NAME,
     )
-        .addMigrations(AppDatabase.MIGRATION_1_2)
-        .addMigrations(AppDatabase.MIGRATION_2_3)
-        .addMigrations(AppDatabase.MIGRATION_3_4)
-        .addMigrations(AppDatabase.MIGRATION_4_5)
-        .addMigrations(AppDatabase.MIGRATION_5_6)
-        .addMigrations(AppDatabase.MIGRATION_6_7)
-        .addMigrations(AppDatabase.MIGRATION_7_8)
-        .addMigrations(AppDatabase.MIGRATION_8_9)
-        .addMigrations(AppDatabase.MIGRATION_9_10)
-        .addMigrations(AppDatabase.MIGRATION_10_11)
-        .addMigrations(AppDatabase.MIGRATION_11_12)
-        .addMigrations(AppDatabase.MIGRATION_12_13)
-        .addMigrations(AppDatabase.MIGRATION_13_14)
+        .addMigrations(*DatabaseMigrations.all)
         .addCallback(AppDatabase.VALUE_VALIDATION_CALLBACK)
-        .fallbackToDestructiveMigration(dropAllTables = true)
+        // A downgrade cannot be migrated, so recreating the tables is the only way forward. An
+        // upgrade that Room cannot satisfy is a bug in the migration chain, and destroying the
+        // user's subscriptions and routing to paper over it is worse than failing loudly, so no
+        // destructive fallback is registered for that direction.
+        .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
         .build()
 
     @Provides

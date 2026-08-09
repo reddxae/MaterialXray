@@ -19,7 +19,7 @@ class SettingsDefaultMigrationTest {
         val migrated = migration.migrate(preferences)
 
         assertNull(migrated[SettingsRepository.XRAY_BUFFER_SIZE_KIB])
-        assertEquals(4, migrated[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(5, migrated[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
@@ -38,7 +38,7 @@ class SettingsDefaultMigrationTest {
         val migrated = SettingsDefaultMigration().migrate(preferences)
 
         assertNull(migrated[SettingsRepository.TUN_NAME])
-        assertEquals(4, migrated[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(5, migrated[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
@@ -52,7 +52,7 @@ class SettingsDefaultMigrationTest {
         val migrated = SettingsDefaultMigration().migrate(preferences)
 
         assertNull(migrated[latencyDnsServers])
-        assertEquals(4, migrated[SETTINGS_DEFAULTS_REVISION])
+        assertEquals(5, migrated[SETTINGS_DEFAULTS_REVISION])
     }
 
     @Test
@@ -85,19 +85,42 @@ class SettingsDefaultMigrationTest {
         val preferences = mutablePreferencesOf(
             SETTINGS_DEFAULTS_REVISION to 3,
             SettingsRepository.ALLOW_IPV6 to true,
-            SettingsRepository.DNS_SERVERS to "1.1.1.1,1.0.0.1",
+            SettingsRepository.DNS_SERVERS to "8.8.8.8,9.9.9.9",
             SettingsRepository.DOMESTIC_DNS_SERVERS to "77.88.8.8,77.88.8.1",
         )
 
         val migrated = SettingsDefaultMigration().migrate(preferences)
 
         assertEquals(
-            "1.1.1.1,1.0.0.1,2606:4700:4700::1111,2606:4700:4700::1001",
+            "8.8.8.8,9.9.9.9,2001:4860:4860::8888,2620:fe::fe",
             migrated[SettingsRepository.DNS_SERVERS],
         )
         assertEquals(
             "77.88.8.8,77.88.8.1,2a02:6b8::feed:0ff,2a02:6b8:0:1::feed:0ff",
             migrated[SettingsRepository.DOMESTIC_DNS_SERVERS],
+        )
+    }
+
+    @Test
+    fun `pre-IPv6 revision Cloudflare defaults migrate to the current endpoint defaults`() = runTest {
+        val ipv4Preferences = mutablePreferencesOf(
+            SETTINGS_DEFAULTS_REVISION to 3,
+            SettingsRepository.DNS_SERVERS to "1.1.1.1,1.0.0.1",
+        )
+        val dualStackPreferences = mutablePreferencesOf(
+            SETTINGS_DEFAULTS_REVISION to 3,
+            SettingsRepository.ALLOW_IPV6 to true,
+            SettingsRepository.DNS_SERVERS to "1.1.1.1,1.0.0.1",
+        )
+
+        val migratedIpv4 = SettingsDefaultMigration().migrate(ipv4Preferences)
+        val migratedDualStack = SettingsDefaultMigration().migrate(dualStackPreferences)
+
+        assertNull(migratedIpv4[SettingsRepository.DNS_SERVERS])
+        assertEquals(
+            "https://1.1.1.1/dns-query,https://1.0.0.1/dns-query," +
+                "https://[2606:4700:4700::1111]/dns-query,https://[2606:4700:4700::1001]/dns-query",
+            migratedDualStack[SettingsRepository.DNS_SERVERS],
         )
     }
 
@@ -118,7 +141,7 @@ class SettingsDefaultMigrationTest {
     @Test
     fun `DNS normalization repairs current revision backup values`() {
         val preferences = mutablePreferencesOf(
-            SETTINGS_DEFAULTS_REVISION to 4,
+            SETTINGS_DEFAULTS_REVISION to 5,
             SettingsRepository.ALLOW_IPV6 to true,
             SettingsRepository.DNS_SERVERS to "1.1.1.1,1.0.0.1",
         )
@@ -132,8 +155,33 @@ class SettingsDefaultMigrationTest {
     }
 
     @Test
+    fun `previous DNS defaults are removed so explicit endpoint defaults can apply`() = runTest {
+        val ipv4Preferences = mutablePreferencesOf(
+            SETTINGS_DEFAULTS_REVISION to 4,
+            SettingsRepository.DNS_SERVERS to "1.1.1.1,1.0.0.1",
+        )
+        val dualStackPreferences = mutablePreferencesOf(
+            SETTINGS_DEFAULTS_REVISION to 4,
+            SettingsRepository.ALLOW_IPV6 to true,
+            SettingsRepository.DNS_SERVERS to
+                "1.1.1.1,1.0.0.1,2606:4700:4700::1111,2606:4700:4700::1001",
+        )
+
+        val migratedIpv4 = SettingsDefaultMigration().migrate(ipv4Preferences)
+        val migratedDualStack = SettingsDefaultMigration().migrate(dualStackPreferences)
+
+        assertNull(migratedIpv4[SettingsRepository.DNS_SERVERS])
+        assertEquals(
+            "https://1.1.1.1/dns-query,https://1.0.0.1/dns-query," +
+                "https://[2606:4700:4700::1111]/dns-query,https://[2606:4700:4700::1001]/dns-query",
+            migratedDualStack[SettingsRepository.DNS_SERVERS],
+        )
+        assertEquals(5, migratedIpv4[SETTINGS_DEFAULTS_REVISION])
+    }
+
+    @Test
     fun `current revision does not rerun migrations`() = runTest {
-        val preferences = mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 4)
+        val preferences = mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 5)
 
         assertFalse(SettingsDefaultMigration().shouldMigrate(preferences))
     }
@@ -151,7 +199,7 @@ class SettingsDefaultMigrationTest {
     @Test(expected = IllegalArgumentException::class)
     fun `DataStore lifecycle rejects newer settings revision`() = runTest {
         SettingsDefaultMigration().shouldMigrate(
-            mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 5),
+            mutablePreferencesOf(SETTINGS_DEFAULTS_REVISION to 6),
         )
     }
 

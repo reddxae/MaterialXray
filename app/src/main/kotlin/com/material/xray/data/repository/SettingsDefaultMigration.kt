@@ -101,9 +101,12 @@ private fun validateSettingsDefaultsRevision(
     }
 }
 
-private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 4
+private const val CURRENT_SETTINGS_DEFAULTS_REVISION = 5
 private const val PREVIOUS_XRAY_BUFFER_SIZE_KIB = 512
 private const val PREVIOUS_TUN_NAME = "xray0"
+private const val PREVIOUS_DNS_SERVERS = "1.1.1.1,1.0.0.1"
+private const val PREVIOUS_IPV6_DNS_SERVERS =
+    "1.1.1.1,1.0.0.1,2606:4700:4700::1111,2606:4700:4700::1001"
 
 // Increment the revision and append a change whenever a compiled default changes or a setting is retired.
 private val SETTINGS_DEFAULT_CHANGES = listOf(
@@ -126,6 +129,22 @@ private val SETTINGS_DEFAULT_CHANGES = listOf(
 
         override fun apply(preferences: MutablePreferences) {
             normalizeStoredDnsSettings(preferences)
+        }
+    },
+    object : SettingDefaultChange {
+        override val revision = 5
+
+        override fun apply(preferences: MutablePreferences) {
+            val storedServers = preferences[SettingsRepository.DNS_SERVERS]
+            if (storedServers == PREVIOUS_DNS_SERVERS || storedServers == PREVIOUS_IPV6_DNS_SERVERS) {
+                preferences.remove(SettingsRepository.DNS_SERVERS)
+                if (preferences[SettingsRepository.ALLOW_IPV6] == true) {
+                    preferences[SettingsRepository.DNS_SERVERS] = normalizeDnsServersForIpv6(
+                        SettingsRepository.DEFAULT_DNS_SERVERS,
+                        allowIpv6 = true,
+                    )
+                }
+            }
         }
     },
 )

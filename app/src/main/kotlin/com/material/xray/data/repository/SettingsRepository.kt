@@ -96,7 +96,7 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_GEOSITE_URL =
             "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
         const val DEFAULT_LATENCY_CHECK_URL = "https://gstatic.com/generate_204"
-        const val DEFAULT_DNS_SERVERS = "1.1.1.1,1.0.0.1"
+        const val DEFAULT_DNS_SERVERS = "https://1.1.1.1/dns-query,https://1.0.0.1/dns-query"
         const val DEFAULT_DOMESTIC_DNS_SERVERS = "77.88.8.8,77.88.8.1"
         const val DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED = true
         const val DEFAULT_TUN_NAME = ""

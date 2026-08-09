@@ -43,4 +43,27 @@ class DnsServerSettingsTest {
             ),
         )
     }
+
+    @Test
+    fun `normalization preserves explicit DNS endpoints and removes IPv6-only endpoints when disabled`() {
+        assertEquals(
+            "https://1.1.1.1/dns-query,https://dns.google/dns-query",
+            normalizeDnsServersForIpv6(
+                "https://1.1.1.1/dns-query,tcp://[2606:4700:4700::1111]:53,https://dns.google/dns-query",
+                allowIpv6 = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `enabling IPv6 appends matching endpoint URLs`() {
+        assertEquals(
+            "https://1.1.1.1/dns-query,https://1.0.0.1/dns-query," +
+                "https://[2606:4700:4700::1111]/dns-query,https://[2606:4700:4700::1001]/dns-query",
+            normalizeDnsServersForIpv6(
+                "https://1.1.1.1/dns-query,https://1.0.0.1/dns-query",
+                allowIpv6 = true,
+            ),
+        )
+    }
 }

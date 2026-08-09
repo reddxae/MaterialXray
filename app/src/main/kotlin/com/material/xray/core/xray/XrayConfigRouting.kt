@@ -228,17 +228,23 @@ private fun buildOrRules(rule: RoutingRule): List<JsonObject> {
 
 private fun String.commaSeparatedValues(): List<String> = split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
-// Xray-core #2248 can permanently cache empty Cloudflare UDP responses for individual names.
+// Xray-core #2248 can permanently cache empty Cloudflare UDP responses for individual names, so every
+// bare Cloudflare resolver literal is rewritten to a non-UDP endpoint. Cloudflare serves its resolver
+// IPs in the DoH certificate, so an address without an explicit port becomes a DoH URL; an address that
+// pins a port keeps that port over TCP because DoH cannot honour it.
 private fun String.toReliableXrayDnsAddress(): String {
     val host = numericDnsHostOrNull() ?: return this
     if (host !in CLOUDFLARE_IPV4_DNS && !host.lowercase().startsWith(CLOUDFLARE_IPV6_DNS_PREFIX)) return this
 
+    val escapedAddress = replace("%", "%25")
     return when {
-        isIpv4DnsServerLiteral(this) || isIpv4DnsServerWithPort() -> "tcp://$this"
-        startsWith('[') -> "tcp://${replace("%", "%25")}"
-        else -> "tcp://[${replace("%", "%25")}]"
+        hasExplicitDnsPort() -> "tcp://$escapedAddress"
+        isIpv4DnsServerLiteral(this) || startsWith('[') -> "https://$escapedAddress/dns-query"
+        else -> "https://[$escapedAddress]/dns-query"
     }
 }
+
+private fun String.hasExplicitDnsPort(): Boolean = isIpv4DnsServerWithPort() || (startsWith('[') && substringAfter(']').isNotEmpty())
 
 private fun String.numericDnsHostOrNull(): String? = when {
     isIpv4DnsServerLiteral(this) -> this

@@ -2,15 +2,39 @@ package com.material.xray.model
 
 internal fun normalizeDnsServersForIpv6(servers: String, allowIpv6: Boolean): String {
     val values = servers.commaSeparatedValues()
-    if (!allowIpv6) return values.filterNot(::isIpv6DnsServerLiteral).joinToString(",")
-    if (values.isEmpty() || values.any(::isIpv6DnsServerLiteral) || !values.all(::isIpv4DnsServerLiteral)) {
+    if (!allowIpv6) return values.filterNot(::isIpv6DnsServerEndpoint).joinToString(",")
+    if (values.isEmpty() || values.any(::isIpv6DnsServerEndpoint)) {
         return values.joinToString(",")
     }
 
-    val mappedServers = values.mapNotNull(IPV4_TO_IPV6_DNS::get)
-    return (values + mappedServers.ifEmpty { listOf(DEFAULT_IPV6_DNS_SERVER) })
+    val mappedServers = values.mapNotNull(String::mappedIpv6DnsServer)
+    val fallbackServers = if (mappedServers.isEmpty() && values.all(::isIpv4DnsServerLiteral)) {
+        listOf(DEFAULT_IPV6_DNS_SERVER)
+    } else {
+        emptyList()
+    }
+    return (values + mappedServers + fallbackServers)
         .distinct()
         .joinToString(",")
+}
+
+private fun String.mappedIpv6DnsServer(): String? {
+    IPV4_TO_IPV6_DNS[this]?.let { return it }
+
+    val authorityStart = indexOf("://").takeIf { it >= 0 }?.plus(3) ?: return null
+    val authorityEnd = listOf(indexOf('/', authorityStart), indexOf('?', authorityStart), indexOf('#', authorityStart))
+        .filter { it >= 0 }
+        .minOrNull()
+        ?: length
+    val authority = substring(authorityStart, authorityEnd)
+    val ipv4Host = authority.substringBefore(':')
+    val ipv6Host = IPV4_TO_IPV6_DNS[ipv4Host] ?: return null
+    return replaceRange(authorityStart, authorityStart + ipv4Host.length, "[$ipv6Host]")
+}
+
+private fun isIpv6DnsServerEndpoint(value: String): Boolean {
+    val authority = value.substringAfter("://", value).substringBefore('/').substringBefore('?')
+    return isIpv6DnsServerLiteral(authority)
 }
 
 private fun String.commaSeparatedValues(): List<String> = split(',').map(String::trim).filter(String::isNotEmpty)

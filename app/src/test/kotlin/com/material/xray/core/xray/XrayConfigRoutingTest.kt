@@ -46,7 +46,17 @@ class XrayConfigRoutingTest {
 
         assertEquals("default-dns", dns.getValue("tag").jsonPrimitive.content)
         assertEquals(
-            listOf("tcp://1.1.1.1", "8.8.8.8", "77.88.8.8", "77.88.8.1"),
+            listOf("https://1.1.1.1/dns-query", "8.8.8.8", "77.88.8.8", "77.88.8.1"),
+            dns.getValue("servers").jsonArray.map { it.jsonPrimitive.content },
+        )
+    }
+
+    @Test
+    fun `buildDns preserves explicit DNS endpoint URLs`() {
+        val dns = buildDns(servers = "https://dns.quad9.net/dns-query,tcp://9.9.9.9:53")
+
+        assertEquals(
+            listOf("https://dns.quad9.net/dns-query", "tcp://9.9.9.9:53"),
             dns.getValue("servers").jsonArray.map { it.jsonPrimitive.content },
         )
     }
@@ -57,17 +67,17 @@ class XrayConfigRoutingTest {
 
         assertTrue("queryStrategy" !in dns)
         assertEquals(
-            listOf("tcp://1.1.1.1"),
+            listOf("https://1.1.1.1/dns-query"),
             dns.getValue("servers").jsonArray.map { it.jsonPrimitive.content },
         )
     }
 
     @Test
-    fun `buildDns uses bracketed DNS-over-TCP endpoints for IPv6 resolvers`() {
+    fun `buildDns uses bracketed DNS-over-HTTPS endpoints for Cloudflare IPv6 resolvers`() {
         val dns = buildDns(servers = "2606:4700:4700::1111, [2a02:6b8::feed:0ff]:53", allowIpv6 = true)
 
         assertEquals(
-            listOf("tcp://[2606:4700:4700::1111]", "[2a02:6b8::feed:0ff]:53"),
+            listOf("https://[2606:4700:4700::1111]/dns-query", "[2a02:6b8::feed:0ff]:53"),
             dns.getValue("servers").jsonArray.map { it.jsonPrimitive.content },
         )
     }

@@ -96,6 +96,10 @@ internal class RawConfigTunInjector(
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))
     }
 
+    // The app owns DNS for raw configs: it replaces their `dns` block outright, so the rules that route
+    // its injected resolvers stay ahead of the raw rules. `default-dns` only matches Xray's own DNS
+    // client, so leading with it cannot capture unrelated traffic, while trailing it would let any raw
+    // catch-all divert resolver traffic away from the proxy.
     private fun mergeRouting(generated: JsonObject, raw: JsonObject?): JsonObject {
         if (raw == null) return generated
 

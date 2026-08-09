@@ -160,7 +160,10 @@ class RawConfigTunInjectorTest {
                   ],
                   "routing": {
                     "domainStrategy": "IPIfNonMatch",
-                    "rules": [{"network":"tcp,udp","balancerTag":"balance"}],
+                    "rules": [
+                      {"ip":["1.1.1.1"],"network":"tcp","port":"443","outboundTag":"proxy-2"},
+                      {"network":"tcp,udp","balancerTag":"balance"}
+                    ],
                     "balancers": [{"tag":"balance","selector":["proxy"],"strategy":{"type":"leastLoad"}}]
                   },
                   "burstObservatory": {"subjectSelector":["proxy"]}
@@ -192,7 +195,21 @@ class RawConfigTunInjectorTest {
             it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
         }
         assertEquals("proxy", defaultDnsRule.getValue("outboundTag").jsonPrimitive.content)
-        assertEquals("balance", rules.last().getValue("balancerTag").jsonPrimitive.content)
+        val rawEndpointRuleIndex = rules.indexOfFirst {
+            it["ip"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "1.1.1.1"
+        }
+        val rawBalancerRuleIndex = rules.indexOfFirst { it["balancerTag"]?.jsonPrimitive?.content == "balance" }
+        val defaultDnsRuleIndex = rules.indexOf(defaultDnsRule)
+        assertTrue("Raw endpoint route must be preserved", rawEndpointRuleIndex >= 0)
+        assertTrue("Raw balancer route must be preserved", rawBalancerRuleIndex >= 0)
+        assertTrue(
+            "The app-managed DNS route must run before raw rules that could capture resolver traffic",
+            defaultDnsRuleIndex < rawEndpointRuleIndex,
+        )
+        assertTrue(
+            "The app-managed DNS route must run before raw catch-all rules",
+            defaultDnsRuleIndex < rawBalancerRuleIndex,
+        )
         assertEquals("balance", routing.getValue("balancers").jsonArray.single().jsonObject.getValue("tag").jsonPrimitive.content)
         assertEquals(
             listOf("proxy", "direct", "block", "dns-out", "proxy-2"),

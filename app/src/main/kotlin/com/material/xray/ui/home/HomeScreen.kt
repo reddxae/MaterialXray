@@ -20,7 +20,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -41,7 +40,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -70,7 +68,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -90,7 +87,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.ui.platform.LocalContext
@@ -139,6 +135,7 @@ import com.material.xray.service.AppUpdateInstallProgress
 import com.material.xray.service.AppUpdateInstallStage
 import com.material.xray.service.ConnectionEvent
 import com.material.xray.ui.components.ScrolledTopAppBar
+import com.material.xray.ui.components.SelectableOptionRow
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
 import java.util.Locale
@@ -1626,35 +1623,12 @@ private fun PingMethodRow(
     selected: Boolean,
     onSelected: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .selectable(
-                selected = selected,
-                onClick = onSelected,
-                role = Role.RadioButton,
-            )
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AutoUpdateIntervalIndicator(selected = selected)
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = stringResource(method.labelResource),
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            )
-            Text(
-                text = stringResource(method.descriptionResource),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    SelectableOptionRow(
+        title = stringResource(method.labelResource),
+        description = stringResource(method.descriptionResource),
+        selected = selected,
+        onSelected = onSelected,
+    )
 }
 
 @Composable
@@ -1929,27 +1903,6 @@ private fun autoUpdateIntervalLabel(intervalHours: Int): String = when (interval
         pluralStringResource(R.plurals.home_duration_days, days, days)
     }
     else -> pluralStringResource(R.plurals.home_duration_hours, intervalHours, intervalHours)
-}
-
-@Composable
-private fun AutoUpdateIntervalIndicator(selected: Boolean) {
-    val primary = MaterialTheme.colorScheme.primary
-    val outline = MaterialTheme.colorScheme.outline
-
-    Canvas(modifier = Modifier.size(20.dp)) {
-        val strokeWidth = 2.dp.toPx()
-        drawCircle(
-            color = if (selected) primary else outline,
-            radius = size.minDimension / 2 - strokeWidth / 2,
-            style = Stroke(width = strokeWidth),
-        )
-        if (selected) {
-            drawCircle(
-                color = primary,
-                radius = size.minDimension * 0.28f,
-            )
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

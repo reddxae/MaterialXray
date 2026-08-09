@@ -1,7 +1,6 @@
 package com.material.xray.ui.apps
 
 import android.content.Context
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -53,12 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,6 +66,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.ui.components.ScrollFadeEdges
+import com.material.xray.ui.components.SelectableOptionRow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -620,56 +616,12 @@ private fun RouteOptionRow(
     onSelected: () -> Unit,
 ) {
     val context = LocalContext.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .selectable(
-                selected = selected,
-                onClick = onSelected,
-                role = Role.RadioButton,
-            )
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RouteOptionIndicator(selected = selected)
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = option.title.resolve(context),
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            )
-            Text(
-                text = option.description.resolve(context),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun RouteOptionIndicator(selected: Boolean) {
-    val primary = MaterialTheme.colorScheme.primary
-    val outline = MaterialTheme.colorScheme.outline
-
-    Canvas(modifier = Modifier.size(20.dp)) {
-        val strokeWidth = 2.dp.toPx()
-        drawCircle(
-            color = if (selected) primary else outline,
-            radius = size.minDimension / 2 - strokeWidth / 2,
-            style = Stroke(width = strokeWidth),
-        )
-        if (selected) {
-            drawCircle(
-                color = primary,
-                radius = size.minDimension * 0.28f,
-            )
-        }
-    }
+    SelectableOptionRow(
+        title = option.title.resolve(context),
+        description = option.description.resolve(context),
+        selected = selected,
+        onSelected = onSelected,
+    )
 }
 
 private fun AppRouteText.resolve(context: Context): String = when (this) {

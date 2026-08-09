@@ -1,6 +1,7 @@
 package com.material.xray.service
 
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,7 +10,7 @@ import org.junit.Test
 class RootCertificateBundleTest {
 
     @Test
-    fun `writes certificates as an atomic PEM bundle`() {
+    fun `writes certificates as an atomic PEM bundle`() = runTest {
         val directory = Files.createTempDirectory("root-ca-bundle-test").toFile()
         val bundleFile = directory.resolve("ca-certificates.pem")
 
@@ -40,7 +41,7 @@ class RootCertificateBundleTest {
     }
 
     @Test
-    fun `empty Android CA store leaves existing bundle unchanged`() {
+    fun `empty Android CA store leaves existing bundle unchanged`() = runTest {
         val directory = Files.createTempDirectory("root-ca-bundle-test").toFile()
         val bundleFile = directory.resolve("ca-certificates.pem").apply { writeText("existing") }
 

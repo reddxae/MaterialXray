@@ -426,7 +426,7 @@ internal class ConnectionManager(
             }
         }
         timedStep("Config write") {
-            withContext(Dispatchers.IO) { xrayBinary.writeConfig(configJson) }
+            xrayBinary.writeConfig(configJson)
         }
         log.append(LogSource.APP, "Config written to ${xrayBinary.configPath()} (${configJson.length} chars)")
     }
@@ -455,7 +455,7 @@ internal class ConnectionManager(
         }
     }
 
-    private fun writeConnectionStateFile(
+    private suspend fun writeConnectionStateFile(
         pid: Int,
         tunName: String,
         serverName: String,
@@ -644,7 +644,7 @@ internal class ConnectionManager(
         return false
     }
 
-    private fun finishSuccessfulConnection(
+    private suspend fun finishSuccessfulConnection(
         server: ServerConfig,
         pid: Int,
         tunName: String,
@@ -959,7 +959,7 @@ internal class ConnectionManager(
         ?.takeIf { it.pid == pid }
         ?.mode
 
-    private fun persistedRuntimeMode(): XrayRuntimeMode? = stateStore.read()?.let { state ->
+    private suspend fun persistedRuntimeMode(): XrayRuntimeMode? = stateStore.read()?.let { state ->
         if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) {
             XrayRuntimeMode.VpnService
         } else {

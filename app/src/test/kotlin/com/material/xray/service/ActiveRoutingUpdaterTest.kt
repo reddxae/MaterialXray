@@ -119,9 +119,9 @@ class ActiveRoutingUpdaterTest {
     private class FakeStateStore(
         var state: XrayState?,
     ) : ActiveRoutingStateStore {
-        override fun read(): XrayState? = state
+        override suspend fun read(): XrayState? = state
 
-        override fun write(state: XrayState) {
+        override suspend fun write(state: XrayState) {
             this.state = state
         }
     }

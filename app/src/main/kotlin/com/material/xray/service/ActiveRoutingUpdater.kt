@@ -4,6 +4,8 @@ import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayState
 import com.material.xray.model.ConnectionState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 
 sealed interface PhysicalRouteUpdateResult {
@@ -12,12 +14,12 @@ sealed interface PhysicalRouteUpdateResult {
 }
 
 internal interface ActiveRoutingStateStore {
-    fun read(): XrayState?
-    fun write(state: XrayState)
+    suspend fun read(): XrayState?
+    suspend fun write(state: XrayState)
 }
 
 internal interface ConnectionStateStore : ActiveRoutingStateStore {
-    fun delete()
+    suspend fun delete()
 }
 
 internal interface ActiveRoutingController {
@@ -72,14 +74,14 @@ internal interface TunRoutingGateway {
 internal class StateFileRoutingStateStore(
     private val stateFile: StateFile,
 ) : ConnectionStateStore {
-    override fun read(): XrayState? = stateFile.read()
+    override suspend fun read(): XrayState? = withContext(Dispatchers.IO) { stateFile.read() }
 
-    override fun write(state: XrayState) {
-        stateFile.write(state)
+    override suspend fun write(state: XrayState) {
+        withContext(Dispatchers.IO) { stateFile.write(state) }
     }
 
-    override fun delete() {
-        stateFile.delete()
+    override suspend fun delete() {
+        withContext(Dispatchers.IO) { stateFile.delete() }
     }
 }
 

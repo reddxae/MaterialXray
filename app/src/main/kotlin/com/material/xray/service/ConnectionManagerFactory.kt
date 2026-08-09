@@ -28,6 +28,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.net.InetAddress
 import java.net.ServerSocket
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal interface ConnectionEnvironment {
     val binDir: String
@@ -114,12 +116,15 @@ internal fun parseProcessMetrics(output: String): ProcessMetrics? {
 private const val KILOBYTES_PER_MEBIBYTE = 1024L
 
 internal interface ConnectionXrayBinary : XrayProcessBinary {
-    fun ensureRootBinaryExtracted(): Boolean
-    fun ensureAndroidBinaryAvailable(): Boolean
-    fun readConfig(): String?
-    fun writeConfig(configJson: String)
+    suspend fun ensureRootBinaryExtracted(): Boolean
+    suspend fun ensureAndroidBinaryAvailable(): Boolean
+    suspend fun readConfig(): String?
+    suspend fun writeConfig(configJson: String)
 }
 
+// Extracting the bundled core, and reading or writing config.json, are file operations that must
+// not run on whichever thread the caller happens to be on; the service issues connection commands
+// on the main thread.
 internal class XrayBinaryConnectionAdapter(
     private val binary: XrayBinary,
 ) : ConnectionXrayBinary {
@@ -129,10 +134,20 @@ internal class XrayBinaryConnectionAdapter(
         get() = binary.androidBinaryPath
 
     override fun configPath(): String = binary.configPath()
-    override fun ensureRootBinaryExtracted(): Boolean = binary.ensureRootBinaryExtracted()
-    override fun ensureAndroidBinaryAvailable(): Boolean = binary.ensureAndroidBinaryAvailable()
-    override fun readConfig(): String? = binary.readConfig()
-    override fun writeConfig(configJson: String) = binary.writeConfig(configJson)
+
+    override suspend fun ensureRootBinaryExtracted(): Boolean = withContext(Dispatchers.IO) {
+        binary.ensureRootBinaryExtracted()
+    }
+
+    override suspend fun ensureAndroidBinaryAvailable(): Boolean = withContext(Dispatchers.IO) {
+        binary.ensureAndroidBinaryAvailable()
+    }
+
+    override suspend fun readConfig(): String? = withContext(Dispatchers.IO) { binary.readConfig() }
+
+    override suspend fun writeConfig(configJson: String) {
+        withContext(Dispatchers.IO) { binary.writeConfig(configJson) }
+    }
 }
 
 internal interface ConnectionCleanup {

@@ -193,7 +193,7 @@ class XrayProcessSupervisorTest {
     }
 
     @Test
-    fun `user process destruction requests stop without waiting`() {
+    fun `user process destruction requests stop without waiting`() = runTest {
         val launcher = FakeUserXrayProcessLauncher()
         val supervisor = userSupervisor(processLauncher = launcher)
         supervisor.start(binDir = "/tmp/xray bin", tunFd = 89)

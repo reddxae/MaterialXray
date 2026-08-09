@@ -468,10 +468,10 @@ class ConnectionManagerTest {
         var configJson: String? = null
 
         override fun configPath(): String = "/tmp/xray/config.json"
-        override fun ensureRootBinaryExtracted(): Boolean = rootReady
-        override fun ensureAndroidBinaryAvailable(): Boolean = true
-        override fun readConfig(): String? = configJson
-        override fun writeConfig(configJson: String) {
+        override suspend fun ensureRootBinaryExtracted(): Boolean = rootReady
+        override suspend fun ensureAndroidBinaryAvailable(): Boolean = true
+        override suspend fun readConfig(): String? = configJson
+        override suspend fun writeConfig(configJson: String) {
             this.configJson = configJson
         }
     }
@@ -582,13 +582,13 @@ class ConnectionManagerTest {
     private class FakeStateStore : ConnectionStateStore {
         var state: XrayState? = null
 
-        override fun read(): XrayState? = state
+        override suspend fun read(): XrayState? = state
 
-        override fun write(state: XrayState) {
+        override suspend fun write(state: XrayState) {
             this.state = state
         }
 
-        override fun delete() {
+        override suspend fun delete() {
             state = null
         }
     }
@@ -614,7 +614,7 @@ class ConnectionManagerTest {
     private class FakeUserProcess : UserXrayProcessController {
         var stopCalls = 0
 
-        override fun prepareLogFile() = Unit
+        override suspend fun prepareLogFile() = Unit
         override fun start(binDir: String, tunFd: Int): Int = 42
         override suspend fun isAlive(pid: Int): Boolean = true
         override suspend fun kill(pid: Int, signal: Int): Boolean = true

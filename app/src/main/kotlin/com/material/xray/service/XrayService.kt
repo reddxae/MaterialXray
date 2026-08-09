@@ -536,7 +536,7 @@ class XrayService : VpnService() {
         stopProcessWatchdog()
         closeVpnInterface()
 
-        val persistedState = stateFile.read()
+        val persistedState = withContext(Dispatchers.IO) { stateFile.read() }
         val rootModeConfigured = settingsRepo.useRootService.first()
         when {
             state is ConnectionState.Connected -> {
@@ -547,7 +547,7 @@ class XrayService : VpnService() {
                 persistedState.physicalInterface != VPN_SERVICE_INTERFACE_LABEL -> {
                 if (!connectionManager.ensureCleanRootRuntime()) return
             }
-            else -> stateFile.delete()
+            else -> withContext(Dispatchers.IO) { stateFile.delete() }
         }
 
         val config = loadLastServerConfig()

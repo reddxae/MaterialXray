@@ -7,38 +7,44 @@ import java.nio.file.StandardCopyOption
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import java.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 internal fun interface RootCertificateBundle {
-    fun update(file: File)
+    suspend fun update(file: File)
 }
 
 internal class AndroidRootCertificateBundle(
     private val loadCertificates: () -> List<ByteArray> = ::loadAndroidCaCertificates,
 ) : RootCertificateBundle {
-    override fun update(file: File) {
-        val certificates = loadCertificates()
-        require(certificates.isNotEmpty()) { "Android CA store contains no certificates" }
+    // Enumerating the Android CA store and rewriting the bundle happens on every root connect, so
+    // it must not run on whichever thread issued the connection command.
+    override suspend fun update(file: File) {
+        withContext(Dispatchers.IO) {
+            val certificates = loadCertificates()
+            require(certificates.isNotEmpty()) { "Android CA store contains no certificates" }
 
-        val parent = requireNotNull(file.parentFile) { "Certificate bundle must have a parent directory" }
-        check(parent.isDirectory || parent.mkdirs()) { "Could not create certificate bundle directory: $parent" }
-        val temporaryFile = File.createTempFile("${file.name}.", ".tmp", parent)
+            val parent = requireNotNull(file.parentFile) { "Certificate bundle must have a parent directory" }
+            check(parent.isDirectory || parent.mkdirs()) { "Could not create certificate bundle directory: $parent" }
+            val temporaryFile = File.createTempFile("${file.name}.", ".tmp", parent)
 
-        try {
-            temporaryFile.bufferedWriter(StandardCharsets.US_ASCII).use { writer ->
-                certificates.forEach { certificate ->
-                    writer.appendLine("-----BEGIN CERTIFICATE-----")
-                    writer.appendLine(PEM_ENCODER.encodeToString(certificate))
-                    writer.appendLine("-----END CERTIFICATE-----")
+            try {
+                temporaryFile.bufferedWriter(StandardCharsets.US_ASCII).use { writer ->
+                    certificates.forEach { certificate ->
+                        writer.appendLine("-----BEGIN CERTIFICATE-----")
+                        writer.appendLine(PEM_ENCODER.encodeToString(certificate))
+                        writer.appendLine("-----END CERTIFICATE-----")
+                    }
                 }
+                Files.move(
+                    temporaryFile.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } finally {
+                temporaryFile.delete()
             }
-            Files.move(
-                temporaryFile.toPath(),
-                file.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } finally {
-            temporaryFile.delete()
         }
     }
 

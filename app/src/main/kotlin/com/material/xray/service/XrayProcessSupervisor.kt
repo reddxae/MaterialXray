@@ -9,7 +9,9 @@ import com.material.xray.core.root.RootShell
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 internal interface XrayProcessProbe {
     suspend fun isAlive(pid: Int): Boolean
@@ -25,7 +27,12 @@ internal interface RootXrayProcessController : XrayProcessProbe {
 }
 
 internal interface UserXrayProcessController : XrayProcessProbe {
-    fun prepareLogFile()
+    suspend fun prepareLogFile()
+
+    /**
+     * Starts the core against [tunFd], which the caller still owns. Implementations must not
+     * suspend before the descriptor has been duplicated into the child.
+     */
     fun start(binDir: String, tunFd: Int): Int
     suspend fun kill(pid: Int, signal: Int = 15): Boolean
     suspend fun stop()
@@ -102,7 +109,9 @@ internal class XrayProcessSupervisor(
 
     override suspend fun prepareLogFile() {
         commandRunner.execute("rm -f $logFile")
-        FileOutputStream(environment.filesDir.resolve(XRAY_LOG_FILE_NAME), false).use { }
+        withContext(Dispatchers.IO) {
+            FileOutputStream(environment.filesDir.resolve(XRAY_LOG_FILE_NAME), false).use { }
+        }
     }
 
     override suspend fun start(binDir: String): Int {
@@ -246,10 +255,14 @@ internal class UserXrayProcessSupervisor(
     private val logFile: File
         get() = environment.filesDir.resolve(XRAY_LOG_FILE_NAME)
 
-    override fun prepareLogFile() {
-        FileOutputStream(logFile, false).use { }
+    override suspend fun prepareLogFile() {
+        withContext(Dispatchers.IO) { FileOutputStream(logFile, false).use { } }
     }
 
+    // Deliberately not dispatched elsewhere. The caller owns the tunnel ParcelFileDescriptor and
+    // only lends the raw descriptor number, so duplicating it into the child has to happen before
+    // the caller can reach a suspension point and let a teardown close it underneath us. fork and
+    // execve do not wait on IO, so there is nothing to move off the caller's thread anyway.
     override fun start(binDir: String, tunFd: Int): Int {
         val binaryPath = requireNotNull(xrayBinary.androidBinaryPath) { "Android xray binary is unavailable" }
         pid = processLauncher.start(

@@ -41,6 +41,34 @@ class TrojanParserTest {
     }
 
     @Test
+    fun `parse trojan link preserves literal plus signs`() {
+        val uri = "trojan://pass+word@example.com:443?path=%2Fapi+v1&sni=a%2Bb.example#My+Trojan"
+
+        val config = TrojanParser.parse(uri)!!
+
+        assertEquals("pass+word", config.password)
+        assertEquals("/api+v1", config.transport.path)
+        assertEquals("a+b.example", config.security.sni)
+        assertEquals("My+Trojan", config.name)
+    }
+
+    @Test
+    fun `parse trojan link decodes encoded query params`() {
+        val uri = "trojan://secret@example.com:443?serviceName=my%2Fsvc&host=edge%2Dnode.example"
+
+        val config = TrojanParser.parse(uri)!!
+
+        assertEquals("my/svc", config.transport.serviceName)
+        assertEquals("edge-node.example", config.transport.host)
+    }
+
+    @Test
+    fun `parse returns null for out of range ports`() {
+        assertNull(TrojanParser.parse("trojan://secret@example.com:70000"))
+        assertNull(TrojanParser.parse("trojan://secret@example.com:0"))
+    }
+
+    @Test
     fun `parse returns null for missing required parts`() {
         assertNull(TrojanParser.parse("trojan://example.com:443"))
         assertNull(TrojanParser.parse("trojan://secret@example.com"))

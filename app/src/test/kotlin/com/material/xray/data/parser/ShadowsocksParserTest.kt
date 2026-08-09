@@ -55,6 +55,37 @@ class ShadowsocksParserTest {
     }
 
     @Test
+    fun `parse legacy link accepts standard base64`() {
+        val encoded = Base64.getEncoder()
+            .encodeToString("chacha20-ietf-poly1305:p/a+s/s@legacy.example:9000".toByteArray())
+
+        val config = ShadowsocksParser.parse("ss://$encoded")!!
+
+        assertEquals("legacy.example", config.address)
+        assertEquals("p/a+s/s", config.password)
+        assertEquals("chacha20-ietf-poly1305", config.extra["method"])
+    }
+
+    @Test
+    fun `parse preserves literal plus in fragment name`() {
+        val methodPassword = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("aes-256-gcm:pass".toByteArray())
+
+        val config = ShadowsocksParser.parse("ss://$methodPassword@1.2.3.4:8388#My+Server")!!
+
+        assertEquals("My+Server", config.name)
+    }
+
+    @Test
+    fun `parse returns null for out of range ports`() {
+        val methodPassword = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("aes-256-gcm:pass".toByteArray())
+
+        assertNull(ShadowsocksParser.parse("ss://$methodPassword@1.2.3.4:70000"))
+        assertNull(ShadowsocksParser.parse("ss://$methodPassword@1.2.3.4:0"))
+    }
+
+    @Test
     fun `parse returns null for malformed links`() {
         assertNull(ShadowsocksParser.parse("ss://not-base64@example.com:8388"))
         assertNull(ShadowsocksParser.parse("ss://YWVzLTI1Ni1nY206cGFzcw@example.com"))

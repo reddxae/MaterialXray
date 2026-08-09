@@ -4,7 +4,6 @@ import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionAppRoutingMode
 import com.material.xray.model.SubscriptionMetadata
 import com.material.xray.model.SubscriptionUserInfo
-import java.util.Base64
 import okhttp3.Headers
 import okhttp3.Request
 
@@ -158,34 +157,8 @@ object SubscriptionStandardHeaders {
         }
     }
 
-    fun decodeBase64ToUtf8(value: String): String? {
-        val sanitized = value.trim().replace(WHITESPACE_REGEX, "")
-        if (sanitized.isEmpty()) return null
-
-        val candidates = buildList {
-            add(sanitized)
-            add(sanitized.padBase64())
-        }.distinct()
-
-        for (candidate in candidates) {
-            runCatching {
-                Base64.getDecoder().decode(candidate).toString(Charsets.UTF_8)
-            }.getOrNull()?.let { return it }
-
-            runCatching {
-                Base64.getUrlDecoder().decode(candidate).toString(Charsets.UTF_8)
-            }.getOrNull()?.let { return it }
-        }
-
-        return null
-    }
-
-    private fun String.padBase64(): String {
-        val padding = (4 - (length % 4)) % 4
-        return this + "=".repeat(padding)
-    }
+    fun decodeBase64ToUtf8(value: String): String? = decodeLenientBase64ToUtf8(value)
 
     private const val BASE64_PREFIX = "base64:"
-    private val WHITESPACE_REGEX = "\\s+".toRegex()
     private val PACKAGE_LIST_SEPARATOR_REGEX = "[,;\\s]+".toRegex()
 }

@@ -43,6 +43,24 @@ class VmessParserTest {
     }
 
     @Test
+    fun `parse accepts url-safe and unpadded base64 payloads`() {
+        val json = """{"ps":"a?b>c","add":"1.2.3.4","port":"443","id":"uuid"}"""
+        val urlSafe = "vmess://${Base64.getUrlEncoder().withoutPadding().encodeToString(json.toByteArray())}"
+
+        val config = VmessParser.parse(urlSafe)!!
+
+        assertEquals("a?b>c", config.name)
+        assertEquals("1.2.3.4", config.address)
+    }
+
+    @Test
+    fun `parse returns null for out of range ports`() {
+        assertNull(VmessParser.parse(vmess("""{"add":"1.2.3.4","port":"0","id":"uuid"}""")))
+        assertNull(VmessParser.parse(vmess("""{"add":"1.2.3.4","port":"70000","id":"uuid"}""")))
+        assertNull(VmessParser.parse(vmess("""{"add":"1.2.3.4","port":"-1","id":"uuid"}""")))
+    }
+
+    @Test
     fun `parse returns null for invalid vmess payloads`() {
         assertNull(VmessParser.parse("vmess://not-base64"))
         assertNull(VmessParser.parse(vmess("""{"add":"","port":"443","id":"uuid"}""")))

@@ -6,7 +6,6 @@ import com.material.xray.model.SERVER_EXTRA_SPIDER_X
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.ServerConfig
 import java.net.URI
-import java.net.URLDecoder
 
 object VlessParser {
 
@@ -14,8 +13,8 @@ object VlessParser {
         val parsed = URI(uri)
         val userInfo = parsed.rawUserInfo ?: return null
         val host = parsed.host ?: return null
-        val port = parsed.port.takeIf { it > 0 } ?: return null
-        val fragment = parsed.rawFragment?.let { decodeUriComponent(it) } ?: ""
+        val port = parsed.port.takeIfValidPort() ?: return null
+        val fragment = parsed.rawFragment?.let(::decodeUriComponentLeniently) ?: ""
         val params = parseQuery(parsed.rawQuery ?: "")
 
         ServerConfig(
@@ -23,10 +22,10 @@ object VlessParser {
             name = fragment,
             address = host,
             port = port,
-            password = userInfo,
+            password = decodeUriComponentLeniently(userInfo),
             transport = ServerConfig.Transport(
                 type = params["type"] ?: "tcp",
-                path = params["path"]?.let { decodeUriComponent(it) } ?: "",
+                path = params["path"] ?: "",
                 host = params["host"] ?: "",
                 serviceName = params["serviceName"] ?: "",
                 mode = params["mode"] ?: "",
@@ -42,13 +41,11 @@ object VlessParser {
             extra = buildMap {
                 params["encryption"]?.let { put("encryption", it) }
                 params["flow"]?.let { put("flow", it) }
-                params["extra"]?.let { put(SERVER_EXTRA_XHTTP_EXTRA, decodeUriComponent(it)) }
-                params["pqv"]?.let { put(SERVER_EXTRA_MLDSA65_VERIFY, decodeUriComponent(it)) }
-                params["spx"]?.let { put(SERVER_EXTRA_SPIDER_X, decodeUriComponent(it)) }
+                params["extra"]?.let { put(SERVER_EXTRA_XHTTP_EXTRA, it) }
+                params["pqv"]?.let { put(SERVER_EXTRA_MLDSA65_VERIFY, it) }
+                params["spx"]?.let { put(SERVER_EXTRA_SPIDER_X, it) }
             },
             rawUri = uri,
         )
     }.getOrNull()
-
-    private fun decodeUriComponent(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
 }

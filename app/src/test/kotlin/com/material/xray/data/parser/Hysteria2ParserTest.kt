@@ -60,6 +60,34 @@ class Hysteria2ParserTest {
     }
 
     @Test
+    fun `parse accepts bracketed ipv6 endpoint with port`() {
+        val config = Hysteria2Parser.parse("hy2://secret@[2001:db8::1]:8443")!!
+
+        assertEquals("2001:db8::1", config.address)
+        assertEquals(8443, config.port)
+    }
+
+    @Test
+    fun `parse treats unbracketed ipv6 literal as host without port`() {
+        val config = Hysteria2Parser.parse("hy2://secret@2001:db8::1:8443")!!
+
+        assertEquals("2001:db8::1:8443", config.address)
+        assertEquals(443, config.port)
+    }
+
+    @Test
+    fun `parse rejects unbracketed multi-colon values that are not ipv6 literals`() {
+        assertNull(Hysteria2Parser.parse("hy2://secret@host:80:90"))
+        assertNull(Hysteria2Parser.parse("hy2://secret@a:b:c"))
+    }
+
+    @Test
+    fun `parse returns null for out of range ports`() {
+        assertNull(Hysteria2Parser.parse("hy2://secret@example.com:70000"))
+        assertNull(Hysteria2Parser.parse("hy2://secret@example.com:0"))
+    }
+
+    @Test
     fun `parse returns null for invalid Hysteria2 links`() {
         assertNull(Hysteria2Parser.parse("hysteria2://example.com:443"))
         assertNull(Hysteria2Parser.parse("hysteria2://secret@example.com:bad"))

@@ -68,6 +68,12 @@ class VlessParserTest {
     }
 
     @Test
+    fun `parse returns null for out of range ports`() {
+        assertNull(VlessParser.parse("vless://uuid@example.com:70000"))
+        assertNull(VlessParser.parse("vless://uuid@example.com:0"))
+    }
+
+    @Test
     fun `parse returns null for missing required parts`() {
         assertNull(VlessParser.parse("vless://example.com:443"))
         assertNull(VlessParser.parse("vless://uuid@example.com"))

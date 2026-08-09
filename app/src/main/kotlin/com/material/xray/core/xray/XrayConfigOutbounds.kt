@@ -1,5 +1,6 @@
 package com.material.xray.core.xray
 
+import com.material.xray.data.parser.decodeUriComponent
 import com.material.xray.model.Protocol
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_CONGESTION
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_DOWN
@@ -19,7 +20,6 @@ import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.normalizedXrayTransportType
 import java.net.URI
-import java.net.URLDecoder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -442,5 +442,3 @@ private fun ServerConfig.rawUriQueryParam(name: String): String? = runCatching {
         }
         .firstOrNull { it.isNotBlank() }
 }.getOrNull()
-
-private fun decodeUriComponent(value: String): String = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")

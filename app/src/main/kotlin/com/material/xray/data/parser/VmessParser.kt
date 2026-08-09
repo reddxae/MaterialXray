@@ -2,7 +2,6 @@ package com.material.xray.data.parser
 
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
-import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -12,12 +11,12 @@ object VmessParser {
 
     fun parse(uri: String): ServerConfig? = runCatching {
         val encoded = uri.removePrefix("vmess://")
-        val decoded = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
+        val decoded = decodeLenientBase64ToUtf8(encoded) ?: return null
         val json = Json.parseToJsonElement(decoded).jsonObject
 
         fun str(key: String) = json[key]?.jsonPrimitive?.contentOrNull ?: ""
 
-        val port = str("port").toIntOrNull() ?: return null
+        val port = str("port").toValidPortOrNull() ?: return null
         val address = str("add").ifEmpty { return null }
         val net = str("net")
         val tls = str("tls")

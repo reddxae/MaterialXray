@@ -3,7 +3,6 @@ package com.material.xray.data.parser
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
 import java.net.URI
-import java.net.URLDecoder
 
 object TrojanParser {
 
@@ -11,8 +10,8 @@ object TrojanParser {
         val parsed = URI(uri)
         val password = parsed.rawUserInfo ?: return null
         val host = parsed.host ?: return null
-        val port = parsed.port.takeIf { it > 0 } ?: return null
-        val fragment = parsed.rawFragment?.let { URLDecoder.decode(it, "UTF-8") } ?: ""
+        val port = parsed.port.takeIfValidPort() ?: return null
+        val fragment = parsed.rawFragment?.let(::decodeUriComponentLeniently) ?: ""
         val params = parseQuery(parsed.rawQuery ?: "")
 
         ServerConfig(
@@ -20,10 +19,10 @@ object TrojanParser {
             name = fragment,
             address = host,
             port = port,
-            password = URLDecoder.decode(password, "UTF-8"),
+            password = decodeUriComponentLeniently(password),
             transport = ServerConfig.Transport(
                 type = params["type"] ?: "tcp",
-                path = params["path"]?.let { URLDecoder.decode(it, "UTF-8") } ?: "",
+                path = params["path"] ?: "",
                 host = params["host"] ?: "",
                 serviceName = params["serviceName"] ?: "",
             ),

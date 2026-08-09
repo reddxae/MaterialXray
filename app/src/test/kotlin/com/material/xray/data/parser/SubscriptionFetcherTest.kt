@@ -340,6 +340,50 @@ class SubscriptionFetcherTest {
         assertTrue(config.rawConfigJson.isNotBlank())
     }
 
+    @Test
+    fun `cleartext subscription url is rejected before any request is sent`() = runTest {
+        val requests = mutableListOf<Request>()
+        val fetcher = requestAwareFetcher(requests) { TestResponse("", "text/plain") }
+
+        val error = runCatching {
+            fetcher.fetchWithMetadata("http://subscriptions.example/sub")
+        }.exceptionOrNull()
+
+        assertTrue(error is SubscriptionFetchException)
+        assertEquals(
+            SubscriptionFetchException.Reason.INSECURE_TRANSPORT,
+            (error as SubscriptionFetchException).reason,
+        )
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun `unfollowed redirect to cleartext is reported as insecure transport`() = runTest {
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(OkHttpProtocol.HTTP_1_1)
+                    .code(302)
+                    .message("Found")
+                    .headers(Headers.headersOf("location", "http://subscriptions.example/moved"))
+                    .body("".toResponseBody("text/plain".toMediaType()))
+                    .build()
+            }
+            .build()
+        val fetcher = SubscriptionFetcher(client)
+
+        val error = runCatching {
+            fetcher.fetchWithMetadata("https://subscriptions.example/sub")
+        }.exceptionOrNull()
+
+        assertTrue(error is SubscriptionFetchException)
+        assertEquals(
+            SubscriptionFetchException.Reason.INSECURE_TRANSPORT,
+            (error as SubscriptionFetchException).reason,
+        )
+    }
+
     private fun fetcherReturning(
         body: String,
         contentType: String,

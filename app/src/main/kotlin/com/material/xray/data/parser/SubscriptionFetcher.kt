@@ -57,7 +57,7 @@ class SubscriptionFetchException(
     when (reason) {
         Reason.INVALID_URL -> "Invalid subscription URL"
         Reason.HTTP_STATUS -> "Subscription request failed with HTTP $statusCode"
-        Reason.INSECURE_RESPONSE -> "Subscription must be fetched over HTTPS"
+        Reason.INSECURE_TRANSPORT -> "Subscription must be fetched over HTTPS"
         Reason.EMPTY_RESPONSE -> "Subscription returned an empty response with HTTP $statusCode"
         Reason.UNSUPPORTED_CONTENT -> "Subscription did not contain any supported configurations"
     },
@@ -65,15 +65,21 @@ class SubscriptionFetchException(
     enum class Reason {
         INVALID_URL,
         HTTP_STATUS,
-        INSECURE_RESPONSE,
+        INSECURE_TRANSPORT,
         EMPTY_RESPONSE,
         UNSUPPORTED_CONTENT,
     }
 }
 
 class SubscriptionFetcher @Inject constructor(
-    private val client: OkHttpClient,
+    client: OkHttpClient,
 ) {
+    // Subscription requests carry the subscription token plus the identity headers, so no hop may
+    // ever leave the device in cleartext. The caller cannot inspect redirect hops, because OkHttp
+    // follows them internally, so cross-protocol redirects are refused at the client level instead.
+    private val client = client.newBuilder()
+        .followSslRedirects(false)
+        .build()
     private val parser = ShareLinkParser()
     private val json = Json {
         ignoreUnknownKeys = true
@@ -90,6 +96,9 @@ class SubscriptionFetcher @Inject constructor(
         val normalizedUrl = url.trim()
         val httpUrl = normalizedUrl.toHttpUrlOrNull()
             ?: throw SubscriptionFetchException(SubscriptionFetchException.Reason.INVALID_URL)
+        if (!httpUrl.isHttps) {
+            throw SubscriptionFetchException(SubscriptionFetchException.Reason.INSECURE_TRANSPORT)
+        }
 
         if (preferJson) {
             httpUrl.jsonEndpointOrNull()?.let { jsonUrl ->
@@ -152,13 +161,23 @@ class SubscriptionFetcher @Inject constructor(
 
     private fun Response.requireValidSubscriptionResponse() {
         val errorReason = when {
+            !request.url.isHttps -> SubscriptionFetchException.Reason.INSECURE_TRANSPORT
+            redirectsToCleartext() -> SubscriptionFetchException.Reason.INSECURE_TRANSPORT
             !isSuccessful -> SubscriptionFetchException.Reason.HTTP_STATUS
-            !request.url.isHttps -> SubscriptionFetchException.Reason.INSECURE_RESPONSE
             else -> null
         }
         if (errorReason != null) {
             throw SubscriptionFetchException(reason = errorReason, statusCode = code)
         }
+    }
+
+    // followSslRedirects(false) stops OkHttp from following an HTTPS -> HTTP redirect, so such a
+    // response surfaces here as an unfollowed 3xx. Reporting it as insecure transport rather than a
+    // plain HTTP status keeps the error actionable.
+    private fun Response.redirectsToCleartext(): Boolean {
+        if (!isRedirect) return false
+        val location = header("Location") ?: return false
+        return request.url.resolve(location)?.isHttps == false
     }
 
     private fun Response.readSubscriptionBody(): String {

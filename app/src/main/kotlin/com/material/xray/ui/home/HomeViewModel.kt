@@ -645,7 +645,7 @@ class HomeViewModel @Inject constructor(
                 error.statusCode ?: 0,
             )
 
-            SubscriptionFetchException.Reason.INSECURE_RESPONSE -> context.localizedString(
+            SubscriptionFetchException.Reason.INSECURE_TRANSPORT -> context.localizedString(
                 R.string.home_subscription_fetch_failed_insecure,
             )
 

@@ -38,11 +38,7 @@ import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -104,6 +100,8 @@ import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.isInProgress
+import com.material.xray.ui.components.DropdownOption
+import com.material.xray.ui.components.ReadOnlyDropdownField
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.components.SettingsSwitchRow
 import com.material.xray.ui.components.rememberSystemState
@@ -151,8 +149,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val scrollState = rememberScrollState()
-    var defaultOutboundExpanded by remember { mutableStateOf(false) }
-    var logLevelExpanded by remember { mutableStateOf(false) }
     var showRootAccessDeniedDialog by remember { mutableStateOf(false) }
     var showNotificationFieldsDialog by remember { mutableStateOf(false) }
     var showFieldStyleDialog by remember { mutableStateOf(false) }
@@ -427,45 +423,19 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     checked = passiveHealthMonitoringEnabled,
                     onCheckedChange = viewModel::setPassiveHealthMonitoringEnabled,
                 )
-                ExposedDropdownMenuBox(
-                    expanded = defaultOutboundExpanded,
-                    onExpandedChange = { defaultOutboundExpanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = stringResource(defaultOutbound.labelResource),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(R.string.settings_default_outbound_label)) },
-                        supportingText = { Text(stringResource(defaultOutbound.descriptionResource)) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = defaultOutboundExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = defaultOutboundExpanded,
-                        onDismissRequest = { defaultOutboundExpanded = false },
-                    ) {
-                        XrayOutbound.entries.forEach { outbound ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(stringResource(outbound.labelResource))
-                                        Text(
-                                            stringResource(outbound.descriptionResource),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    defaultOutboundExpanded = false
-                                    viewModel.setDefaultOutbound(outbound)
-                                },
-                            )
-                        }
-                    }
-                }
+                ReadOnlyDropdownField(
+                    label = stringResource(R.string.settings_default_outbound_label),
+                    selectedText = stringResource(defaultOutbound.labelResource),
+                    supportingText = stringResource(defaultOutbound.descriptionResource),
+                    options = XrayOutbound.entries.map { outbound ->
+                        DropdownOption(
+                            value = outbound,
+                            label = stringResource(outbound.labelResource),
+                            description = stringResource(outbound.descriptionResource),
+                        )
+                    },
+                    onSelected = viewModel::setDefaultOutbound,
+                )
             }
 
             OutlinedTextField(
@@ -509,43 +479,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             if (showAdvancedOptions) {
-                ExposedDropdownMenuBox(
-                    expanded = logLevelExpanded,
-                    onExpandedChange = { logLevelExpanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = stringResource(xrayLogLevel.labelResource),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(R.string.settings_xray_log_level_label)) },
-                        supportingText = {
-                            Text(
-                                stringResource(
-                                    R.string.settings_default_value,
-                                    stringResource(XrayLogLevel.default.labelResource),
-                                ),
-                            )
-                        },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = logLevelExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = logLevelExpanded,
-                        onDismissRequest = { logLevelExpanded = false },
-                    ) {
-                        XrayLogLevel.entries.forEach { level ->
-                            DropdownMenuItem(
-                                text = { Text(stringResource(level.labelResource)) },
-                                onClick = {
-                                    logLevelExpanded = false
-                                    viewModel.setXrayLogLevel(level)
-                                },
-                            )
-                        }
-                    }
-                }
+                ReadOnlyDropdownField(
+                    label = stringResource(R.string.settings_xray_log_level_label),
+                    selectedText = stringResource(xrayLogLevel.labelResource),
+                    supportingText = stringResource(
+                        R.string.settings_default_value,
+                        stringResource(XrayLogLevel.default.labelResource),
+                    ),
+                    options = XrayLogLevel.entries.map { level ->
+                        DropdownOption(value = level, label = stringResource(level.labelResource))
+                    },
+                    onSelected = viewModel::setXrayLogLevel,
+                )
             }
 
             OutlinedTextField(
@@ -1195,7 +1140,6 @@ private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
     val legalDocuments = legalDocuments()
     var selectedDocumentPath by remember { mutableStateOf(legalDocuments.first().assetPath) }
     val selectedDocument = legalDocuments.first { it.assetPath == selectedDocumentPath }
-    var documentMenuExpanded by remember { mutableStateOf(false) }
     val documentText = remember(context, selectedDocument) {
         context.assets.open(selectedDocument.assetPath).bufferedReader().use { it.readText() }
     }
@@ -1208,35 +1152,14 @@ private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.heightIn(min = 320.dp, max = 560.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ExposedDropdownMenuBox(
-                    expanded = documentMenuExpanded,
-                    onExpandedChange = { documentMenuExpanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = selectedDocument.label,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(R.string.settings_legal_document)) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = documentMenuExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = documentMenuExpanded,
-                        onDismissRequest = { documentMenuExpanded = false },
-                    ) {
-                        legalDocuments.forEach { document ->
-                            DropdownMenuItem(
-                                text = { Text(document.label) },
-                                onClick = {
-                                    selectedDocumentPath = document.assetPath
-                                    documentMenuExpanded = false
-                                },
-                            )
-                        }
-                    }
-                }
+                ReadOnlyDropdownField(
+                    label = stringResource(R.string.settings_legal_document),
+                    selectedText = selectedDocument.label,
+                    options = legalDocuments.map { document ->
+                        DropdownOption(value = document.assetPath, label = document.label)
+                    },
+                    onSelected = { selectedDocumentPath = it },
+                )
                 key(selectedDocument) {
                     Text(
                         text = documentText,

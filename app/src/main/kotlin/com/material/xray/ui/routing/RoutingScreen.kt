@@ -5,7 +5,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,7 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -85,6 +83,8 @@ import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 import com.material.xray.ui.apps.AppRoutingMenuActions
+import com.material.xray.ui.components.DropdownOption
+import com.material.xray.ui.components.ReadOnlyDropdownField
 import com.material.xray.ui.components.ScrollFadeEdges
 import com.material.xray.ui.components.SegmentedTabRow
 import com.material.xray.ui.text.catchAllEffectResource
@@ -567,8 +567,6 @@ private fun EditRoutingRuleDialog(
     var domains by remember(rule.id) { mutableStateOf(TextFieldValue(rule.domains.joinToString(", "))) }
     var ips by remember(rule.id) { mutableStateOf(TextFieldValue(rule.ips.joinToString(", "))) }
     var port by remember(rule.id) { mutableStateOf(TextFieldValue(rule.port.orEmpty())) }
-    var outboundExpanded by remember { mutableStateOf(false) }
-    var operatorExpanded by remember { mutableStateOf(false) }
     var selectedOutbound by remember(rule.id) { mutableStateOf(rule.outboundTag) }
     var selectedOperator by remember(rule.id) { mutableStateOf(rule.operator) }
     var selectedProtocols by remember(rule.id) { mutableStateOf(rule.protocols.toSet()) }
@@ -579,13 +577,17 @@ private fun EditRoutingRuleDialog(
     val matchModeLabel = stringResource(matchModeOption.labelResource)
     val matchModeDescription = stringResource(matchModeOption.descriptionResource)
     val outboundOptions = XrayOutbound.entries.map { option ->
-        Triple(option.tag, option.tag, stringResource(option.descriptionResource))
+        DropdownOption(
+            value = option.tag,
+            label = option.tag,
+            description = stringResource(option.descriptionResource),
+        )
     }
     val localizedMatchModeOptions = matchModeOptions.map { option ->
-        Triple(
-            option.value.name,
-            stringResource(option.labelResource),
-            stringResource(option.descriptionResource),
+        DropdownOption(
+            value = option.value.name,
+            label = stringResource(option.labelResource),
+            description = stringResource(option.descriptionResource),
         )
     }
     val scrollState = rememberScrollState()
@@ -643,22 +645,18 @@ private fun EditRoutingRuleDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
-                    DropdownSelector(
+                    ReadOnlyDropdownField(
                         label = stringResource(R.string.routing_outbound_tag_label),
-                        value = outboundOption.tag,
-                        description = outboundDescription,
-                        expanded = outboundExpanded,
-                        onExpandedChange = { outboundExpanded = it },
+                        selectedText = outboundOption.tag,
+                        supportingText = outboundDescription,
                         options = outboundOptions,
                         onSelected = { selectedOutbound = it },
                     )
 
-                    DropdownSelector(
+                    ReadOnlyDropdownField(
                         label = stringResource(R.string.routing_match_mode_label),
-                        value = matchModeLabel,
-                        description = matchModeDescription,
-                        expanded = operatorExpanded,
-                        onExpandedChange = { operatorExpanded = it },
+                        selectedText = matchModeLabel,
+                        supportingText = matchModeDescription,
                         options = localizedMatchModeOptions,
                         onSelected = { selectedOperator = RoutingRuleOperator.valueOf(it) },
                     )
@@ -820,69 +818,6 @@ private fun DialogScrollbar(
             size = Size(size.width, thumbHeight),
             cornerRadius = CornerRadius(radius, radius),
         )
-    }
-}
-
-@Composable
-private fun DropdownSelector(
-    label: String,
-    value: String,
-    description: String,
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    options: List<Triple<String, String, String>>,
-    onSelected: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text(label) },
-                supportingText = {
-                    Text(
-                        text = description,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-                trailingIcon = {
-                    Icon(
-                        Icons.Default.ArrowDropDown,
-                        contentDescription = stringResource(R.string.routing_open_selector, label),
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clickable { onExpandedChange(true) },
-            )
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { onExpandedChange(false) },
-            ) {
-                options.forEach { (optionValue, optionLabel, optionDescription) ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(optionLabel)
-                                Text(
-                                    optionDescription,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        },
-                        onClick = {
-                            onSelected(optionValue)
-                            onExpandedChange(false)
-                        },
-                    )
-                }
-            }
-        }
     }
 }
 

@@ -58,9 +58,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -134,6 +131,8 @@ import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.service.AppUpdateInstallProgress
 import com.material.xray.service.AppUpdateInstallStage
 import com.material.xray.service.ConnectionEvent
+import com.material.xray.ui.components.DropdownOption
+import com.material.xray.ui.components.ReadOnlyDropdownField
 import com.material.xray.ui.components.ScrolledTopAppBar
 import com.material.xray.ui.components.SelectableOptionRow
 import com.material.xray.ui.components.rememberSystemState
@@ -1897,7 +1896,6 @@ private fun EditSubscriptionDialog(
     var autoUpdateIntervalHours by remember(subscription.id) {
         mutableStateOf(subscription.autoUpdateIntervalHours)
     }
-    var autoUpdateExpanded by remember(subscription.id) { mutableStateOf(false) }
     var userAgentMode by remember(subscription.id) {
         mutableStateOf(SubscriptionUserAgentMode.fromValue(subscription.userAgentMode))
     }
@@ -1943,34 +1941,18 @@ private fun EditSubscriptionDialog(
                     onPreferJsonChange = { preferJson = it },
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                ExposedDropdownMenuBox(
-                    expanded = autoUpdateExpanded,
-                    onExpandedChange = { autoUpdateExpanded = it },
-                ) {
-                    OutlinedTextField(
-                        value = autoUpdateIntervalLabel(autoUpdateIntervalHours),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(R.string.home_auto_update_label)) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = autoUpdateExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
-                    )
-                    ExposedDropdownMenu(
-                        expanded = autoUpdateExpanded,
-                        onDismissRequest = { autoUpdateExpanded = false },
-                    ) {
-                        autoUpdateIntervalOptions.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(autoUpdateIntervalLabel(option.intervalHours)) },
-                                onClick = {
-                                    autoUpdateIntervalHours = option.intervalHours
-                                    autoUpdateExpanded = false
-                                },
+                key(subscription.id) {
+                    ReadOnlyDropdownField(
+                        label = stringResource(R.string.home_auto_update_label),
+                        selectedText = autoUpdateIntervalLabel(autoUpdateIntervalHours),
+                        options = autoUpdateIntervalOptions.map { option ->
+                            DropdownOption(
+                                value = option.intervalHours,
+                                label = autoUpdateIntervalLabel(option.intervalHours),
                             )
-                        }
-                    }
+                        },
+                        onSelected = { autoUpdateIntervalHours = it },
+                    )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 SubscriptionUserAgentSection(
@@ -2121,67 +2103,30 @@ private fun AddSubscriptionDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SubscriptionFetchTypeDropdown(
     preferJson: Boolean,
     onPreferJsonChange: (Boolean) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    val jsonFirst = stringResource(R.string.home_fetch_type_json_first)
+    val compatibility = stringResource(R.string.home_fetch_type_compatibility)
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-    ) {
-        OutlinedTextField(
-            value = stringResource(
-                if (preferJson) R.string.home_fetch_type_json_first else R.string.home_fetch_type_compatibility,
-            ),
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(stringResource(R.string.home_fetch_type_label)) },
-            supportingText = {
-                Text(
-                    if (preferJson) {
-                        stringResource(R.string.home_fetch_type_json_first_description)
-                    } else {
-                        stringResource(R.string.home_fetch_type_compatibility_description)
-                    },
-                )
-            },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                .fillMaxWidth(),
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            listOf(true, false).forEach { value ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            stringResource(
-                                if (value) {
-                                    R.string.home_fetch_type_json_first
-                                } else {
-                                    R.string.home_fetch_type_compatibility
-                                },
-                            ),
-                        )
-                    },
-                    onClick = {
-                        onPreferJsonChange(value)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
+    ReadOnlyDropdownField(
+        label = stringResource(R.string.home_fetch_type_label),
+        selectedText = if (preferJson) jsonFirst else compatibility,
+        supportingText = if (preferJson) {
+            stringResource(R.string.home_fetch_type_json_first_description)
+        } else {
+            stringResource(R.string.home_fetch_type_compatibility_description)
+        },
+        options = listOf(
+            DropdownOption(value = true, label = jsonFirst),
+            DropdownOption(value = false, label = compatibility),
+        ),
+        onSelected = onPreferJsonChange,
+    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SubscriptionUserAgentSection(
     selectedMode: SubscriptionUserAgentMode,
@@ -2191,46 +2136,18 @@ private fun SubscriptionUserAgentSection(
     onCustomUserAgentChange: (String) -> Unit,
     onCustomHeadersChange: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-    ) {
-        OutlinedTextField(
-            value = stringResource(selectedMode.labelResource),
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(stringResource(R.string.home_field_user_agent)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                .fillMaxWidth(),
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            SubscriptionUserAgentMode.entries.forEach { mode ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(stringResource(mode.labelResource))
-                            Text(
-                                stringResource(mode.descriptionResource),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    onClick = {
-                        onModeChange(mode)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
+    ReadOnlyDropdownField(
+        label = stringResource(R.string.home_field_user_agent),
+        selectedText = stringResource(selectedMode.labelResource),
+        options = SubscriptionUserAgentMode.entries.map { mode ->
+            DropdownOption(
+                value = mode,
+                label = stringResource(mode.labelResource),
+                description = stringResource(mode.descriptionResource),
+            )
+        },
+        onSelected = onModeChange,
+    )
     if (selectedMode == SubscriptionUserAgentMode.CUSTOM) {
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(

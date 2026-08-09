@@ -47,7 +47,6 @@
     <string name="routing_port_supporting_text">Один порт или диапазон, например: 443 или 0–65535</string>
     <string name="routing_protocols_label">Протоколы</string>
     <string name="routing_protocols_empty_description">Если ничего не выбрано, правило применяется ко всему трафику.</string>
-    <string name="routing_open_selector">Открыть: %1$s</string>
     <string name="routing_no_match_content">Нет условий сопоставления</string>
     <string name="routing_catch_all_warning_title">Это правило применяется ко всему трафику</string>
     <string name="routing_catch_all_warning_description">Не заданы ни домены, ни IP-адреса, ни порты, ни протоколы, поэтому у правила не осталось условий сопоставления. Ему будет соответствовать любое соединение, а правила ниже никогда не сработают.</string>

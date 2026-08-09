@@ -204,8 +204,9 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
             )
         },
         bottomBar = {
-            LogFilterSelector(
-                selectedFilter = selectedFilter,
+            SegmentedTabRow(
+                labels = LogFilter.entries.map { stringResource(it.labelRes) },
+                selectedIndex = LogFilter.entries.indexOf(selectedFilter),
                 onSelected = { index ->
                     coroutineScope.launch {
                         pagerState.animateScrollToPage(index)
@@ -253,18 +254,6 @@ private fun shareLogFile(context: Context, uri: Uri) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(shareIntent, context.getString(R.string.logs_share)))
-}
-
-@Composable
-private fun LogFilterSelector(
-    selectedFilter: LogFilter,
-    onSelected: (Int) -> Unit,
-) {
-    SegmentedTabRow(
-        labels = LogFilter.entries.map { stringResource(it.labelRes) },
-        selectedIndex = LogFilter.entries.indexOf(selectedFilter),
-        onSelected = onSelected,
-    )
 }
 
 @Composable

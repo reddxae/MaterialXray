@@ -292,8 +292,9 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
             )
         },
         bottomBar = {
-            RoutingTabSelector(
-                selectedTab = selectedTab,
+            SegmentedTabRow(
+                labels = RoutingTab.entries.map { stringResource(it.titleResource) },
+                selectedIndex = selectedTab,
                 onSelected = { index ->
                     coroutineScope.launch {
                         pagerState.animateScrollToPage(index)
@@ -373,18 +374,6 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
             },
         )
     }
-}
-
-@Composable
-private fun RoutingTabSelector(
-    selectedTab: Int,
-    onSelected: (Int) -> Unit,
-) {
-    SegmentedTabRow(
-        labels = RoutingTab.entries.map { stringResource(it.titleResource) },
-        selectedIndex = selectedTab,
-        onSelected = onSelected,
-    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

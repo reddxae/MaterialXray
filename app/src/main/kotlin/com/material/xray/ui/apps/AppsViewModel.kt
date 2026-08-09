@@ -31,11 +31,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -168,6 +170,8 @@ class AppsViewModel @Inject constructor(
             servers.forEach { server -> add(server.toRouteOption()) }
         }
     }
+        // Building a route option parses each server's config JSON.
+        .flowOn(Dispatchers.Default)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
@@ -225,7 +229,11 @@ class AppsViewModel @Inject constructor(
                     .thenBy { it.profileId }
                     .thenBy { it.packageName },
             )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        // Joining assignments over every installed app and re-sorting is linear in the size of
+        // the app list; keep it off the main dispatcher.
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun refreshApps() {
         refreshProviderRouting()

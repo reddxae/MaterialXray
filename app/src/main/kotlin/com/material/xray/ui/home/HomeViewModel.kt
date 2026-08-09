@@ -57,6 +57,7 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +68,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
@@ -155,6 +157,9 @@ class HomeViewModel @Inject constructor(
         latencyByServerId,
         appLocaleChanges.onStart { emit(Unit) },
     ) { servers, latencies, _ -> servers.map { it.toListItem(latencies[it.id]) } }
+        // Building a list item decodes the server config JSON, which grows with the number of
+        // servers; keep that mapping off the main dispatcher.
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val serversBySubscription: StateFlow<Map<Long, List<ServerListItem>>> = serverItems
@@ -197,7 +202,10 @@ class HomeViewModel @Inject constructor(
             ?: selectedConfig.maskedBalancerOutboundAddress(selection.outboundTag)
             ?: return@combine null
         ActiveBalancerServerState(title = title, latencyMs = selection.latencyMs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), null)
+    }
+        // Matching the balancer outbound parses server configs from the whole subscription.
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), null)
 
     private val refreshOperations = MutableStateFlow(0)
     val isRefreshing: StateFlow<Boolean> = refreshOperations

@@ -204,6 +204,19 @@ class XrayProcessSupervisorTest {
     }
 
     @Test
+    fun `user process drops the tracked pid once the probe observes death`() = runTest {
+        val launcher = FakeUserXrayProcessLauncher(alive = { _, _ -> false })
+        val supervisor = userSupervisor(processLauncher = launcher)
+        supervisor.start(binDir = "/tmp/xray bin", tunFd = 89)
+
+        assertFalse(supervisor.isAlive(42))
+        supervisor.stop()
+        supervisor.requestStop()
+
+        assertEquals(emptyList<Int>(), launcher.killedSignals)
+    }
+
+    @Test
     fun `user process cleanup can stop an orphan from persisted state`() = runTest {
         val launcher = FakeUserXrayProcessLauncher(
             alive = { pid, killedSignals -> pid == 77 && 9 !in killedSignals },

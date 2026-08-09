@@ -251,6 +251,9 @@ internal class UserXrayProcessSupervisor(
     private val xrayBinary: XrayProcessBinary,
     private val processLauncher: UserXrayProcessLauncher = AndroidUserXrayProcessLauncher(),
 ) : UserXrayProcessController {
+    // Probes and lifecycle commands arrive from different dispatchers, so the tracked PID needs
+    // cross-thread visibility.
+    @Volatile
     private var pid: Int = -1
     private val logFile: File
         get() = environment.filesDir.resolve(XRAY_LOG_FILE_NAME)
@@ -278,7 +281,14 @@ internal class UserXrayProcessSupervisor(
 
     override suspend fun isAlive(pid: Int): Boolean {
         if (pid <= 0 || this.pid != pid) return false
-        return processLauncher.isAlive(pid)
+        val alive = processLauncher.isAlive(pid)
+        if (!alive && this.pid == pid) {
+            // The liveness probe reaps the child, so from here the kernel is free to recycle the
+            // PID. Dropping it now keeps later stop/kill calls from signalling whatever process
+            // inherits the number.
+            this.pid = -1
+        }
+        return alive
     }
 
     override suspend fun kill(pid: Int, signal: Int): Boolean {

@@ -11,7 +11,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,9 +20,10 @@ import androidx.compose.ui.Modifier
 /**
  * A text field that opens a menu instead of a keyboard, for picking one of a fixed set of values.
  *
- * The field never holds its own text; [selectedText] is what it displays, which is not always the
- * matching option's label. The menu's open state is internal, so a caller that needs it to close
- * when the subject changes should wrap this in a `key`.
+ * The field never holds its own text. [selectedText] is what it displays, which is deliberately
+ * independent of [options]: a stored value can fall outside the set currently offered, and the
+ * field still has to render it. The menu's open state is internal, so a caller that needs it to
+ * close when the subject changes should wrap this in a `key`.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,7 +90,6 @@ fun <T> ReadOnlyDropdownField(
  * @property label the single line shown in the menu.
  * @property description an optional second line explaining the choice.
  */
-@Immutable
 data class DropdownOption<out T>(
     val value: T,
     val label: String,

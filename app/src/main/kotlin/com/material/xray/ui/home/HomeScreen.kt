@@ -1883,7 +1883,6 @@ private fun autoUpdateIntervalLabel(intervalHours: Int): String = when (interval
     else -> pluralStringResource(R.plurals.home_duration_hours, intervalHours, intervalHours)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditSubscriptionDialog(
     subscription: SubscriptionEntity,

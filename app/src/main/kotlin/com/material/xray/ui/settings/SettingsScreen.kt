@@ -1133,7 +1133,6 @@ private fun xrayCoreVersionText(xrayCoreVersion: String?): String = when (xrayCo
     else -> stringResource(R.string.settings_xray_core_version, xrayCoreVersion)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OpenSourceLicensesDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current

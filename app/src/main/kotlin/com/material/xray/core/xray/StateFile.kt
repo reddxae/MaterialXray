@@ -2,6 +2,7 @@ package com.material.xray.core.xray
 
 import android.content.Context
 import android.util.AtomicFile
+import android.util.Log
 import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -26,6 +27,19 @@ data class XrayState(
     val timestamp: Long = System.currentTimeMillis(),
 )
 
+/**
+ * Outcome of reading the persisted runtime state.
+ *
+ * [Absent] and [Unreadable] are deliberately distinct: a file that exists but cannot be parsed may
+ * still describe a live root-managed runtime, so callers must not treat it as proof that nothing
+ * is running.
+ */
+sealed interface XrayStateReadResult {
+    data class Present(val state: XrayState) : XrayStateReadResult
+    data object Absent : XrayStateReadResult
+    data object Unreadable : XrayStateReadResult
+}
+
 class StateFile(context: Context) {
     private val file = AtomicFile(File(context.filesDir, "state.json"))
     private val json = Json {
@@ -33,11 +47,21 @@ class StateFile(context: Context) {
         prettyPrint = true
     }
 
-    fun read(): XrayState? = runCatching {
-        if (!file.baseFile.exists()) return null
-        val encoded = file.openRead().bufferedReader().use { it.readText() }
-        json.decodeFromString<XrayState>(encoded)
-    }.getOrNull()
+    fun readResult(): XrayStateReadResult {
+        if (!file.baseFile.exists()) return XrayStateReadResult.Absent
+        return runCatching {
+            val encoded = file.openRead().bufferedReader().use { it.readText() }
+            json.decodeFromString<XrayState>(encoded)
+        }.fold(
+            onSuccess = { XrayStateReadResult.Present(it) },
+            onFailure = { error ->
+                Log.w(TAG, "state.json exists but could not be read", error)
+                XrayStateReadResult.Unreadable
+            },
+        )
+    }
+
+    fun read(): XrayState? = (readResult() as? XrayStateReadResult.Present)?.state
 
     fun write(state: XrayState) {
         val output = file.startWrite()
@@ -53,5 +77,9 @@ class StateFile(context: Context) {
 
     fun delete() {
         file.delete()
+    }
+
+    private companion object {
+        private const val TAG = "StateFile"
     }
 }

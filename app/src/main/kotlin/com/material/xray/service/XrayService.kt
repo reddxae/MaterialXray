@@ -33,6 +33,7 @@ import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayState
+import com.material.xray.core.xray.XrayStateReadResult
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.AppRouteAssignment
 import com.material.xray.data.db.entity.AppRouteMode
@@ -561,15 +562,18 @@ class XrayService : VpnService() {
         stopProcessWatchdog()
         closeVpnInterface()
 
-        val persistedState = withContext(Dispatchers.IO) { stateFile.read() }
+        val persistedStateResult = withContext(Dispatchers.IO) { stateFile.readResult() }
         val rootModeConfigured = settingsRepo.useRootService.first()
         when {
             state is ConnectionState.Connected -> {
                 if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
             }
             rootModeConfigured ||
-                persistedState != null &&
-                persistedState.physicalInterface != VPN_SERVICE_INTERFACE_LABEL -> {
+                // An unreadable state file may still describe a live root-managed runtime, so it
+                // has to be cleaned up like one instead of being mistaken for a clean slate.
+                persistedStateResult is XrayStateReadResult.Unreadable ||
+                persistedStateResult is XrayStateReadResult.Present &&
+                persistedStateResult.state.physicalInterface != VPN_SERVICE_INTERFACE_LABEL -> {
                 if (!connectionManager.ensureCleanRootRuntime()) return
             }
             else -> withContext(Dispatchers.IO) { stateFile.delete() }

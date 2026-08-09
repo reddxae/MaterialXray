@@ -102,6 +102,9 @@ class XrayService : VpnService() {
     private lateinit var networkRetargetWorker: NetworkRetargetWorker
     private var activePhysicalNetwork: PhysicalNetworkSnapshot? = null
     private var networkCallbacksAvailable = false
+
+    // Written by main-thread command paths, read and rewritten by the IO watchdog loop.
+    @Volatile
     private var lastNetworkSafetyCheckAtMs = 0L
     private var processRecoveryJob: Job? = null
     private var alwaysOnRetryJob: Job? = null
@@ -117,9 +120,14 @@ class XrayService : VpnService() {
     private var balancerSelectionJob: Job? = null
     private var balancerSelectionTag: String? = null
     private var vpnInterface: ParcelFileDescriptor? = null
+
+    // Written on the main thread, read by the IO metrics loop.
+    @Volatile
     private var notificationSettings = NotificationSettings()
+
+    // Written on the main thread, read by the IO metrics loop to skip redundant updates.
+    @Volatile
     private var notificationMetrics = NotificationMetrics()
-    private var previousTrafficSample: TrafficSample? = null
     private var notificationMetricsJob: Job? = null
     private var notificationMetricsIntervalMs = 0
     private var lastNotificationContent: NotificationContent? = null
@@ -273,7 +281,6 @@ class XrayService : VpnService() {
             settingsRepo.notificationSettings.collectLatest { settings ->
                 notificationSettings = settings
                 if (!settings.showTrafficSpeed) {
-                    previousTrafficSample = null
                     notificationMetrics = notificationMetrics.copy(proxyBps = null, directBps = null)
                 }
                 updateNotificationMetricsJob()
@@ -875,14 +882,17 @@ class XrayService : VpnService() {
 
         pauseNotificationMetrics()
         notificationMetricsIntervalMs = intervalMs
-        previousTrafficSample = null
         notificationMetricsJob = scope.launch(Dispatchers.IO) {
+            // The previous traffic sample is owned by this coroutine: sharing it as a field let a
+            // cancelled loop's late write leak a stale sample into the next metrics session.
+            var previousSample: TrafficSample? = null
             while (isActive) {
                 val connectedState = connectionStateCoordinator.state.value as? ConnectionState.Connected ?: break
-                val metrics = readNotificationMetrics(connectedState)
-                if (metrics != notificationMetrics) {
+                val reading = readNotificationMetrics(connectedState, previousSample)
+                previousSample = reading.trafficSample
+                if (reading.metrics != notificationMetrics) {
                     withContext(Dispatchers.Main) {
-                        notificationMetrics = metrics
+                        notificationMetrics = reading.metrics
                         updateNotification()
                     }
                 }
@@ -901,15 +911,17 @@ class XrayService : VpnService() {
         notificationMetricsJob?.cancel()
         notificationMetricsJob = null
         notificationMetricsIntervalMs = 0
-        previousTrafficSample = null
     }
 
-    private suspend fun readNotificationMetrics(state: ConnectionState.Connected): NotificationMetrics {
+    private suspend fun readNotificationMetrics(
+        state: ConnectionState.Connected,
+        previousSample: TrafficSample?,
+    ): NotificationMetricsReading {
         val settings = notificationSettings
-        val trafficSpeeds = if (settings.showTrafficSpeed) {
-            readTrafficSpeeds()
+        val trafficReading = if (settings.showTrafficSpeed) {
+            readTrafficSpeeds(previousSample)
         } else {
-            null
+            TrafficSpeedsReading(speeds = null, sample = null)
         }
         val processMetrics = if (settings.showRamUsage && settings.showConnectionCount) {
             connectionManager.readProcessMetrics(state.corePid)
@@ -934,35 +946,38 @@ class XrayService : VpnService() {
         } else {
             null
         }
-        return NotificationMetrics(
-            proxyBps = trafficSpeeds?.proxyBps,
-            directBps = trafficSpeeds?.directBps,
-            ramMb = ramMb,
-            connectionCount = connectionCount,
+        return NotificationMetricsReading(
+            metrics = NotificationMetrics(
+                proxyBps = trafficReading.speeds?.proxyBps,
+                directBps = trafficReading.speeds?.directBps,
+                ramMb = ramMb,
+                connectionCount = connectionCount,
+            ),
+            trafficSample = trafficReading.sample,
         )
     }
 
-    private suspend fun readTrafficSpeeds(): TrafficSpeeds? {
+    private suspend fun readTrafficSpeeds(previous: TrafficSample?): TrafficSpeedsReading {
         val stats = connectionManager.readOutboundTrafficStatsBytes()
         val hasProxyStats = stats.hasOutboundTrafficStats("proxy")
         val hasDirectStats = stats.hasOutboundTrafficStats("direct")
-        if (!hasProxyStats && !hasDirectStats) {
-            previousTrafficSample = null
-            return null
-        }
+        if (!hasProxyStats && !hasDirectStats) return TrafficSpeedsReading(speeds = null, sample = null)
         val now = System.currentTimeMillis()
         val sample = TrafficSample(
             timestampMs = now,
             proxyBytes = stats.outboundBytes("proxy"),
             directBytes = stats.outboundBytes("direct"),
         )
-        val previous = previousTrafficSample.also { previousTrafficSample = sample } ?: return null
+        if (previous == null) return TrafficSpeedsReading(speeds = null, sample = sample)
         val elapsedSeconds = ((sample.timestampMs - previous.timestampMs).coerceAtLeast(1)).toDouble() / 1000.0
         val proxyDelta = (sample.proxyBytes - previous.proxyBytes).coerceAtLeast(0)
         val directDelta = (sample.directBytes - previous.directBytes).coerceAtLeast(0)
-        return TrafficSpeeds(
-            proxyBps = (proxyDelta / elapsedSeconds).toLong(),
-            directBps = (directDelta / elapsedSeconds).toLong(),
+        return TrafficSpeedsReading(
+            speeds = TrafficSpeeds(
+                proxyBps = (proxyDelta / elapsedSeconds).toLong(),
+                directBps = (directDelta / elapsedSeconds).toLong(),
+            ),
+            sample = sample,
         )
     }
 
@@ -1748,6 +1763,16 @@ class XrayService : VpnService() {
     private data class TrafficSpeeds(
         val proxyBps: Long,
         val directBps: Long,
+    )
+
+    private data class NotificationMetricsReading(
+        val metrics: NotificationMetrics,
+        val trafficSample: TrafficSample?,
+    )
+
+    private data class TrafficSpeedsReading(
+        val speeds: TrafficSpeeds?,
+        val sample: TrafficSample?,
     )
 
     companion object {

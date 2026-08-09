@@ -109,6 +109,7 @@ import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.isInProgress
 import com.material.xray.ui.components.ScrolledTopAppBar
+import com.material.xray.ui.components.SettingsSwitchRow
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
 import java.util.Locale
@@ -314,53 +315,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SettingsNestedSection(title = stringResource(R.string.settings_connectivity_title)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .toggleable(
-                                value = bypassLan,
-                                role = Role.Switch,
-                                onValueChange = { viewModel.setBypassLan(it) },
-                            )
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.settings_bypass_lan_title), style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                stringResource(R.string.settings_bypass_lan_description),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(checked = bypassLan, onCheckedChange = null)
-                    }
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_bypass_lan_title),
+                        description = stringResource(R.string.settings_bypass_lan_description),
+                        checked = bypassLan,
+                        onCheckedChange = { viewModel.setBypassLan(it) },
+                    )
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .toggleable(
-                                value = allowIpv6,
-                                role = Role.Switch,
-                                onValueChange = { viewModel.setAllowIpv6(it) },
-                            )
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.settings_allow_ipv6_connections),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        }
-                        Switch(checked = allowIpv6, onCheckedChange = null)
-                    }
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_allow_ipv6_connections),
+                        checked = allowIpv6,
+                        onCheckedChange = { viewModel.setAllowIpv6(it) },
+                    )
                 }
 
                 SettingsNestedSection(title = stringResource(R.string.settings_routing_policy_title)) {
@@ -458,33 +424,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                             ?.let(viewModel::setXrayMemoryRestartThresholdMiB)
                     },
                 )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .toggleable(
-                            value = passiveHealthMonitoringEnabled,
-                            role = Role.Switch,
-                            onValueChange = viewModel::setPassiveHealthMonitoringEnabled,
-                        )
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.settings_passive_health_monitoring_title),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.settings_passive_health_monitoring_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = passiveHealthMonitoringEnabled, onCheckedChange = null)
-                }
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_passive_health_monitoring_title),
+                    description = stringResource(R.string.settings_passive_health_monitoring_description),
+                    checked = passiveHealthMonitoringEnabled,
+                    onCheckedChange = viewModel::setPassiveHealthMonitoringEnabled,
+                )
                 ExposedDropdownMenuBox(
                     expanded = defaultOutboundExpanded,
                     onExpandedChange = { defaultOutboundExpanded = it },
@@ -682,33 +627,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AppLanguageSetting()
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .toggleable(
-                            value = sortOutboundsByLatency,
-                            role = Role.Switch,
-                            onValueChange = viewModel::setSortOutboundsByLatency,
-                        )
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.settings_sort_outbounds_by_latency_title),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.settings_sort_outbounds_by_latency_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = sortOutboundsByLatency, onCheckedChange = null)
-                }
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_sort_outbounds_by_latency_title),
+                    description = stringResource(R.string.settings_sort_outbounds_by_latency_description),
+                    checked = sortOutboundsByLatency,
+                    onCheckedChange = viewModel::setSortOutboundsByLatency,
+                )
 
                 NotificationSettingsSection(
                     settings = notificationSettings,
@@ -752,68 +676,30 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .toggleable(
-                            value = subscriptionSendHardwareId,
-                            role = Role.Switch,
-                            onValueChange = viewModel::setSubscriptionSendHardwareId,
-                        )
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.settings_send_hardware_id_title), style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            stringResource(R.string.settings_send_hardware_id_description),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = subscriptionSendHardwareId,
-                        onCheckedChange = null,
-                    )
-                }
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_send_hardware_id_title),
+                    description = stringResource(R.string.settings_send_hardware_id_description),
+                    checked = subscriptionSendHardwareId,
+                    onCheckedChange = viewModel::setSubscriptionSendHardwareId,
+                )
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { coordinates ->
-                            showAdvancedOptionsRowTop = coordinates.positionInRoot().y.roundToInt()
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_show_advanced_options),
+                    checked = showAdvancedOptions,
+                    onCheckedChange = { enabled ->
+                        showAdvancedOptionsRowTop?.let { rowTop ->
+                            pendingAdvancedOptionsScrollAnchor = AdvancedOptionsScrollAnchor(
+                                targetEnabled = enabled,
+                                rowTop = rowTop,
+                                scrollValue = scrollState.value,
+                            )
                         }
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .toggleable(
-                            value = showAdvancedOptions,
-                            role = Role.Switch,
-                            onValueChange = { enabled ->
-                                showAdvancedOptionsRowTop?.let { rowTop ->
-                                    pendingAdvancedOptionsScrollAnchor = AdvancedOptionsScrollAnchor(
-                                        targetEnabled = enabled,
-                                        rowTop = rowTop,
-                                        scrollValue = scrollState.value,
-                                    )
-                                }
-                                viewModel.setShowAdvancedOptions(enabled)
-                            },
-                        )
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.settings_show_advanced_options), style = MaterialTheme.typography.bodyLarge)
-                    }
-                    Switch(
-                        checked = showAdvancedOptions,
-                        onCheckedChange = null,
-                    )
-                }
+                        viewModel.setShowAdvancedOptions(enabled)
+                    },
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        showAdvancedOptionsRowTop = coordinates.positionInRoot().y.roundToInt()
+                    },
+                )
             }
 
             HorizontalDivider()
@@ -850,30 +736,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 
             HorizontalDivider()
             Text(stringResource(R.string.settings_section_about), style = MaterialTheme.typography.titleMedium)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .toggleable(
-                        value = appUpdateChecksEnabled,
-                        role = Role.Switch,
-                        onValueChange = viewModel::setAppUpdateChecksEnabled,
-                    )
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.settings_app_update_checks_title), style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        stringResource(R.string.settings_app_update_checks_description),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = appUpdateChecksEnabled, onCheckedChange = null)
-            }
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_app_update_checks_title),
+                description = stringResource(R.string.settings_app_update_checks_description),
+                checked = appUpdateChecksEnabled,
+                onCheckedChange = viewModel::setAppUpdateChecksEnabled,
+            )
             SettingsActionRow(
                 title = stringResource(R.string.settings_check_for_updates),
                 subtitle = appUpdateCheckDescription,
@@ -983,74 +851,25 @@ private fun SettingsServiceSection(
     Text(stringResource(R.string.settings_section_service), style = MaterialTheme.typography.titleMedium)
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .toggleable(
-                    value = useRootService && rootAvailable != false,
-                    enabled = rootServiceAvailable,
-                    role = Role.Switch,
-                    onValueChange = onUseRootServiceChange,
-                )
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.settings_use_root_service),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (rootAvailable == false) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-                if (rootAvailable == false) {
-                    Text(
-                        stringResource(R.string.settings_unavailable),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Switch(
-                checked = useRootService && rootAvailable != false,
-                onCheckedChange = null,
-                enabled = rootServiceAvailable,
-            )
-        }
+        SettingsSwitchRow(
+            title = stringResource(R.string.settings_use_root_service),
+            description = stringResource(R.string.settings_unavailable).takeIf { rootAvailable == false },
+            checked = useRootService && rootAvailable != false,
+            onCheckedChange = onUseRootServiceChange,
+            enabled = rootServiceAvailable,
+            titleColor = if (rootAvailable == false) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .toggleable(
-                    value = autoConnect,
-                    enabled = !useRootService || rootServiceActive,
-                    role = Role.Switch,
-                    onValueChange = onAutoConnectChange,
-                )
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.settings_auto_connect_on_boot),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            Switch(
-                checked = autoConnect,
-                onCheckedChange = null,
-                enabled = !useRootService || rootServiceActive,
-            )
-        }
+        SettingsSwitchRow(
+            title = stringResource(R.string.settings_auto_connect_on_boot),
+            checked = autoConnect,
+            onCheckedChange = onAutoConnectChange,
+            enabled = !useRootService || rootServiceActive,
+        )
     }
 }
 
@@ -1109,37 +928,17 @@ private fun NotificationSettingsSection(
     }
 
     SettingsNestedSection(title = stringResource(R.string.settings_notification_title)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .toggleable(
-                    value = effectiveEnabled,
-                    role = Role.Switch,
-                    onValueChange = { enabled ->
-                        when {
-                            !enabled -> onEnabledChange(false)
-                            access == NotificationAccess.Available -> onEnabledChange(true)
-                            else -> showAccessDialog = true
-                        }
-                    },
-                )
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.settings_customize_service_notification),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-            Switch(
-                checked = effectiveEnabled,
-                onCheckedChange = null,
-            )
-        }
+        SettingsSwitchRow(
+            title = stringResource(R.string.settings_customize_service_notification),
+            checked = effectiveEnabled,
+            onCheckedChange = { enabled ->
+                when {
+                    !enabled -> onEnabledChange(false)
+                    access == NotificationAccess.Available -> onEnabledChange(true)
+                    else -> showAccessDialog = true
+                }
+            },
+        )
 
         if (access != NotificationAccess.Available) {
             SettingsActionRow(

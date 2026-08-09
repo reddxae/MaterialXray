@@ -5,7 +5,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -73,7 +72,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +89,7 @@ import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 import com.material.xray.ui.apps.AppRoutingMenuActions
+import com.material.xray.ui.components.ScrollFadeEdges
 import com.material.xray.ui.text.catchAllEffectResource
 import com.material.xray.ui.text.descriptionResource
 import java.util.Locale
@@ -522,28 +521,7 @@ private fun RoutingRulesTab(
                 }
             }
         }
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(8.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(fadeColor, fadeColor.copy(alpha = 0f)),
-                    ),
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(12.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(fadeColor.copy(alpha = 0f), fadeColor),
-                    ),
-                ),
-        )
+        ScrollFadeEdges(fadeColor)
     }
 }
 

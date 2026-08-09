@@ -43,11 +43,24 @@ class ConnectionStateCoordinator @Inject constructor() {
 
     fun restoreConnected(state: ConnectionState.Connected) = commit(state)
 
+    /**
+     * Clears a state that claims a running tunnel after the runtime backing it has gone away.
+     *
+     * This coordinator is a process-wide singleton, so a service that stops without completing a
+     * disconnect would otherwise leave [state] reporting a connection forever: the UI and the tile
+     * would keep showing it, and every disconnect request would wait for a transition that can no
+     * longer happen.
+     */
+    @Synchronized
+    fun markRuntimeStopped() {
+        if (_state.value.assertsLiveRuntime()) commit(ConnectionState.Disconnected)
+    }
+
     @Synchronized
     fun reconcileDetectedState(detectedState: ConnectionState?): ConnectionState? {
         val currentState = _state.value
         val reconciledState = when {
-            detectedState is ConnectionState.InterfaceBusy && !currentState.isActiveTransition() -> detectedState
+            detectedState is ConnectionState.InterfaceBusy && !currentState.assertsLiveRuntime() -> detectedState
             detectedState is ConnectionState.Connected && currentState is ConnectionState.Disconnected -> detectedState
             detectedState == null && currentState.canClearDetectedState() -> ConnectionState.Disconnected
             else -> null
@@ -74,7 +87,11 @@ class ConnectionStateCoordinator @Inject constructor() {
     }
 }
 
-private fun ConnectionState.isActiveTransition(): Boolean = when (this) {
+/**
+ * Reports whether this state claims a runtime that is either established or being brought up, and
+ * therefore must not be overwritten by an outside observation or outlive the runtime that owns it.
+ */
+private fun ConnectionState.assertsLiveRuntime(): Boolean = when (this) {
     ConnectionState.Connecting,
     ConnectionState.ApplyingRoutingChanges,
     ConnectionState.UpdatingRoutingData,

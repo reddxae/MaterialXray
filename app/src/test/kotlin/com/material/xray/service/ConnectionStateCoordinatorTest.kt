@@ -50,6 +50,36 @@ class ConnectionStateCoordinatorTest {
     }
 
     @Test
+    fun `a stopped runtime clears a connected state that reports a live core`() {
+        val coordinator = ConnectionStateCoordinator()
+        coordinator.restoreConnected(connectedState(corePid = 42))
+
+        coordinator.markRuntimeStopped()
+
+        assertEquals(ConnectionState.Disconnected, coordinator.state.value)
+    }
+
+    @Test
+    fun `a stopped runtime clears an in-flight connection attempt`() {
+        val coordinator = ConnectionStateCoordinator()
+        coordinator.startConnection(ConnectionState.Connecting)
+
+        coordinator.markRuntimeStopped()
+
+        assertEquals(ConnectionState.Disconnected, coordinator.state.value)
+    }
+
+    @Test
+    fun `a stopped runtime keeps a reported failure visible`() {
+        val coordinator = ConnectionStateCoordinator()
+        coordinator.markError("boom", retryable = false)
+
+        coordinator.markRuntimeStopped()
+
+        assertEquals(ConnectionState.Error("boom", retryable = false), coordinator.state.value)
+    }
+
+    @Test
     fun `balancer subscriber count follows active UI collection`() = runTest {
         val coordinator = ConnectionStateCoordinator()
         assertEquals(0, coordinator.activeBalancerSelectionSubscribers.value)

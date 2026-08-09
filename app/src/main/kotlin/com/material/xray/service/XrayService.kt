@@ -438,8 +438,14 @@ class XrayService : VpnService() {
         processRecoveryJob?.cancel()
         stopBalancerSelectionTracker()
         stopProcessWatchdog()
+        val rootManagedTunnel = ::connectionManager.isInitialized &&
+            (connectionManager.isUsingRootRuntime || connectionStateCoordinator.state.value.describesRootManagedTunnel())
         if (::connectionManager.isInitialized) connectionManager.prepareForServiceDestruction()
         scope.cancel()
+        // A root-managed core keeps running after this service is gone, so a state describing it
+        // stays true. The rootless core is a child of this process and dies with it, so leaving
+        // that state as connected would strand the UI, the tile, and every disconnect request.
+        if (!rootManagedTunnel) connectionStateCoordinator.markRuntimeStopped()
         closeVpnInterface()
         super.onDestroy()
     }
@@ -1773,7 +1779,7 @@ class XrayService : VpnService() {
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
         private const val ROOTLESS_TUN_NAME = "tun0"
-        private const val VPN_SERVICE_INTERFACE_LABEL = "VpnService"
+        internal const val VPN_SERVICE_INTERFACE_LABEL = "VpnService"
         private const val TRANSPORT_LABEL_WIFI = "wifi"
         private const val TRANSPORT_LABEL_ETHERNET = "ethernet"
         private const val TRANSPORT_LABEL_CELLULAR = "cellular"
@@ -1845,3 +1851,9 @@ internal fun selectRestoredPhysicalRoute(
         table = state.physicalTable,
     )
 }
+
+/**
+ * Reports whether this state describes a tunnel owned by a root-managed core, which survives the
+ * service that started it.
+ */
+private fun ConnectionState.describesRootManagedTunnel(): Boolean = this is ConnectionState.Connected && physicalInterface != XrayService.VPN_SERVICE_INTERFACE_LABEL

@@ -49,9 +49,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -90,6 +87,7 @@ import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 import com.material.xray.ui.apps.AppRoutingMenuActions
 import com.material.xray.ui.components.ScrollFadeEdges
+import com.material.xray.ui.components.SegmentedTabRow
 import com.material.xray.ui.text.catchAllEffectResource
 import com.material.xray.ui.text.descriptionResource
 import java.util.Locale
@@ -383,21 +381,11 @@ private fun RoutingTabSelector(
     selectedTab: Int,
     onSelected: (Int) -> Unit,
 ) {
-    SingleChoiceSegmentedButtonRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        RoutingTab.entries.forEachIndexed { index, tab ->
-            SegmentedButton(
-                selected = selectedTab == index,
-                onClick = { onSelected(index) },
-                shape = SegmentedButtonDefaults.itemShape(index, RoutingTab.entries.size),
-            ) {
-                Text(stringResource(tab.titleResource))
-            }
-        }
-    }
+    SegmentedTabRow(
+        labels = RoutingTab.entries.map { stringResource(it.titleResource) },
+        selectedIndex = selectedTab,
+        onSelected = onSelected,
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

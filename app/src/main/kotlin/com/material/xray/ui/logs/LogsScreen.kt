@@ -34,9 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -64,6 +61,7 @@ import com.material.xray.R
 import com.material.xray.service.LogEntry
 import com.material.xray.service.LogSource
 import com.material.xray.ui.components.ScrollFadeEdges
+import com.material.xray.ui.components.SegmentedTabRow
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -263,21 +261,11 @@ private fun LogFilterSelector(
     selectedFilter: LogFilter,
     onSelected: (Int) -> Unit,
 ) {
-    SingleChoiceSegmentedButtonRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        LogFilter.entries.forEachIndexed { index, filter ->
-            SegmentedButton(
-                selected = selectedFilter == filter,
-                onClick = { onSelected(index) },
-                shape = SegmentedButtonDefaults.itemShape(index, LogFilter.entries.size),
-            ) {
-                Text(stringResource(filter.labelRes))
-            }
-        }
-    }
+    SegmentedTabRow(
+        labels = LogFilter.entries.map { stringResource(it.labelRes) },
+        selectedIndex = LogFilter.entries.indexOf(selectedFilter),
+        onSelected = onSelected,
+    )
 }
 
 @Composable

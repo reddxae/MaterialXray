@@ -318,6 +318,22 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `root restore leaves the firewall untouched without a restorable state`() = runTest {
+        val missingState = Harness().apply {
+            binary.configJson = """{"api":{"listen":"127.0.0.1:49322"}}"""
+        }
+        val rootlessState = Harness().apply {
+            stateStore.state = XrayState(xrayPid = 42, xrayApiPort = 49_321, physicalInterface = VPN_SERVICE_INTERFACE_LABEL)
+        }
+
+        assertFalse(missingState.manager.restoreRootApiClients())
+        assertFalse(rootlessState.manager.restoreRootApiClients())
+
+        assertTrue(missingState.rootRuntime.protectedApis.isEmpty())
+        assertTrue(rootlessState.rootRuntime.protectedApis.isEmpty())
+    }
+
+    @Test
     fun `root connection fails closed when API firewall cannot be installed`() = runTest {
         val harness = Harness().apply { rootRuntime.apiProtectionReady = false }
 

@@ -717,21 +717,24 @@ internal class ConnectionManager(
     }
 
     suspend fun restoreRootApiClients(): Boolean {
-        val configuredEndpoint = xrayBinary.readConfig()?.let(::parseXrayApiEndpoint)
-        val endpoint = when (configuredEndpoint) {
-            is XrayApiEndpoint.LoopbackTcp -> configuredEndpoint
-            is XrayApiEndpoint.UnixSocket -> return false
-            null -> stateStore.read()
-                ?.xrayApiPort
-                ?.takeIf { it in 1..65_535 }
-                ?.let { XrayApiEndpoint.LoopbackTcp(it) }
-                ?: return false
-        }
-        if (!rootRuntime.protectLoopbackApi(endpoint.port, environment.appUid)) return false
+        // Validate the persisted state before touching the firewall: installing loopback rules
+        // for a runtime that turns out to be rootless or unreadable would leave orphaned iptables
+        // state behind with nothing to reattach to.
         val state = stateStore.read() ?: return false
         // A record left by the rootless runtime describes a core that died with its process, so
         // there is nothing here to reattach to.
         if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) return false
+        val configuredEndpoint = xrayBinary.readConfig()?.let(::parseXrayApiEndpoint)
+        val endpoint = when (configuredEndpoint) {
+            is XrayApiEndpoint.LoopbackTcp -> configuredEndpoint
+            is XrayApiEndpoint.UnixSocket -> return false
+            null ->
+                state.xrayApiPort
+                    ?.takeIf { it in 1..65_535 }
+                    ?.let { XrayApiEndpoint.LoopbackTcp(it) }
+                    ?: return false
+        }
+        if (!rootRuntime.protectLoopbackApi(endpoint.port, environment.appUid)) return false
         runtimeState = XrayRuntimeState.Active(
             strategy = rootStrategy,
             pid = state.xrayPid,

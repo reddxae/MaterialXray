@@ -1606,28 +1606,15 @@ private fun PingMethodDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PingMethod.entries.forEach { method ->
-                    PingMethodRow(
-                        method = method,
+                    SelectableOptionRow(
+                        title = stringResource(method.labelResource),
+                        description = stringResource(method.descriptionResource),
                         selected = method == selectedMethod,
                         onSelected = { onSelected(method) },
                     )
                 }
             }
         },
-    )
-}
-
-@Composable
-private fun PingMethodRow(
-    method: PingMethod,
-    selected: Boolean,
-    onSelected: () -> Unit,
-) {
-    SelectableOptionRow(
-        title = stringResource(method.labelResource),
-        description = stringResource(method.descriptionResource),
-        selected = selected,
-        onSelected = onSelected,
     )
 }
 

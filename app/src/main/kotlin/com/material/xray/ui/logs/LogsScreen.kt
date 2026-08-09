@@ -214,7 +214,6 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
             )
         },
     ) { padding ->
-        val fadeColor = MaterialTheme.colorScheme.surface
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -236,7 +235,7 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
                     },
                 )
             }
-            ScrollFadeEdges(fadeColor)
+            ScrollFadeEdges()
         }
     }
 }

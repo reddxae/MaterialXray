@@ -32,8 +32,8 @@ fun SettingsSwitchRow(
     modifier: Modifier = Modifier,
     description: String? = null,
     enabled: Boolean = true,
-    // Overridden only where a control is disabled while its availability is still being
-    // determined, which should not yet read as unavailable.
+    // Dimming the title is separate from disabling the row, because a row can be disabled while
+    // its availability is still being determined, and that must not yet read as unavailable.
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     Row(

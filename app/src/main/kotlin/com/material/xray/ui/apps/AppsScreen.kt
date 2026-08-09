@@ -153,7 +153,6 @@ fun AppBypassContent(active: Boolean, viewModel: AppsViewModel = hiltViewModel()
                     .padding(start = 16.dp, top = 0.dp, end = 16.dp, bottom = 8.dp),
             )
 
-            val fadeColor = MaterialTheme.colorScheme.surface
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(
@@ -220,7 +219,7 @@ fun AppBypassContent(active: Boolean, viewModel: AppsViewModel = hiltViewModel()
                         )
                     }
                 }
-                ScrollFadeEdges(fadeColor)
+                ScrollFadeEdges()
             }
         }
     }

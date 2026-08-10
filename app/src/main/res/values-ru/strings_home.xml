@@ -77,6 +77,7 @@
     <string name="home_add_server_or_subscription">Добавить сервер или подписку</string>
     <string name="home_paste_from_clipboard">Вставить из буфера обмена</string>
     <string name="home_scan_qr_code">Сканировать QR-код</string>
+    <string name="home_camera_unavailable">Камера недоступна на этом устройстве. Вставьте или введите ссылку вручную.</string>
     <string name="home_camera_permission_title">Разрешить доступ к камере?</string>
     <string name="home_camera_permission_message">Доступ к камере используется только для сканирования QR-кодов. Ссылку можно вставить или ввести вручную, не предоставляя разрешение.</string>
     <string name="home_allow_camera">Разрешить камеру</string>

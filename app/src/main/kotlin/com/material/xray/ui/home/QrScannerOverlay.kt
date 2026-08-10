@@ -17,6 +17,7 @@ import android.media.Image
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.Log
 import android.util.Size as AndroidSize
 import android.view.MotionEvent
 import android.view.Surface
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -68,6 +70,7 @@ fun QrScannerOverlay(
 ) {
     val context = LocalContext.current
     var scanner by remember { mutableStateOf<Camera2QrScanner?>(null) }
+    var cameraUnavailable by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -86,6 +89,9 @@ fun QrScannerOverlay(
                         onQrCodeScanned = { result ->
                             textureView.post { onQrCodeScanned(result) }
                         },
+                        onCameraUnavailable = {
+                            textureView.post { cameraUnavailable = true }
+                        },
                     ).also { it.start() }
                 }
             },
@@ -102,6 +108,18 @@ fun QrScannerOverlay(
             style = MaterialTheme.typography.titleLarge,
             color = Color.White,
         )
+
+        if (cameraUnavailable) {
+            Text(
+                text = stringResource(R.string.home_camera_unavailable),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 48.dp),
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White,
+                textAlign = TextAlign.Center,
+            )
+        }
 
         TextButton(
             onClick = onClose,
@@ -147,6 +165,7 @@ private class Camera2QrScanner(
     private val context: Context,
     private val textureView: TextureView,
     private val onQrCodeScanned: (String) -> Unit,
+    private val onCameraUnavailable: () -> Unit,
 ) {
     private val cameraManager = context.getSystemService(CameraManager::class.java)
     private val decoding = AtomicBoolean(false)
@@ -207,7 +226,13 @@ private class Camera2QrScanner(
 
     @SuppressLint("MissingPermission")
     private fun openCamera() {
-        val selection = selectBackCamera() ?: return
+        val selection = runCatching { selectBackCamera() }
+            .onFailure { Log.e(TAG, "Failed to enumerate cameras", it) }
+            .getOrNull()
+        if (selection == null) {
+            onCameraUnavailable()
+            return
+        }
         cameraId = selection.id
         cameraCharacteristics = selection.characteristics
         imageReader = ImageReader.newInstance(
@@ -223,7 +248,11 @@ private class Camera2QrScanner(
         texture.setDefaultBufferSize(selection.previewSize.width, selection.previewSize.height)
         previewSurface = Surface(texture)
 
-        cameraManager.openCamera(selection.id, cameraStateCallback, backgroundHandler)
+        runCatching { cameraManager.openCamera(selection.id, cameraStateCallback, backgroundHandler) }
+            .onFailure {
+                Log.e(TAG, "Failed to open camera", it)
+                onCameraUnavailable()
+            }
     }
 
     private fun createCaptureSession(device: CameraDevice) {
@@ -433,6 +462,7 @@ private class Camera2QrScanner(
     )
 
     private companion object {
+        const val TAG = "QrScanner"
         const val FOCUS_LOCK_MS = 1_500L
     }
 }

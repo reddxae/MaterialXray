@@ -158,6 +158,15 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     var keepQrScannerDialog by remember { mutableStateOf(false) }
     var editingSubscriptionId by rememberSaveable { mutableStateOf<Long?>(null) }
     val editingSubscription = uiState.subscriptions.find { it.id == editingSubscriptionId }
+    // Drop a parked edit id once the loaded list no longer contains it, so a later subscription
+    // that happens to reuse the row id does not spontaneously reopen the edit dialog. An empty
+    // list is skipped because it is indistinguishable from the initial not-yet-loaded state.
+    LaunchedEffect(uiState.subscriptions, editingSubscriptionId) {
+        val id = editingSubscriptionId ?: return@LaunchedEffect
+        if (uiState.subscriptions.isNotEmpty() && uiState.subscriptions.none { it.id == id }) {
+            editingSubscriptionId = null
+        }
+    }
     var removeSubscriptionRequest by remember { mutableStateOf<Pair<SubscriptionEntity, Int>?>(null) }
     var showRootFallbackDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current

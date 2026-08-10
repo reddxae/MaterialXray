@@ -30,7 +30,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="false"
-            android:theme="@style/Theme.MaterialXray" />
+            android:theme="@style/Theme.MaterialXray.Splash" />
 
         <activity-alias
             android:name=".DefaultLauncherAlias"

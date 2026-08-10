@@ -4,8 +4,6 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.R
-import com.material.xray.core.locale.appLocaleChanges
-import com.material.xray.core.locale.forAppLanguage
 import com.material.xray.core.locale.localizedString
 import com.material.xray.core.network.LatencyProbeResult
 import com.material.xray.core.network.ServerLatencyTester
@@ -32,10 +30,8 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
-import com.material.xray.model.endpointSummary
 import com.material.xray.model.maskedBalancerOutboundAddress
 import com.material.xray.model.matchesBalancerOutbound
-import com.material.xray.model.proxyOutboundCount
 import com.material.xray.service.AlwaysOnVpnState
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.AppUpdateInstallProgress
@@ -53,7 +49,6 @@ import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-import java.util.Locale
 import javax.inject.Inject
 import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
@@ -69,7 +64,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -78,7 +72,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.serialization.json.Json
 
 data class ServerListItem(
     val entity: ServerEntity,
@@ -110,6 +103,7 @@ const val LATENCY_TESTING = Int.MIN_VALUE
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
+    homeDataState: HomeDataState,
     private val settingsRepo: SettingsRepository,
     private val appUpdateRepository: AppUpdateRepository,
     private val appUpdateChecker: AppUpdateChecker,
@@ -128,8 +122,6 @@ class HomeViewModel @Inject constructor(
     private val routingChangeManager: RoutingChangeManager,
     private val serverLatencyTester: ServerLatencyTester,
 ) : ViewModel() {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val endpointSummaryCache = mutableMapOf<String, String>()
     private var latencyJob: Job? = null
     private var latencyRunId = 0L
     private var activeLatencyServerIds = emptySet<Long>()
@@ -141,33 +133,49 @@ class HomeViewModel @Inject constructor(
     private val _uiEvents = Channel<HomeUiEvent>(Channel.BUFFERED)
     val uiEvents: Flow<HomeUiEvent> = _uiEvents.receiveAsFlow()
 
-    val subscriptions: StateFlow<List<SubscriptionEntity>> = subscriptionRepo.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // The home data is shared process-wide and loaded eagerly on app startup, so on a typical
+    // cold start every flow derived from it below starts out with the loaded snapshot as its
+    // initial value instead of an empty placeholder, and the first composed frame is already
+    // fully populated. `null` means the snapshot has not been built yet.
+    private val homeData: StateFlow<HomeData?> = homeDataState.data
+
+    val subscriptions: StateFlow<List<SubscriptionEntity>?> = homeData
+        .map { it?.subscriptions }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), homeData.value?.subscriptions)
 
     val availableUpdate: StateFlow<AppUpdate?> = appUpdateRepository.availableUpdate
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val appUpdateInstallProgress: StateFlow<AppUpdateInstallProgress?> = appUpdateInstaller.installProgress
 
-    private val allServers: StateFlow<List<ServerEntity>> = serverRepo.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val allServers: StateFlow<List<ServerEntity>> = homeData
+        .map { it?.servers.orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), homeData.value?.servers.orEmpty())
     private val latencyByServerId = MutableStateFlow<Map<Long, ServerLatencyState>>(emptyMap())
 
     val serverItems: StateFlow<List<ServerListItem>> = combine(
-        allServers,
+        homeData,
         latencyByServerId,
-        appLocaleChanges.onStart { emit(Unit) },
-    ) { servers, latencies, _ -> servers.map { it.toListItem(latencies[it.id]) } }
-        // Building a list item decodes the server config JSON, which grows with the number of
-        // servers; keep that mapping off the main dispatcher.
+    ) { data, latencies ->
+        data?.serverItems.orEmpty().map { item ->
+            latencies[item.entity.id]?.let { item.copy(latency = it) } ?: item
+        }
+    }
+        // Overlaying the latency states copies every list item and reruns on each probe result;
+        // keep that churn off the main dispatcher.
         .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), homeData.value?.serverItems.orEmpty())
 
     val serversBySubscription: StateFlow<Map<Long, List<ServerListItem>>> = serverItems
         .map { items -> items.groupBy { it.entity.subscriptionId } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            serverItems.value.groupBy { it.entity.subscriptionId },
+        )
 
-    val selectedServerId: StateFlow<Long> = settingsRepo.lastServerId
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), -1L)
+    val selectedServerId: StateFlow<Long> = homeData
+        .map { it?.selectedServerId ?: -1L }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), homeData.value?.selectedServerId ?: -1L)
 
     val useRootService: StateFlow<Boolean> = settingsRepo.useRootService
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -178,9 +186,9 @@ class HomeViewModel @Inject constructor(
     val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepo.routingPolicyControl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
 
-    val selectedServer: StateFlow<ServerConfig?> = combine(selectedServerId, allServers) { id, list ->
-        list.find { it.id == id }?.let { runCatching { serverRepo.parseConfig(it) }.getOrNull() }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val selectedServer: StateFlow<ServerConfig?> = homeData
+        .map { it?.selectedServer }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), homeData.value?.selectedServer)
 
     val activeBalancerServer: StateFlow<ActiveBalancerServerState?> = combine(
         connectionStateCoordinator.activeBalancerSelection,
@@ -563,30 +571,6 @@ class HomeViewModel @Inject constructor(
                 activeLatencyServerIds = activeLatencyServerIds - server.id
             }
         }
-    }
-
-    private fun ServerEntity.toListItem(latency: ServerLatencyState?): ServerListItem {
-        val resources = context.forAppLanguage().resources
-        val localeKey = resources.configuration.locales.toLanguageTags()
-        val summary = endpointSummaryCache.getOrPut("$localeKey\u0000$configJson") {
-            runCatching {
-                val config = json.decodeFromString<ServerConfig>(configJson)
-                val outboundCount = config.proxyOutboundCount()
-                if (outboundCount == null) {
-                    config.endpointSummary()
-                } else {
-                    resources.getQuantityString(
-                        R.plurals.home_server_multiconnect_summary,
-                        outboundCount,
-                        outboundCount,
-                    )
-                }
-            }.getOrElse {
-                val unknown = context.localizedString(R.string.home_server_endpoint_unknown)
-                "${protocol.lowercase(Locale.ROOT)} • $unknown • $unknown"
-            }
-        }
-        return ServerListItem(entity = this, endpointSummary = summary, latency = latency)
     }
 
     private suspend fun measureLatency(server: ServerEntity, method: PingMethod): ServerLatencyState {

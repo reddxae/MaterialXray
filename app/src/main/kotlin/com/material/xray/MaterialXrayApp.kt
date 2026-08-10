@@ -6,14 +6,14 @@ import com.material.xray.core.launcher.LauncherIconManager
 import com.material.xray.core.locale.initializeAppLocales
 import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.di.ApplicationScope
 import com.material.xray.service.AppUpdateScheduler
 import com.material.xray.service.StartupDiagnosticsLogger
 import com.material.xray.service.SubscriptionUpdateScheduler
+import com.material.xray.ui.home.HomeDataState
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -32,11 +32,23 @@ class MaterialXrayApp : Application() {
 
     @Inject lateinit var startupDiagnosticsLogger: StartupDiagnosticsLogger
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * Injected for its construction side effect: building the holder eagerly starts loading the
+     * home screen data (Room and DataStore) during application startup, before the first
+     * composition subscribes, so [MainActivity] can dismiss its splash screen with a fully
+     * populated first frame.
+     */
+    @Inject lateinit var homeDataState: HomeDataState
+
+    @Inject @ApplicationScope
+    lateinit var appScope: CoroutineScope
 
     override fun onCreate() {
-        super.onCreate()
+        // Per-app locales must be applied before super.onCreate(): Hilt injects this class there,
+        // which constructs HomeDataState, and that eagerly builds locale-dependent server
+        // summaries. Initializing afterwards would race that first snapshot on API <= 32.
         initializeAppLocales(this)
+        super.onCreate()
         appScope.launch {
             runCatching { backupManager.recoverInterruptedRestore() }
                 .onFailure { error -> Log.e(LOG_TAG, "Unable to recover interrupted backup restore", error) }

@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.MaterialXray" parent="Theme.AppCompat.Light.NoActionBar" />
+
+    <!-- Shown while MainActivity waits for the home data snapshot; installSplashScreen() swaps to
+         postSplashScreenTheme before the first frame is drawn. The icon is only set here for the
+         pre-31 compat rendering; values-v31 omits it so the system splash screen keeps using the
+         real launcher icon, which respects the launcher icon chosen in the app settings. -->
+    <style name="Theme.MaterialXray.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.MaterialXray</item>
+    </style>
 </resources>

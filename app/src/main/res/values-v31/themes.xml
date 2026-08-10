@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- On API 31+ the icon attribute is intentionally not set: the system splash screen then
+         falls back to the activity's launcher icon, which follows the launcher icon alias chosen
+         in the app settings (and themed icons), unlike a hard-coded mipmap reference. -->
+    <style name="Theme.MaterialXray.Splash" parent="Theme.SplashScreen">
+        <item name="postSplashScreenTheme">@style/Theme.MaterialXray</item>
+    </style>
+</resources>

@@ -157,13 +157,14 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     var showQrScanner by remember { mutableStateOf(false) }
     var keepQrScannerDialog by remember { mutableStateOf(false) }
     var editingSubscriptionId by rememberSaveable { mutableStateOf<Long?>(null) }
-    val editingSubscription = uiState.subscriptions.find { it.id == editingSubscriptionId }
+    val editingSubscription = uiState.subscriptions?.find { it.id == editingSubscriptionId }
     // Drop a parked edit id once the loaded list no longer contains it, so a later subscription
-    // that happens to reuse the row id does not spontaneously reopen the edit dialog. An empty
-    // list is skipped because it is indistinguishable from the initial not-yet-loaded state.
+    // that happens to reuse the row id does not spontaneously reopen the edit dialog. A null list
+    // means the data has not loaded yet and cannot say anything about the id.
     LaunchedEffect(uiState.subscriptions, editingSubscriptionId) {
         val id = editingSubscriptionId ?: return@LaunchedEffect
-        if (uiState.subscriptions.isNotEmpty() && uiState.subscriptions.none { it.id == id }) {
+        val subscriptions = uiState.subscriptions ?: return@LaunchedEffect
+        if (subscriptions.none { it.id == id }) {
             editingSubscriptionId = null
         }
     }
@@ -320,54 +321,59 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 }
             }
 
-            if (uiState.subscriptions.isEmpty()) {
-                item {
+            val subscriptions = uiState.subscriptions
+            when {
+                // Not loaded yet. The splash screen normally covers this state on cold start; if
+                // loading is unusually slow, a blank list beats a misleading empty-state card.
+                subscriptions == null -> Unit
+                subscriptions.isEmpty() -> item {
                     EmptySubscriptionsCard(
                         onPasteFromClipboard = pasteFromClipboard,
                         onScanQrCode = openQrScanner,
                         onAddManually = { showAddDialog = true },
                     )
                 }
-            } else {
-                items(
-                    items = uiState.subscriptions,
-                    key = { it.id },
-                    contentType = { "subscription" },
-                ) { subscription ->
-                    val servers = uiState.serversBySubscription[subscription.id].orEmpty()
-                    SubscriptionCard(
-                        subscription = subscription,
-                        servers = servers,
-                        selectedServerId = uiState.selectedServerId,
-                        defaultPingMethod = uiState.defaultPingMethod,
-                        canApplyRouting = uiState.routingPolicyControl == RoutingPolicyControl.User &&
-                            (subscription.toSubscriptionAppRouting() != null || subscription.toSubscriptionRouting() != null),
-                        onDelete = {
-                            if (servers.isEmpty()) {
-                                viewModel.deleteSubscription(subscription)
-                            } else {
-                                removeSubscriptionRequest = subscription to servers.size
-                            }
-                        },
-                        onEdit = { editingSubscriptionId = subscription.id },
-                        onRefresh = { viewModel.refreshSubscription(subscription) },
-                        onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
-                        onDefaultPingMethodSelected = { viewModel.setDefaultPingMethod(it) },
-                        onApplyRouting = { viewModel.requestApplySubscriptionRouting(subscription) },
-                        onDescriptionHiddenChange = { hidden ->
-                            viewModel.setSubscriptionDescriptionHidden(subscription.id, hidden)
-                        },
-                        onServerSelected = { viewModel.selectServer(it) },
-                        onTestLatency = { viewModel.testLatency(it) },
-                    )
-                }
-                item(contentType = "addSubscription") {
-                    AddSubscriptionActionButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onPasteFromClipboard = pasteFromClipboard,
-                        onScanQrCode = openQrScanner,
-                        onAddManually = { showAddDialog = true },
-                    )
+                else -> {
+                    items(
+                        items = subscriptions,
+                        key = { it.id },
+                        contentType = { "subscription" },
+                    ) { subscription ->
+                        val servers = uiState.serversBySubscription[subscription.id].orEmpty()
+                        SubscriptionCard(
+                            subscription = subscription,
+                            servers = servers,
+                            selectedServerId = uiState.selectedServerId,
+                            defaultPingMethod = uiState.defaultPingMethod,
+                            canApplyRouting = uiState.routingPolicyControl == RoutingPolicyControl.User &&
+                                (subscription.toSubscriptionAppRouting() != null || subscription.toSubscriptionRouting() != null),
+                            onDelete = {
+                                if (servers.isEmpty()) {
+                                    viewModel.deleteSubscription(subscription)
+                                } else {
+                                    removeSubscriptionRequest = subscription to servers.size
+                                }
+                            },
+                            onEdit = { editingSubscriptionId = subscription.id },
+                            onRefresh = { viewModel.refreshSubscription(subscription) },
+                            onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
+                            onDefaultPingMethodSelected = { viewModel.setDefaultPingMethod(it) },
+                            onApplyRouting = { viewModel.requestApplySubscriptionRouting(subscription) },
+                            onDescriptionHiddenChange = { hidden ->
+                                viewModel.setSubscriptionDescriptionHidden(subscription.id, hidden)
+                            },
+                            onServerSelected = { viewModel.selectServer(it) },
+                            onTestLatency = { viewModel.testLatency(it) },
+                        )
+                    }
+                    item(contentType = "addSubscription") {
+                        AddSubscriptionActionButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onPasteFromClipboard = pasteFromClipboard,
+                            onScanQrCode = openQrScanner,
+                            onAddManually = { showAddDialog = true },
+                        )
+                    }
                 }
             }
         }
@@ -786,7 +792,8 @@ private data class HomeUiState(
     val activeBalancerServer: ActiveBalancerServerState?,
     val selectedServerId: Long,
     val useRootService: Boolean,
-    val subscriptions: List<SubscriptionEntity>,
+    /** `null` until the home data snapshot has loaded; distinct from a loaded empty list. */
+    val subscriptions: List<SubscriptionEntity>?,
     val serversBySubscription: Map<Long, List<ServerListItem>>,
     val isRefreshing: Boolean,
     val runningConfig: String?,

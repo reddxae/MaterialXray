@@ -87,7 +87,10 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.material.xray.R
 import com.material.xray.core.locale.setAppLocales
 import com.material.xray.data.repository.BackupSummary
@@ -149,6 +152,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val appUpdateCheckStatus by viewModel.appUpdateCheckStatus.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val resources = LocalResources.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scrollState = rememberScrollState()
     var showRootAccessDeniedDialog by rememberSaveable { mutableStateOf(false) }
     var showNotificationFieldsDialog by rememberSaveable { mutableStateOf(false) }
@@ -237,33 +241,39 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     ) { uri -> uri?.let { viewModel.prepareBackupImport(it) } }
 
     LaunchedEffect(viewModel, context, resources) {
-        viewModel.assetUpdateEvents.collect { message ->
-            val text = message.detail?.let { detail ->
-                resources.getString(message.messageResId, detail)
-            } ?: resources.getString(message.messageResId)
-            Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.assetUpdateEvents.collect { message ->
+                val text = message.detail?.let { detail ->
+                    resources.getString(message.messageResId, detail)
+                } ?: resources.getString(message.messageResId)
+                Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     BackupOperationEventEffect(viewModel)
 
-    LaunchedEffect(viewModel) {
-        viewModel.rootAccessDeniedEvents.collect {
-            showRootAccessDeniedDialog = true
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.rootAccessDeniedEvents.collect {
+                showRootAccessDeniedDialog = true
+            }
         }
     }
 
     LaunchedEffect(viewModel, context, resources) {
-        viewModel.databaseResetEvents.collect { success ->
-            if (success) {
-                (context as? Activity)?.finishAndRemoveTask()
-                    ?: Process.killProcess(Process.myPid())
-            } else {
-                Toast.makeText(
-                    context,
-                    resources.getString(R.string.settings_internal_database_reset_failed),
-                    Toast.LENGTH_SHORT,
-                ).show()
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.databaseResetEvents.collect { success ->
+                if (success) {
+                    (context as? Activity)?.finishAndRemoveTask()
+                        ?: Process.killProcess(Process.myPid())
+                } else {
+                    Toast.makeText(
+                        context,
+                        resources.getString(R.string.settings_internal_database_reset_failed),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
         }
     }
@@ -743,12 +753,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 private fun BackupOperationEventEffect(viewModel: SettingsViewModel) {
     val context = LocalContext.current
     val resources = LocalResources.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(viewModel, context, resources) {
-        viewModel.backupEvents.collect { message ->
-            val text = message.detail?.let { detail ->
-                resources.getString(message.messageResId, detail)
-            } ?: resources.getString(message.messageResId)
-            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.backupEvents.collect { message ->
+                val text = message.detail?.let { detail ->
+                    resources.getString(message.messageResId, detail)
+                } ?: resources.getString(message.messageResId)
+                Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+            }
         }
     }
 }

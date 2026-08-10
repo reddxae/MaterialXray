@@ -4,19 +4,24 @@ import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ConnectionState
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 
 @Singleton
 class ConnectionStateCoordinator @Inject constructor() {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val state: StateFlow<ConnectionState> = _state
-    private val _events = MutableSharedFlow<ConnectionEvent>()
-    val events: SharedFlow<ConnectionEvent> = _events.asSharedFlow()
+
+    /**
+     * One-shot events for the single UI consumer. A buffered channel keeps events emitted while
+     * the UI is stopped and delivers them once collection resumes.
+     */
+    private val _events = Channel<ConnectionEvent>(Channel.BUFFERED)
+    val events: Flow<ConnectionEvent> = _events.receiveAsFlow()
     private val _activeBalancerSelection = MutableStateFlow<ActiveBalancerSelection?>(null)
     internal val activeBalancerSelection: StateFlow<ActiveBalancerSelection?> = _activeBalancerSelection.asStateFlow()
     internal val activeBalancerSelectionSubscribers: StateFlow<Int> = _activeBalancerSelection.subscriptionCount
@@ -83,7 +88,7 @@ class ConnectionStateCoordinator @Inject constructor() {
     }
 
     suspend fun emitEvent(event: ConnectionEvent) {
-        _events.emit(event)
+        _events.send(event)
     }
 }
 

@@ -59,18 +59,18 @@ import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.joinAll
@@ -137,9 +137,9 @@ class HomeViewModel @Inject constructor(
 
     val connectionState: StateFlow<ConnectionState> = connectionStateCoordinator.state
     val alwaysOnVpn: StateFlow<Boolean> = alwaysOnVpnState.active
-    val connectionEvents: SharedFlow<ConnectionEvent> = connectionStateCoordinator.events
-    private val _uiEvents = MutableSharedFlow<HomeUiEvent>()
-    val uiEvents: SharedFlow<HomeUiEvent> = _uiEvents.asSharedFlow()
+    val connectionEvents: Flow<ConnectionEvent> = connectionStateCoordinator.events
+    private val _uiEvents = Channel<HomeUiEvent>(Channel.BUFFERED)
+    val uiEvents: Flow<HomeUiEvent> = _uiEvents.receiveAsFlow()
 
     val subscriptions: StateFlow<List<SubscriptionEntity>> = subscriptionRepo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -256,7 +256,7 @@ class HomeViewModel @Inject constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                _uiEvents.emit(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
+                _uiEvents.send(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
             }
         }
     }
@@ -268,7 +268,7 @@ class HomeViewModel @Inject constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                _uiEvents.emit(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
+                _uiEvents.send(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
             }
         }
     }
@@ -278,7 +278,7 @@ class HomeViewModel @Inject constructor(
             try {
                 appUpdateInstaller.confirmInstallPermissionRationale()
             } catch (_: Exception) {
-                _uiEvents.emit(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
+                _uiEvents.send(HomeUiEvent.Toast(context.localizedString(R.string.home_app_update_install_failed)))
             }
         }
     }
@@ -622,7 +622,7 @@ class HomeViewModel @Inject constructor(
         } catch (error: CancellationException) {
             throw error
         } catch (error: IOException) {
-            _uiEvents.emit(HomeUiEvent.Toast(subscriptionFailureMessage(error)))
+            _uiEvents.send(HomeUiEvent.Toast(subscriptionFailureMessage(error)))
         }
     }
 
@@ -639,7 +639,7 @@ class HomeViewModel @Inject constructor(
                 firstFailure,
             )
         }
-        _uiEvents.emit(HomeUiEvent.Toast(message))
+        _uiEvents.send(HomeUiEvent.Toast(message))
     }
 
     private fun subscriptionFailureMessage(error: IOException): String = when (error) {

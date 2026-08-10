@@ -34,14 +34,14 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,13 +72,13 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
     private val _geoipUpdating = MutableStateFlow(false)
     private val _geositeUpdating = MutableStateFlow(false)
-    private val _assetUpdateEvents = MutableSharedFlow<AssetUpdateMessage>()
-    private val _rootAccessDeniedEvents = MutableSharedFlow<Unit>()
-    private val _databaseResetEvents = MutableSharedFlow<Boolean>()
+    private val _assetUpdateEvents = Channel<AssetUpdateMessage>(Channel.BUFFERED)
+    private val _rootAccessDeniedEvents = Channel<Unit>(Channel.BUFFERED)
+    private val _databaseResetEvents = Channel<Boolean>(Channel.BUFFERED)
     private val _databaseResetting = MutableStateFlow(false)
     private val _backupBusy = MutableStateFlow(false)
     private val _backupImportSummary = MutableStateFlow<BackupSummary?>(null)
-    private val _backupEvents = MutableSharedFlow<BackupOperationMessage>()
+    private val _backupEvents = Channel<BackupOperationMessage>(Channel.BUFFERED)
     private val _rootAvailable = MutableStateFlow<Boolean?>(null)
     private val _xrayCoreVersion = MutableStateFlow<String?>(null)
     private val _appUpdateCheckStatus = MutableStateFlow<AppUpdateCheckStatus?>(null)
@@ -187,13 +187,13 @@ class SettingsViewModel @Inject constructor(
     )
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
-    val assetUpdateEvents: SharedFlow<AssetUpdateMessage> = _assetUpdateEvents.asSharedFlow()
-    val rootAccessDeniedEvents: SharedFlow<Unit> = _rootAccessDeniedEvents.asSharedFlow()
-    val databaseResetEvents: SharedFlow<Boolean> = _databaseResetEvents.asSharedFlow()
+    val assetUpdateEvents: Flow<AssetUpdateMessage> = _assetUpdateEvents.receiveAsFlow()
+    val rootAccessDeniedEvents: Flow<Unit> = _rootAccessDeniedEvents.receiveAsFlow()
+    val databaseResetEvents: Flow<Boolean> = _databaseResetEvents.receiveAsFlow()
     val databaseResetting: StateFlow<Boolean> = _databaseResetting.asStateFlow()
     val backupBusy: StateFlow<Boolean> = _backupBusy.asStateFlow()
     val backupImportSummary: StateFlow<BackupSummary?> = _backupImportSummary.asStateFlow()
-    val backupEvents: SharedFlow<BackupOperationMessage> = _backupEvents.asSharedFlow()
+    val backupEvents: Flow<BackupOperationMessage> = _backupEvents.receiveAsFlow()
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
     val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
     val appUpdateCheckStatus: StateFlow<AppUpdateCheckStatus?> = _appUpdateCheckStatus.asStateFlow()
@@ -225,14 +225,14 @@ class SettingsViewModel @Inject constructor(
         }
 
         if (_rootAvailable.value == false) {
-            _rootAccessDeniedEvents.emit(Unit)
+            _rootAccessDeniedEvents.send(Unit)
             return@launch
         }
 
         val rootAvailable = settingsRuntimeManager.setUseRootService(true)
         if (!rootAvailable) {
             _rootAvailable.value = false
-            _rootAccessDeniedEvents.emit(Unit)
+            _rootAccessDeniedEvents.send(Unit)
             return@launch
         }
 
@@ -381,7 +381,7 @@ class SettingsViewModel @Inject constructor(
                 result.exceptionOrNull()?.let { error ->
                     if (error is CancellationException) throw error
                 }
-                _databaseResetEvents.emit(result.isSuccess)
+                _databaseResetEvents.send(result.isSuccess)
             } finally {
                 _databaseResetting.value = false
             }
@@ -414,7 +414,7 @@ class SettingsViewModel @Inject constructor(
             result.exceptionOrNull()?.let { error ->
                 if (error is CancellationException) throw error
             }
-            _backupEvents.emit(
+            _backupEvents.send(
                 if (result.isSuccess) {
                     BackupOperationMessage(R.string.settings_backup_exported)
                 } else {
@@ -439,7 +439,7 @@ class SettingsViewModel @Inject constructor(
                 _backupImportSummary.value = prepared.summary
             }.onFailure { error ->
                 if (error is CancellationException) throw error
-                _backupEvents.emit(
+                _backupEvents.send(
                     backupFailureMessage(
                         defaultMessageResId = R.string.settings_backup_import_failed,
                         detailedMessageResId = R.string.settings_backup_import_failed_with_detail,
@@ -469,9 +469,9 @@ class SettingsViewModel @Inject constructor(
             if (result.isSuccess) {
                 preparedBackupImport = null
                 _backupImportSummary.value = null
-                _backupEvents.emit(BackupOperationMessage(R.string.settings_backup_imported))
+                _backupEvents.send(BackupOperationMessage(R.string.settings_backup_imported))
             } else {
-                _backupEvents.emit(
+                _backupEvents.send(
                     backupFailureMessage(
                         defaultMessageResId = R.string.settings_backup_import_failed,
                         detailedMessageResId = R.string.settings_backup_import_failed_with_detail,
@@ -503,9 +503,9 @@ class SettingsViewModel @Inject constructor(
             runCatching {
                 settingsRuntimeManager.updateGeoDataAsset(asset, url)
             }.onSuccess {
-                _assetUpdateEvents.emit(AssetUpdateMessage(successMessageResId))
+                _assetUpdateEvents.send(AssetUpdateMessage(successMessageResId))
             }.onFailure { error ->
-                _assetUpdateEvents.emit(
+                _assetUpdateEvents.send(
                     error.message?.let { detail ->
                         AssetUpdateMessage(R.string.settings_asset_update_failed_with_detail, detail)
                     } ?: AssetUpdateMessage(R.string.settings_asset_update_failed),

@@ -194,18 +194,22 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         viewModel.checkForAppUpdateIfDue()
     }
 
-    LaunchedEffect(viewModel) {
-        viewModel.connectionEvents.collect { event ->
-            when (event) {
-                ConnectionEvent.RootUnavailableFallback -> showRootFallbackDialog = true
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.connectionEvents.collect { event ->
+                when (event) {
+                    ConnectionEvent.RootUnavailableFallback -> showRootFallbackDialog = true
+                }
             }
         }
     }
 
-    LaunchedEffect(viewModel) {
-        viewModel.uiEvents.collect { event ->
-            when (event) {
-                is HomeUiEvent.Toast -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.uiEvents.collect { event ->
+                when (event) {
+                    is HomeUiEvent.Toast -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

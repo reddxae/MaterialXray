@@ -444,13 +444,17 @@ private class Camera2QrScanner(
         }
 
         override fun onDisconnected(camera: CameraDevice) {
+            Log.w(TAG, "Camera disconnected")
             camera.close()
             cameraDevice = null
+            onCameraUnavailable()
         }
 
         override fun onError(camera: CameraDevice, error: Int) {
+            Log.e(TAG, "Camera error: $error")
             camera.close()
             cameraDevice = null
+            onCameraUnavailable()
         }
     }
 

@@ -2,8 +2,9 @@ package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
-import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -118,22 +119,21 @@ class ServerAddressResolverTest {
     }
 
     @Test
-    fun `raw endpoint resolution limits concurrent lookups`() = runTest {
-        val activeLookups = AtomicInteger()
-        val maximumLookups = AtomicInteger()
+    fun `raw endpoint resolution runs all lookups concurrently`() = runTest {
+        val addresses = Array(20) { index -> "endpoint-$index.example" }
+        val startedLookups = MutableStateFlow(0)
+        // Each lookup suspends until every other lookup has started, so resolution only
+        // completes when all hosts are resolved concurrently.
         val resolver = ServerAddressResolver(hostLookup = {
-            val active = activeLookups.incrementAndGet()
-            maximumLookups.updateAndGet { maximum -> maxOf(maximum, active) }
-            delay(10)
-            activeLookups.decrementAndGet()
+            startedLookups.update { it + 1 }
+            startedLookups.first { it == addresses.size }
             listOf("192.0.2.1")
         })
-        val addresses = Array(20) { index -> "endpoint-$index.example" }
 
         val result = resolver.resolve(rawServer(*addresses))
 
-        assertTrue(result.selectedAddress != null)
-        assertTrue(maximumLookups.get() <= 8)
+        assertEquals("192.0.2.1", result.selectedAddress)
+        assertEquals(addresses.size, startedLookups.value)
     }
 
     private fun rawServer(vararg addresses: String): ServerConfig = ServerConfig(

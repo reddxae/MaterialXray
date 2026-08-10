@@ -86,12 +86,10 @@ class ServerAddressResolver(
             return Result(server, attempted = false, selectedAddress = null, candidates = emptyList())
         }
 
-        val resolved = hosts.chunked(MAX_CONCURRENT_RAW_RESOLUTIONS).flatMap { batch ->
-            coroutineScope {
-                batch.map { host ->
-                    async { host to resolveHost(host, allowIpv6) }
-                }.awaitAll()
-            }
+        val resolved = coroutineScope {
+            hosts.map { host ->
+                async { host to resolveHost(host, allowIpv6) }
+            }.awaitAll()
         }
         val unresolvedHosts = resolved.filter { (_, candidates) -> candidates.isEmpty() }.map { it.first }
         val candidates = resolved.flatMap { it.second }.distinct()
@@ -114,18 +112,20 @@ class ServerAddressResolver(
     }
 
     private suspend fun resolveHost(host: String, allowIpv6: Boolean): List<String> {
-        val candidates = hostLookup?.invoke(host) ?: coroutineScope {
-            val androidDns = async {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    withTimeoutOrNull(RESOLVE_TIMEOUT_MS) { resolveWithAndroidDns(host) } ?: emptyList()
-                } else {
-                    emptyList()
-                }
-            }
-            val okHttpDns = async { resolveWithOkHttpDns(host) }
-            androidDns.await() + okHttpDns.await()
-        }
+        val candidates = hostLookup?.invoke(host) ?: systemLookup(host)
         return candidates.distinct().filter { allowIpv6 || !isIpv6Address(it) }
+    }
+
+    // DnsResolver and Dns.SYSTEM query the same netd resolver, so a second concurrent lookup adds no
+    // information. DnsResolver is preferred because it is asynchronous and cancellable, which lets a
+    // stalled query be abandoned after RESOLVE_TIMEOUT_MS; the blocking Dns.SYSTEM lookup is only a
+    // fallback for that failure case and the primary path below Android 10.
+    private suspend fun systemLookup(host: String): List<String> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val addresses = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) { resolveWithAndroidDns(host) }
+            if (!addresses.isNullOrEmpty()) return addresses
+        }
+        return resolveWithOkHttpDns(host)
     }
 
     private fun ServerConfig.withResolvedAddress(address: String, originalHost: String): ServerConfig {
@@ -165,7 +165,7 @@ class ServerAddressResolver(
         dnsResolver().query(
             null,
             host,
-            DnsResolver.FLAG_NO_CACHE_LOOKUP,
+            DnsResolver.FLAG_EMPTY,
             directExecutor,
             cancellation,
             object : DnsResolver.Callback<List<InetAddress>> {
@@ -197,8 +197,7 @@ class ServerAddressResolver(
     }.getOrDefault(emptyList())
 
     private companion object {
-        const val RESOLVE_TIMEOUT_MS = 3000L
-        const val MAX_CONCURRENT_RAW_RESOLUTIONS = 8
+        const val RESOLVE_TIMEOUT_MS = 2000L
         val ipv4Pattern = Regex("""\d{1,3}(?:\.\d{1,3}){3}""")
     }
 }

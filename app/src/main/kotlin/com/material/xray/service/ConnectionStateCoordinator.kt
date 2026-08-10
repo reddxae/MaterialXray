@@ -17,10 +17,13 @@ class ConnectionStateCoordinator @Inject constructor() {
     val state: StateFlow<ConnectionState> = _state
 
     /**
-     * One-shot events for the single UI consumer. A buffered channel keeps events emitted while
-     * the UI is stopped and delivers them once collection resumes.
+     * One-shot events for the single UI consumer. A conflated channel keeps the latest event
+     * emitted while the UI is stopped and delivers it once collection resumes. Conflation also
+     * guarantees [emitEvent] never blocks the service's connect path: the emitter may run
+     * headless (always-on VPN, boot autostart, tile) with no UI collecting, and every current
+     * event is idempotent, so keeping only the most recent one is lossless in effect.
      */
-    private val _events = Channel<ConnectionEvent>(Channel.BUFFERED)
+    private val _events = Channel<ConnectionEvent>(Channel.CONFLATED)
     val events: Flow<ConnectionEvent> = _events.receiveAsFlow()
     private val _activeBalancerSelection = MutableStateFlow<ActiveBalancerSelection?>(null)
     internal val activeBalancerSelection: StateFlow<ActiveBalancerSelection?> = _activeBalancerSelection.asStateFlow()

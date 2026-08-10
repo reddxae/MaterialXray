@@ -79,6 +79,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -152,10 +153,11 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
         alwaysOnVpn = uiState.alwaysOnVpn,
     )
 
-    var showAddDialog by remember { mutableStateOf(false) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
     var keepQrScannerDialog by remember { mutableStateOf(false) }
-    var editingSubscription by remember { mutableStateOf<SubscriptionEntity?>(null) }
+    var editingSubscriptionId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val editingSubscription = uiState.subscriptions.find { it.id == editingSubscriptionId }
     var removeSubscriptionRequest by remember { mutableStateOf<Pair<SubscriptionEntity, Int>?>(null) }
     var showRootFallbackDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -334,7 +336,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                                 removeSubscriptionRequest = subscription to servers.size
                             }
                         },
-                        onEdit = { editingSubscription = subscription },
+                        onEdit = { editingSubscriptionId = subscription.id },
                         onRefresh = { viewModel.refreshSubscription(subscription) },
                         onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
                         onDefaultPingMethodSelected = { viewModel.setDefaultPingMethod(it) },
@@ -402,7 +404,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
     )
     EditSubscriptionDialogHost(
         subscription = editingSubscription,
-        onDismiss = { editingSubscription = null },
+        onDismiss = { editingSubscriptionId = null },
         onConfirm = { subscription, name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
             viewModel.updateSubscription(
                 subscription,
@@ -414,7 +416,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
                 customUserAgent,
                 customHeaders,
             )
-            editingSubscription = null
+            editingSubscriptionId = null
         },
     )
     RawConfigDialogHost(
@@ -1889,19 +1891,19 @@ private fun EditSubscriptionDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, Boolean, Int, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
-    var name by remember(subscription.id) { mutableStateOf(subscription.name) }
-    var url by remember(subscription.id) { mutableStateOf(subscription.url) }
-    var preferJson by remember(subscription.id) { mutableStateOf(subscription.preferJson ?: true) }
-    var autoUpdateIntervalHours by remember(subscription.id) {
+    var name by rememberSaveable(subscription.id) { mutableStateOf(subscription.name) }
+    var url by rememberSaveable(subscription.id) { mutableStateOf(subscription.url) }
+    var preferJson by rememberSaveable(subscription.id) { mutableStateOf(subscription.preferJson ?: true) }
+    var autoUpdateIntervalHours by rememberSaveable(subscription.id) {
         mutableStateOf(subscription.autoUpdateIntervalHours)
     }
-    var userAgentMode by remember(subscription.id) {
+    var userAgentMode by rememberSaveable(subscription.id) {
         mutableStateOf(SubscriptionUserAgentMode.fromValue(subscription.userAgentMode))
     }
-    var customUserAgent by remember(subscription.id) {
+    var customUserAgent by rememberSaveable(subscription.id) {
         mutableStateOf(subscription.customUserAgent.orEmpty())
     }
-    var customHeaders by remember(subscription.id) {
+    var customHeaders by rememberSaveable(subscription.id) {
         mutableStateOf(subscription.customHeaders.orEmpty())
     }
     val hasChanges = name.trim() != subscription.name ||
@@ -2040,12 +2042,12 @@ private fun AddSubscriptionDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, Boolean, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var preferJson by remember { mutableStateOf(true) }
-    var userAgentMode by remember { mutableStateOf(SubscriptionUserAgentMode.default) }
-    var customUserAgent by remember { mutableStateOf("") }
-    var customHeaders by remember { mutableStateOf("") }
+    var name by rememberSaveable { mutableStateOf("") }
+    var url by rememberSaveable { mutableStateOf("") }
+    var preferJson by rememberSaveable { mutableStateOf(true) }
+    var userAgentMode by rememberSaveable { mutableStateOf(SubscriptionUserAgentMode.default) }
+    var customUserAgent by rememberSaveable { mutableStateOf("") }
+    var customHeaders by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,

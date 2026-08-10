@@ -60,6 +60,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
@@ -149,12 +150,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val scrollState = rememberScrollState()
-    var showRootAccessDeniedDialog by remember { mutableStateOf(false) }
-    var showNotificationFieldsDialog by remember { mutableStateOf(false) }
-    var showFieldStyleDialog by remember { mutableStateOf(false) }
-    var showUpdateFrequencyDialog by remember { mutableStateOf(false) }
-    var showResetDatabaseDialog by remember { mutableStateOf(false) }
-    var showOpenSourceLicensesDialog by remember { mutableStateOf(false) }
+    var showRootAccessDeniedDialog by rememberSaveable { mutableStateOf(false) }
+    var showNotificationFieldsDialog by rememberSaveable { mutableStateOf(false) }
+    var showFieldStyleDialog by rememberSaveable { mutableStateOf(false) }
+    var showUpdateFrequencyDialog by rememberSaveable { mutableStateOf(false) }
+    var showResetDatabaseDialog by rememberSaveable { mutableStateOf(false) }
+    var showOpenSourceLicensesDialog by rememberSaveable { mutableStateOf(false) }
     var showAdvancedOptionsRowTop by remember { mutableStateOf<Int?>(null) }
     var pendingAdvancedOptionsScrollAnchor by remember { mutableStateOf<AdvancedOptionsScrollAnchor?>(null) }
     val rootServiceAvailable = rootAvailable == true
@@ -166,17 +167,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
         }.getOrNull()
     }
 
-    var editingTunName by remember(tunName) { mutableStateOf(tunName) }
-    var editingXrayBufferSizeKiB by remember(xrayBufferSizeKiB) { mutableStateOf(xrayBufferSizeKiB.toString()) }
-    var editingTunMtu by remember(tunMtu) { mutableStateOf(tunMtu.toString()) }
-    var editingXrayMemoryRestartThresholdMiB by remember(xrayMemoryRestartThresholdMiB) {
+    var editingTunName by rememberSaveable(tunName) { mutableStateOf(tunName) }
+    var editingXrayBufferSizeKiB by rememberSaveable(xrayBufferSizeKiB) { mutableStateOf(xrayBufferSizeKiB.toString()) }
+    var editingTunMtu by rememberSaveable(tunMtu) { mutableStateOf(tunMtu.toString()) }
+    var editingXrayMemoryRestartThresholdMiB by rememberSaveable(xrayMemoryRestartThresholdMiB) {
         mutableStateOf(xrayMemoryRestartThresholdMiB.toString())
     }
-    var editingDns by remember(dnsServers) { mutableStateOf(dnsServers) }
-    var editingDomesticDns by remember(domesticDnsServers) { mutableStateOf(domesticDnsServers) }
-    var editingGeoipUrl by remember(geoipUrl) { mutableStateOf(geoipUrl) }
-    var editingGeositeUrl by remember(geositeUrl) { mutableStateOf(geositeUrl) }
-    var editingLatencyCheckUrl by remember(latencyCheckUrl) { mutableStateOf(latencyCheckUrl) }
+    var editingDns by rememberSaveable(dnsServers) { mutableStateOf(dnsServers) }
+    var editingDomesticDns by rememberSaveable(domesticDnsServers) { mutableStateOf(domesticDnsServers) }
+    var editingGeoipUrl by rememberSaveable(geoipUrl) { mutableStateOf(geoipUrl) }
+    var editingGeositeUrl by rememberSaveable(geositeUrl) { mutableStateOf(geositeUrl) }
+    var editingLatencyCheckUrl by rememberSaveable(latencyCheckUrl) { mutableStateOf(latencyCheckUrl) }
     val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val hasTunNameChanges by remember(editingTunName, tunName) { derivedStateOf { editingTunName != tunName } }
     val parsedXrayBufferSizeKiB by remember(editingXrayBufferSizeKiB) {

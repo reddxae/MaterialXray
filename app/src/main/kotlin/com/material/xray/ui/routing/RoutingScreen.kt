@@ -60,6 +60,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,15 +93,31 @@ import com.material.xray.ui.text.catchAllEffectResource
 import com.material.xray.ui.text.descriptionResource
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private enum class RoutingTab(@StringRes val titleResource: Int) {
     Rules(R.string.routing_tab_rules),
     Apps(R.string.routing_tab_apps),
 }
 
+@Serializable
 private data class EditableRoutingRule(
     val rule: RoutingRule,
     val isNew: Boolean,
+)
+
+/** Persists an in-progress rule edit across configuration changes and process death. */
+private val editableRoutingRuleSaver: Saver<EditableRoutingRule?, String> = jsonSaver()
+
+/** Persists the rule pending catch-all confirmation across configuration changes. */
+private val routingRuleSaver: Saver<RoutingRule?, String> = jsonSaver()
+
+private inline fun <reified T : Any> jsonSaver(): Saver<T?, String> = Saver(
+    save = { value -> value?.let { Json.encodeToString(it) } },
+    restore = { saved -> runCatching { Json.decodeFromString<T>(saved) }.getOrNull() },
 )
 
 private sealed interface RoutingRuleAction {
@@ -144,7 +162,9 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
     val coroutineScope = rememberCoroutineScope()
     var previousTab by remember { mutableIntStateOf(pagerState.currentPage) }
     var selectedRuleIds by remember { mutableStateOf(emptySet<String>()) }
-    var editingRule by remember { mutableStateOf<EditableRoutingRule?>(null) }
+    var editingRule by rememberSaveable(stateSaver = editableRoutingRuleSaver) {
+        mutableStateOf<EditableRoutingRule?>(null)
+    }
     var pendingManualAction by remember { mutableStateOf<RoutingRuleAction?>(null) }
     var confirmResetToDefault by remember { mutableStateOf(false) }
     var rulesMenuExpanded by remember { mutableStateOf(false) }
@@ -552,14 +572,24 @@ private fun EditRoutingRuleDialog(
     onDismiss: () -> Unit,
     onSave: (RoutingRule) -> Unit,
 ) {
-    var name by remember(rule.id) { mutableStateOf(TextFieldValue(rule.name)) }
-    var domains by remember(rule.id) { mutableStateOf(TextFieldValue(rule.domains.joinToString(", "))) }
-    var ips by remember(rule.id) { mutableStateOf(TextFieldValue(rule.ips.joinToString(", "))) }
-    var port by remember(rule.id) { mutableStateOf(TextFieldValue(rule.port.orEmpty())) }
-    var selectedOutbound by remember(rule.id) { mutableStateOf(rule.outboundTag) }
-    var selectedOperator by remember(rule.id) { mutableStateOf(rule.operator) }
-    var selectedProtocols by remember(rule.id) { mutableStateOf(rule.protocols.toSet()) }
-    var pendingCatchAllRule by remember(rule.id) { mutableStateOf<RoutingRule?>(null) }
+    var name by rememberSaveable(rule.id, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(rule.name))
+    }
+    var domains by rememberSaveable(rule.id, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(rule.domains.joinToString(", ")))
+    }
+    var ips by rememberSaveable(rule.id, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(rule.ips.joinToString(", ")))
+    }
+    var port by rememberSaveable(rule.id, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(rule.port.orEmpty()))
+    }
+    var selectedOutbound by rememberSaveable(rule.id) { mutableStateOf(rule.outboundTag) }
+    var selectedOperator by rememberSaveable(rule.id) { mutableStateOf(rule.operator) }
+    var selectedProtocols by rememberSaveable(rule.id) { mutableStateOf(rule.protocols.toSet()) }
+    var pendingCatchAllRule by rememberSaveable(rule.id, stateSaver = routingRuleSaver) {
+        mutableStateOf<RoutingRule?>(null)
+    }
     val outboundOption = remember(selectedOutbound) { XrayOutbound.fromTag(selectedOutbound) }
     val matchModeOption = remember(selectedOperator) { matchModeOptions.first { it.value == selectedOperator } }
     val outboundDescription = stringResource(outboundOption.descriptionResource)

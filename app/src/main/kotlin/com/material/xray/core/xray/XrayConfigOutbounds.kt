@@ -67,6 +67,53 @@ internal fun buildTunInbound(
     put("tag", tag)
 }
 
+internal fun buildTproxyInbound(
+    port: Int,
+    tag: String,
+    outboundMark: Int,
+    allowIpv6: Boolean,
+) = buildJsonObject {
+    require(port in 1..65_535) { "Invalid TPROXY port: $port" }
+    put("listen", if (allowIpv6) "::" else "0.0.0.0")
+    put("port", port)
+    put("protocol", "tunnel")
+    put(
+        "settings",
+        buildJsonObject {
+            put("allowedNetwork", "tcp,udp")
+            put("followRedirect", true)
+        },
+    )
+    put(
+        "sniffing",
+        buildJsonObject {
+            put("enabled", true)
+            put("routeOnly", true)
+            put(
+                "destOverride",
+                buildJsonArray {
+                    add("http")
+                    add("tls")
+                    add("quic")
+                },
+            )
+        },
+    )
+    put(
+        "streamSettings",
+        buildJsonObject {
+            put(
+                "sockopt",
+                buildJsonObject {
+                    put("tproxy", "tproxy")
+                    put("mark", outboundMark)
+                },
+            )
+        },
+    )
+    put("tag", tag)
+}
+
 internal fun buildProxyOutbound(
     server: ServerConfig,
     fwmark: Int,

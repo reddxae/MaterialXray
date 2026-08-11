@@ -12,6 +12,11 @@ import com.material.xray.core.xray.GeoDataManager
 import com.material.xray.core.xray.GeoDataStatus
 import com.material.xray.core.xray.ServerAddressResolver
 import com.material.xray.core.xray.StateFile
+import com.material.xray.core.xray.TproxyManager
+import com.material.xray.core.xray.TproxyPortAllocator
+import com.material.xray.core.xray.TproxyRuntimeState
+import com.material.xray.core.xray.TproxyTrafficGroup
+import com.material.xray.core.xray.TproxyTrafficPlan
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XRAY_API_LOOPBACK_ADDRESS
 import com.material.xray.core.xray.XrayApiEndpoint
@@ -151,16 +156,16 @@ internal class XrayBinaryConnectionAdapter(
 }
 
 internal interface ConnectionCleanup {
-    suspend fun ensureCleanState(fallbackTunName: String = "xray0"): Boolean
-    suspend fun ensureKnownStateStopped(fallbackTunName: String = "xray0"): Boolean
+    suspend fun ensureCleanState(fallbackTunName: String = "xray0", preserveTproxyGuard: Boolean = false): Boolean
+    suspend fun ensureKnownStateStopped(fallbackTunName: String = "xray0", preserveTproxyGuard: Boolean = false): Boolean
 }
 
 internal class CleanupManagerConnectionAdapter(
     private val cleanupManager: CleanupManager,
 ) : ConnectionCleanup {
-    override suspend fun ensureCleanState(fallbackTunName: String): Boolean = cleanupManager.ensureCleanState(fallbackTunName)
+    override suspend fun ensureCleanState(fallbackTunName: String, preserveTproxyGuard: Boolean): Boolean = cleanupManager.ensureCleanState(fallbackTunName, preserveTproxyGuard)
 
-    override suspend fun ensureKnownStateStopped(fallbackTunName: String): Boolean = cleanupManager.ensureKnownStateStopped(fallbackTunName)
+    override suspend fun ensureKnownStateStopped(fallbackTunName: String, preserveTproxyGuard: Boolean): Boolean = cleanupManager.ensureKnownStateStopped(fallbackTunName, preserveTproxyGuard)
 }
 
 internal data class ServerResolution(
@@ -201,6 +206,83 @@ internal class GeoDataConnectionRoutingData(
 ) : ConnectionRoutingData {
     override suspend fun needsRefresh(): Boolean = geoDataManager.needsRefresh()
     override suspend fun ensureReady(): GeoDataStatus = geoDataManager.ensureReady()
+}
+
+internal interface TproxyRoutingGateway {
+    fun createPlan(
+        appRoutingPlan: AppRoutingPlan,
+        routeTable: Int,
+        outboundMark: Int,
+        allowIpv6: Boolean,
+        existingState: TproxyRuntimeState? = null,
+    ): TproxyTrafficPlan
+
+    suspend fun installGuard(plan: TproxyTrafficPlan): TunManager.RoutingResult
+    suspend fun activate(plan: TproxyTrafficPlan): TunManager.RoutingResult
+    suspend fun update(plan: TproxyTrafficPlan, currentSlot: String): TunManager.RoutingResult
+    suspend fun verify(state: TproxyRuntimeState): Boolean
+    suspend fun removeGuard(): Boolean
+    suspend fun hasGuard(): Boolean
+}
+
+internal class TproxyManagerRoutingGateway(
+    private val manager: TproxyManager,
+    private val portAllocator: TproxyPortAllocator,
+    private val appUid: Int,
+) : TproxyRoutingGateway {
+    override fun createPlan(
+        appRoutingPlan: AppRoutingPlan,
+        routeTable: Int,
+        outboundMark: Int,
+        allowIpv6: Boolean,
+        existingState: TproxyRuntimeState?,
+    ): TproxyTrafficPlan {
+        val inboundTags = if (appRoutingPlan.proxyRoutes.isEmpty()) {
+            appRoutingPlan.proxyServerIds.mapIndexed { index, routeKey ->
+                existingState?.groups?.getOrNull(index + 1)?.inboundTag
+                    ?: if (routeKey == Long.MIN_VALUE) "app-in-default-selected" else "app-in-$routeKey"
+            }
+        } else {
+            appRoutingPlan.proxyRoutes.map { it.inboundTag }
+        }
+        val routeIdentities = listOf(BASE_TPROXY_ROUTE_KEY to BASE_TPROXY_INBOUND_TAG) +
+            appRoutingPlan.proxyServerIds.zip(inboundTags)
+        val state = existingState ?: TproxyManager.createRuntimeState(
+            routeTable = routeTable + TPROXY_ROUTE_TABLE_OFFSET,
+            groups = routeIdentities,
+            ports = portAllocator.allocate(routeIdentities.size, allowIpv6),
+            allowIpv6 = allowIpv6,
+        )
+        require(state.groups.map { it.routeKey } == routeIdentities.map { it.first }) {
+            "TPROXY traffic group topology changed"
+        }
+        val groups = buildList {
+            add(TproxyTrafficGroup(state.groups.first(), emptySet(), isBase = true))
+            state.groups.drop(1).zip(appRoutingPlan.tunRoutes).forEach { (group, route) ->
+                add(TproxyTrafficGroup(group, route.uids))
+            }
+        }
+        return TproxyTrafficPlan(
+            runtimeState = state,
+            groups = groups,
+            bypassUids = appRoutingPlan.directUids + appUid,
+            routeProfileIds = appRoutingPlan.routeProfileIds,
+            outboundMark = outboundMark,
+        )
+    }
+
+    override suspend fun installGuard(plan: TproxyTrafficPlan): TunManager.RoutingResult = manager.installGuard(plan)
+    override suspend fun activate(plan: TproxyTrafficPlan): TunManager.RoutingResult = manager.activate(plan)
+    override suspend fun update(plan: TproxyTrafficPlan, currentSlot: String): TunManager.RoutingResult = manager.update(plan, currentSlot)
+    override suspend fun verify(state: TproxyRuntimeState): Boolean = manager.verify(state)
+    override suspend fun removeGuard(): Boolean = manager.removeGuard()
+    override suspend fun hasGuard(): Boolean = manager.hasGuard()
+
+    private companion object {
+        const val TPROXY_ROUTE_TABLE_OFFSET = 200
+        const val BASE_TPROXY_ROUTE_KEY = Long.MAX_VALUE
+        const val BASE_TPROXY_INBOUND_TAG = "tproxy-in-default"
+    }
 }
 
 internal interface ConnectionStatsClient : AutoCloseable {
@@ -250,6 +332,7 @@ internal data class ConnectionManagerDependencies(
     val routingData: ConnectionRoutingData,
     val serverResolver: ConnectionServerResolver,
     val tunGateway: TunRoutingGateway,
+    val tproxyGateway: TproxyRoutingGateway,
     val cleanup: ConnectionCleanup,
     val stateStore: ConnectionStateStore,
     val rootProcess: RootXrayProcessController,
@@ -275,6 +358,11 @@ class ConnectionManagerFactory @Inject constructor(
         val xrayBinary = XrayBinaryConnectionAdapter(XrayBinary(context))
         val runtimeEnvironment = AndroidXrayRuntimeEnvironment(context)
         val tunGateway = TunManagerRoutingGateway(TunManager(shell))
+        val tproxyGateway = TproxyManagerRoutingGateway(
+            manager = TproxyManager(shell, environment.appUid),
+            portAllocator = TproxyPortAllocator(),
+            appUid = environment.appUid,
+        )
         val stateStore = StateFileRoutingStateStore(StateFile(context))
         val serverAddressResolver = ServerAddressResolver(context)
         val rootProcess = XrayProcessSupervisor(
@@ -302,11 +390,12 @@ class ConnectionManagerFactory @Inject constructor(
             routingData = GeoDataConnectionRoutingData(geoDataManager),
             serverResolver = ServerAddressConnectionResolver(serverAddressResolver),
             tunGateway = tunGateway,
+            tproxyGateway = tproxyGateway,
             cleanup = CleanupManagerConnectionAdapter(CleanupManager(context, shell)),
             stateStore = stateStore,
             rootProcess = rootProcess,
             userProcess = userProcess,
-            diagnostics = ConnectionDiagnostics(RootShellDiagnosticCommandRunner(shell), log),
+            diagnostics = ConnectionDiagnostics(RootShellDiagnosticCommandRunner(shell), log, environment.appUid),
             routingPlanBuilder = routingPlanBuilder,
             activeRouting = ActiveRoutingUpdater(
                 appUidProvider = { environment.appUid },

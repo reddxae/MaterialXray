@@ -13,6 +13,7 @@ import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
 import com.material.xray.model.PingMethod
+import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
@@ -78,6 +79,7 @@ class SettingsRepository @Inject constructor(
         val ROUTING_DOMAIN_MATCHER = stringPreferencesKey("routing_domain_matcher")
         val ROUTING_FALLBACK_OUTBOUND = stringPreferencesKey("routing_fallback_outbound")
         val USE_ROOT_SERVICE = booleanPreferencesKey("use_root_service")
+        val ROOT_CONNECTION_BACKEND = stringPreferencesKey("root_connection_backend")
         val NOTIFICATION_ENABLED = booleanPreferencesKey("notification_enabled")
         val NOTIFICATION_UPDATE_INTERVAL_MS = intPreferencesKey("notification_update_interval_ms")
         val NOTIFICATION_STYLE = stringPreferencesKey("notification_style")
@@ -150,6 +152,9 @@ class SettingsRepository @Inject constructor(
     val useRootService: Flow<Boolean> = store.data.map { prefs ->
         prefs[USE_ROOT_SERVICE] ?: false
     }
+    val rootConnectionBackend: Flow<RootConnectionBackend> = store.data.map { prefs ->
+        RootConnectionBackend.fromValue(prefs[ROOT_CONNECTION_BACKEND])
+    }
     val geoipUrl: Flow<String> = store.data.map { prefs ->
         prefs[GEOIP_URL]
             ?: prefs[LEGACY_GEO_DATA_BASE_URL]?.let { legacyBaseUrl -> appendLegacyFileName(legacyBaseUrl, "geoip.dat") }
@@ -214,6 +219,7 @@ class SettingsRepository @Inject constructor(
         fwmark = fwmark.first(),
         routeTable = routeTable.first(),
         useRootService = useRootService.first(),
+        rootConnectionBackend = rootConnectionBackend.first(),
         dnsServers = dnsServers.first(),
         domesticDnsServers = domesticDnsServers.first(),
         logLevel = xrayLogLevel.first(),
@@ -301,6 +307,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setUseRootService(enabled: Boolean) = store.edit { prefs ->
         prefs[USE_ROOT_SERVICE] = enabled
+    }
+    suspend fun setRootConnectionBackend(backend: RootConnectionBackend) = store.edit { prefs ->
+        prefs[ROOT_CONNECTION_BACKEND] = backend.persistedValue
     }
     suspend fun setNotificationEnabled(enabled: Boolean) = store.edit { prefs ->
         prefs[NOTIFICATION_ENABLED] = enabled
@@ -439,6 +448,9 @@ class SettingsRepository @Inject constructor(
             map["routing_policy_control"]
                 ?.let { prefs[ROUTING_POLICY_CONTROL] = RoutingPolicyControl.fromValue(it).value }
             map["use_root_service"]?.toBooleanStrictOrNull()?.let { prefs[USE_ROOT_SERVICE] = it }
+            map["root_connection_backend"]?.let { value ->
+                prefs[ROOT_CONNECTION_BACKEND] = RootConnectionBackend.fromValue(value).persistedValue
+            }
             map["notification_enabled"]?.toBooleanStrictOrNull()?.let { prefs[NOTIFICATION_ENABLED] = it }
             map["notification_update_interval_ms"]
                 ?.toIntOrNull()

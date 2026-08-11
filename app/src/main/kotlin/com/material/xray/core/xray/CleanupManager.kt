@@ -3,6 +3,7 @@ package com.material.xray.core.xray
 import android.content.Context
 import com.material.xray.core.nftables.NftablesManager
 import com.material.xray.core.root.RootShell
+import com.material.xray.model.RootConnectionBackend
 
 class CleanupManager(
     context: Context,
@@ -11,37 +12,46 @@ class CleanupManager(
     private val stateFile = StateFile(context)
     private val nftables = NftablesManager(shell)
     private val tunManager = TunManager(shell)
+    private val tproxyManager = TproxyManager(shell, appUid = context.applicationInfo.uid)
     private val apiFirewall = XrayApiFirewall(shell)
     private val appUid = context.applicationInfo.uid
     private val configPath = context.filesDir.resolve("config.json").absolutePath
 
-    suspend fun ensureCleanState(fallbackTunName: String = "xray0"): Boolean {
+    suspend fun ensureCleanState(fallbackTunName: String = "xray0", preserveTproxyGuard: Boolean = false): Boolean {
         val state = stateFile.read()
         val processesStopped = stopOwnedProcesses(state?.xrayPid)
-        val runtimeRemoved = removeRuntimeState(state, fallbackTunName)
-        if (processesStopped && runtimeRemoved) stateFile.delete()
+        val runtimeRemoved = removeRuntimeState(state, fallbackTunName, preserveTproxyGuard)
+        if (processesStopped && runtimeRemoved && !preserveTproxyGuard) stateFile.delete()
         return processesStopped && runtimeRemoved
     }
 
-    suspend fun ensureKnownStateStopped(fallbackTunName: String = "xray0"): Boolean {
+    suspend fun ensureKnownStateStopped(fallbackTunName: String = "xray0", preserveTproxyGuard: Boolean = false): Boolean {
         val state = stateFile.read() ?: return false
         val processesStopped = stopOwnedProcesses(state.xrayPid)
-        val runtimeRemoved = removeRuntimeState(state, fallbackTunName)
-        if (processesStopped && runtimeRemoved) stateFile.delete()
+        val runtimeRemoved = removeRuntimeState(state, fallbackTunName, preserveTproxyGuard)
+        if (processesStopped && runtimeRemoved && !preserveTproxyGuard) stateFile.delete()
         return processesStopped && runtimeRemoved
     }
 
-    private suspend fun removeRuntimeState(state: XrayState?, fallbackTunName: String): Boolean {
+    private suspend fun removeRuntimeState(
+        state: XrayState?,
+        fallbackTunName: String,
+        preserveTproxyGuard: Boolean,
+    ): Boolean {
         val firewallRemoved = apiFirewall.remove(appUid)
         val nftablesRemoved = nftables.remove()
 
-        val tunName = state?.tunName ?: fallbackTunName
+        val tunName = state
+            ?.takeIf { it.rootConnectionBackend == RootConnectionBackend.Tun }
+            ?.tunName
+            ?: fallbackTunName
         val fwmark = state?.fwmark ?: 255
         val routeMark = state?.routeMark ?: 100
         val routeTable = state?.routeTable ?: 100
         val appRouteCount = state?.appProxyServerIds?.size?.takeIf { it > 0 } ?: 0
         val routingRemoved = tunManager.removeRouting(fwmark, routeMark, routeTable, tunName, appRouteCount)
-        return firewallRemoved && nftablesRemoved && routingRemoved
+        val tproxyRemoved = tproxyManager.remove(state?.tproxy ?: state?.transitionGuard, preserveTproxyGuard)
+        return firewallRemoved && nftablesRemoved && routingRemoved && tproxyRemoved
     }
 
     private suspend fun stopOwnedProcesses(persistedPid: Int?): Boolean = shell.execute(

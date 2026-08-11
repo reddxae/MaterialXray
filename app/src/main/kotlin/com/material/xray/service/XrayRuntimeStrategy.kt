@@ -69,7 +69,7 @@ internal interface XrayRuntimeStrategy : XrayRuntimeProcess {
      * that state is known to be current. Returns false when the cleanup itself failed, which is a
      * condition the next connection attempt has to repair.
      */
-    suspend fun release(fastCleanup: Boolean): Boolean
+    suspend fun release(fastCleanup: Boolean, preserveTproxyGuard: Boolean = false): Boolean
 
     /** Stops the core without waiting, for use while the owning service is being destroyed. */
     fun requestStop()
@@ -108,10 +108,12 @@ internal class RootXrayRuntimeStrategy(
 
     override suspend fun readCrashReason(): String = processSupervisor.readCrashReason()
 
-    override suspend fun release(fastCleanup: Boolean): Boolean = if (fastCleanup && cleanup.ensureKnownStateStopped()) {
+    override suspend fun release(fastCleanup: Boolean, preserveTproxyGuard: Boolean): Boolean = if (
+        fastCleanup && cleanup.ensureKnownStateStopped(preserveTproxyGuard = preserveTproxyGuard)
+    ) {
         true
     } else {
-        cleanup.ensureCleanState()
+        cleanup.ensureCleanState(preserveTproxyGuard = preserveTproxyGuard)
     }
 
     // The core is not a child of this process, so there is no signal to send from a service that
@@ -164,9 +166,9 @@ internal class VpnServiceXrayRuntimeStrategy(
 
     // Nothing is installed outside the process, so stopping the child and dropping the record it
     // left behind is the whole teardown.
-    override suspend fun release(fastCleanup: Boolean): Boolean {
+    override suspend fun release(fastCleanup: Boolean, preserveTproxyGuard: Boolean): Boolean {
         processSupervisor.stop()
-        stateStore.delete()
+        if (!preserveTproxyGuard) stateStore.delete()
         return true
     }
 

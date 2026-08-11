@@ -5,6 +5,7 @@ data class XrayRuntimeSettings(
     val fwmark: Int,
     val routeTable: Int,
     val useRootService: Boolean,
+    val rootConnectionBackend: RootConnectionBackend = RootConnectionBackend.default,
     val dnsServers: String,
     val domesticDnsServers: String,
     val logLevel: XrayLogLevel,

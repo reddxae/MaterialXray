@@ -38,7 +38,7 @@ internal class XrayHealthWatchdog(
     private val passiveMonitoringEnabled: () -> Boolean,
     private val memoryRestartThresholdMiB: () -> Int,
     private val elapsedRealtime: () -> Long,
-    private val tunnelAvailable: (ConnectionState.Connected) -> Boolean,
+    private val tunnelAvailable: suspend (ConnectionState.Connected) -> Boolean,
     private val runtimeModeRecoveryReason: suspend () -> String?,
     private val scheduleNetworkSafetyCheck: suspend () -> Unit,
     private val recover: (reason: String, watchedPid: Int, pidToKill: Int?) -> Boolean,
@@ -171,7 +171,7 @@ internal class XrayHealthWatchdog(
         return true
     }
 
-    private fun checkTunnel(
+    private suspend fun checkTunnel(
         session: HealthWatchdogSession,
         state: ConnectionState.Connected,
         healthMonitor: LocalXrayHealthMonitor,

@@ -3,10 +3,30 @@ package com.material.xray.core.xray
 import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
+import com.material.xray.model.RootConnectionBackend
 import java.io.File
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+
+@Serializable
+data class TproxyRuntimeState(
+    val markPrefix: Int,
+    val markMask: Int,
+    val routeTable: Int,
+    val rulePriority: Int,
+    val outputChainSlot: String,
+    val groups: List<TproxyGroupState>,
+    val ipv6Enabled: Boolean,
+)
+
+@Serializable
+data class TproxyGroupState(
+    val routeKey: Long,
+    val mark: Int,
+    val port: Int,
+    val inboundTag: String,
+)
 
 @Serializable
 data class XrayState(
@@ -24,6 +44,9 @@ data class XrayState(
     val physicalGateway: String? = null,
     val physicalTable: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
+    val rootConnectionBackend: RootConnectionBackend = RootConnectionBackend.Tun,
+    val tproxy: TproxyRuntimeState? = null,
+    val transitionGuard: TproxyRuntimeState? = null,
 )
 
 /**

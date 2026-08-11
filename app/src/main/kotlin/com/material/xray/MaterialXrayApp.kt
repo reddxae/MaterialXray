@@ -8,6 +8,7 @@ import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.di.ApplicationScope
 import com.material.xray.service.AppUpdateScheduler
+import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.service.StartupDiagnosticsLogger
 import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.ui.home.HomeDataState
@@ -31,6 +32,8 @@ class MaterialXrayApp : Application() {
     @Inject lateinit var backupManager: BackupManager
 
     @Inject lateinit var startupDiagnosticsLogger: StartupDiagnosticsLogger
+
+    @Inject lateinit var settingsRuntimeManager: SettingsRuntimeManager
 
     /**
      * Injected for its construction side effect: building the holder eagerly starts loading the
@@ -56,6 +59,8 @@ class MaterialXrayApp : Application() {
                 .onFailure { error -> Log.e(LOG_TAG, "Unable to record startup diagnostics", error) }
             launcherIconManager.apply(settingsRepository.launcherIcon.first())
             appUpdateScheduler.setEnabled(settingsRepository.appUpdateChecksEnabled.first())
+            runCatching { settingsRuntimeManager.warmUpTproxyCompatibility() }
+                .onFailure { error -> Log.e(LOG_TAG, "Unable to probe TPROXY compatibility", error) }
         }
         subscriptionUpdateScheduler.schedulePeriodicUpdates()
         subscriptionUpdateScheduler.enqueueDueCheckNow()

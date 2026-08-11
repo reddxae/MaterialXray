@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.R
 import com.material.xray.core.xray.GeoDataAsset
+import com.material.xray.core.xray.TproxyCompatibility
 import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.BackupSummary
 import com.material.xray.data.repository.PreparedBackupImport
@@ -18,6 +19,7 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationStyle
+import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
@@ -103,6 +105,11 @@ class SettingsViewModel @Inject constructor(
         )
     val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val useRootService = settingsRepo.useRootService.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val rootConnectionBackend = settingsRepo.rootConnectionBackend.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        RootConnectionBackend.default,
+    )
     val bypassLan = settingsRepo.bypassLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val allowIpv6 = settingsRepo.allowIpv6.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val xrayBufferSizeKiB = settingsRepo.xrayBufferSizeKiB.stateIn(
@@ -195,6 +202,7 @@ class SettingsViewModel @Inject constructor(
     val backupImportSummary: StateFlow<BackupSummary?> = _backupImportSummary.asStateFlow()
     val backupEvents: Flow<BackupOperationMessage> = _backupEvents.receiveAsFlow()
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
+    val tproxyCompatibility: StateFlow<TproxyCompatibility> = settingsRuntimeManager.tproxyCompatibility
     val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
     val appUpdateCheckStatus: StateFlow<AppUpdateCheckStatus?> = _appUpdateCheckStatus.asStateFlow()
 
@@ -237,7 +245,17 @@ class SettingsViewModel @Inject constructor(
         }
 
         _rootAvailable.value = true
+        checkTproxyCompatibility()
     }
+    fun setRootConnectionBackend(backend: RootConnectionBackend) = viewModelScope.launch {
+        if (backend == rootConnectionBackend.value) return@launch
+        if (backend == RootConnectionBackend.Tproxy && tproxyCompatibility.value is TproxyCompatibility.Unsupported) {
+            return@launch
+        }
+        settingsRuntimeManager.setRootConnectionBackend(backend)
+    }
+
+    fun retryTproxyCompatibilityCheck() = checkTproxyCompatibility(forceRefresh = true)
     fun setBypassLan(enabled: Boolean) = viewModelScope.launch {
         if (enabled == bypassLan.value) return@launch
         settingsRepo.setBypassLan(enabled)
@@ -245,6 +263,9 @@ class SettingsViewModel @Inject constructor(
     }
     fun setAllowIpv6(enabled: Boolean) = viewModelScope.launch {
         if (enabled == allowIpv6.value) return@launch
+        if (enabled && !isIpv6SelectionEnabled(useRootService.value, rootConnectionBackend.value, tproxyCompatibility.value)) {
+            return@launch
+        }
         settingsRepo.setAllowIpv6(enabled)
         reloadActiveConnectionIfConnected()
     }
@@ -536,7 +557,16 @@ class SettingsViewModel @Inject constructor(
 
     private fun checkRootAvailability() {
         viewModelScope.launch {
+            // The TPROXY probe is deliberately not started here. It is a kernel capability check that
+            // runs once at application startup; opening the settings screen must not re-run it.
             _rootAvailable.value = settingsRuntimeManager.checkRootAvailability()
+        }
+    }
+
+    private fun checkTproxyCompatibility(forceRefresh: Boolean = false) {
+        if (tproxyCompatibility.value == TproxyCompatibility.Checking) return
+        viewModelScope.launch {
+            settingsRuntimeManager.detectTproxyCompatibility(forceRefresh)
         }
     }
 
@@ -546,3 +576,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 }
+
+internal fun isIpv6SelectionEnabled(
+    rootServiceActive: Boolean,
+    backend: RootConnectionBackend,
+    compatibility: TproxyCompatibility,
+): Boolean = !(
+    rootServiceActive &&
+        backend == RootConnectionBackend.Tproxy &&
+        compatibility is TproxyCompatibility.Supported &&
+        !compatibility.ipv6
+    )

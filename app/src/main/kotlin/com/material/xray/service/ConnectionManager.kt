@@ -3,12 +3,15 @@ package com.material.xray.service
 import android.os.ParcelFileDescriptor
 import com.material.xray.R
 import com.material.xray.core.xray.ConfigGenerator
+import com.material.xray.core.xray.TproxyTrafficPlan
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayApiEndpoint
+import com.material.xray.core.xray.XrayInbound
 import com.material.xray.core.xray.XrayState
 import com.material.xray.core.xray.XraySysStats
 import com.material.xray.core.xray.parseXrayApiEndpoint
 import com.material.xray.model.ConnectionState
+import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
 import java.io.IOException
@@ -32,6 +35,7 @@ internal class ConnectionManager(
     private val routingData = dependencies.routingData
     private val serverResolver = dependencies.serverResolver
     private val tunGateway = dependencies.tunGateway
+    private val tproxyGateway = dependencies.tproxyGateway
     private val cleanup = dependencies.cleanup
     private val stateStore = dependencies.stateStore
     private val processSupervisor = dependencies.rootProcess
@@ -65,11 +69,16 @@ internal class ConnectionManager(
 
     @Volatile private var runtimeState: XrayRuntimeState = XrayRuntimeState.Inactive
 
+    @Volatile private var transitionGuardInstalled = false
+
+    @Volatile private var preserveGuardOnFailure = false
+
     // Root is the only runtime that installs routing outside the process; the rootless runtime
     // gets it from Android's VpnService.
     val isUsingRootRuntime: Boolean
         get() = runtimeState.strategy?.managesSystemRouting == true
 
+    @Suppress("CyclomaticComplexMethod")
     suspend fun connect(
         server: ServerConfig,
         runtimeSettings: XrayRuntimeSettings,
@@ -87,6 +96,7 @@ internal class ConnectionManager(
         log.append(LogSource.APP, "Connecting to ${server.name} (${server.address}:${server.port})")
         val strategy = strategyFor(useRootService = runtimeSettings.useRootService)
         val managesSystemRouting = strategy.managesSystemRouting
+        val rootBackend = effectiveRootBackend(managesSystemRouting, runtimeSettings.rootConnectionBackend)
         runtimeState = XrayRuntimeState.Starting(strategy)
 
         try {
@@ -95,6 +105,7 @@ internal class ConnectionManager(
                 vpnInterface = vpnInterface,
                 preparation = preparation,
                 configuredTunName = runtimeSettings.tunName,
+                rootBackend = rootBackend,
             ) ?: return
             val effectiveRuntimeSettings = runtimeSettings.copy(tunName = tunName)
             if (prepareXrayBinary(strategy, preparation) == null) return
@@ -113,6 +124,8 @@ internal class ConnectionManager(
                 defaultProxyServer = xrayServer,
                 allowIpv6 = runtimeSettings.allowIpv6,
             )
+            val tproxyPreparation = prepareTproxyPlan(rootBackend, appRoutingPlan, runtimeSettings) ?: return
+            val tproxyPlan = tproxyPreparation.plan
             if (hasConfiguredAppRouting(appRoutingPlan)) {
                 logAppRoutingPlan(appRoutingPlan)
             }
@@ -120,6 +133,19 @@ internal class ConnectionManager(
             val xrayApiEndpoint = strategy.nextApiEndpoint(environment)
             if (!prepareXrayApiAccess(xrayApiEndpoint)) return
             replaceXrayApiClients(xrayApiEndpoint)
+            if (
+                !prepareTproxyInterception(
+                    tproxyPlan = tproxyPlan,
+                    tunName = tunName,
+                    serverName = server.name,
+                    runtimeSettings = runtimeSettings,
+                    appRoutingPlan = appRoutingPlan,
+                    physicalRoute = physicalRouteResult.route,
+                    xrayApiEndpoint = xrayApiEndpoint,
+                )
+            ) {
+                return
+            }
 
             writeXrayConfig(
                 xrayServer,
@@ -128,6 +154,7 @@ internal class ConnectionManager(
                 appRoutingPlan,
                 physicalRouteResult.route,
                 xrayApiEndpoint,
+                tproxyPlan,
             )
             val pid = startXrayProcess(strategy, vpnInterface)
 
@@ -155,6 +182,8 @@ internal class ConnectionManager(
                 physicalRoute = physicalRouteResult.route,
                 ipRulesApplied = false,
                 xrayApiEndpoint = xrayApiEndpoint,
+                rootBackend = rootBackend,
+                tproxyPlan = tproxyPlan,
             )
 
             if (
@@ -168,6 +197,8 @@ internal class ConnectionManager(
                     runtimeSettings.allowIpv6,
                     appRoutingPlan,
                     pid,
+                    rootBackend,
+                    tproxyPlan,
                 )
             ) {
                 return
@@ -186,6 +217,8 @@ internal class ConnectionManager(
                 ipRulesApplied = managesSystemRouting,
                 connectStartedAt = connectStartedAt,
                 xrayApiEndpoint = xrayApiEndpoint,
+                rootBackend = rootBackend,
+                tproxyPlan = tproxyPlan,
             )
         } catch (error: CancellationException) {
             withContext(NonCancellable) { cleanCancelledConnectionAttempt() }
@@ -211,12 +244,16 @@ internal class ConnectionManager(
         vpnInterface: ParcelFileDescriptor?,
         preparation: ConnectionPreparation,
         configuredTunName: String,
+        rootBackend: RootConnectionBackend,
     ): String? {
         val customTunName = configuredTunName.trim()
         if (preparation.cleansPreviousState && strategy.managesSystemRouting) {
             log.append(LogSource.APP, "Cleaning up previous state...")
             val cleaned = timedStep("Cleanup") {
-                cleanup.ensureCleanState(fallbackTunName = customTunName.ifEmpty { LEGACY_DEFAULT_TUN_NAME })
+                cleanup.ensureCleanState(
+                    fallbackTunName = customTunName.ifEmpty { LEGACY_DEFAULT_TUN_NAME },
+                    preserveTproxyGuard = transitionGuardInstalled && preserveGuardOnFailure,
+                )
             }
             if (!cleaned) {
                 fail(environment.localizedString(R.string.connection_error_cleanup_failed), cleanState = false)
@@ -231,7 +268,11 @@ internal class ConnectionManager(
         }
         if (!ready) return null
 
-        val tunName = if (strategy.managesSystemRouting && customTunName.isEmpty()) {
+        val tunName = if (
+            strategy.managesSystemRouting &&
+            rootBackend == RootConnectionBackend.Tun &&
+            customTunName.isEmpty()
+        ) {
             timedStep("TUN interface name detection") {
                 tunGateway.findAvailableWlanName()
             }?.also { selectedName ->
@@ -243,12 +284,64 @@ internal class ConnectionManager(
                 )
                 return null
             }
+        } else if (strategy.managesSystemRouting && rootBackend == RootConnectionBackend.Tproxy) {
+            TPROXY_INTERFACE_LABEL
         } else {
             customTunName
         }
 
         strategy.prepareLogFile()
         return tunName
+    }
+
+    private suspend fun prepareTproxyPlan(
+        rootBackend: RootConnectionBackend,
+        appRoutingPlan: AppRoutingPlan,
+        runtimeSettings: XrayRuntimeSettings,
+    ): TproxyPlanPreparation? {
+        if (rootBackend != RootConnectionBackend.Tproxy) return TproxyPlanPreparation(null)
+        return TproxyPlanPreparation(
+            tproxyGateway.createPlan(
+                appRoutingPlan = appRoutingPlan,
+                routeTable = runtimeSettings.routeTable,
+                outboundMark = runtimeSettings.fwmark,
+                allowIpv6 = runtimeSettings.allowIpv6,
+            ),
+        )
+    }
+
+    private suspend fun prepareTproxyInterception(
+        tproxyPlan: TproxyTrafficPlan?,
+        tunName: String,
+        serverName: String,
+        runtimeSettings: XrayRuntimeSettings,
+        appRoutingPlan: AppRoutingPlan,
+        physicalRoute: TunManager.PhysicalRoute?,
+        xrayApiEndpoint: XrayApiEndpoint,
+    ): Boolean {
+        if (tproxyPlan == null) return true
+        writeConnectionStateFile(
+            pid = -1,
+            tunName = tunName,
+            serverName = serverName,
+            fwmark = runtimeSettings.fwmark,
+            routeMark = runtimeSettings.routeTable,
+            routeTable = runtimeSettings.routeTable,
+            bypassTable = runtimeSettings.routeTable + 1,
+            appRoutingPlan = appRoutingPlan,
+            physicalRoute = physicalRoute,
+            ipRulesApplied = false,
+            xrayApiEndpoint = xrayApiEndpoint,
+            rootBackend = RootConnectionBackend.Tproxy,
+            tproxyPlan = tproxyPlan,
+        )
+        val guardResult = timedStep("TPROXY startup guard") { tproxyGateway.installGuard(tproxyPlan) }
+        if (!guardResult.success) {
+            failRouting(guardResult)
+            return false
+        }
+        transitionGuardInstalled = true
+        return true
     }
 
     private suspend fun prepareRootRuntime(preparation: ConnectionPreparation): Boolean {
@@ -402,6 +495,7 @@ internal class ConnectionManager(
         appRoutingPlan: AppRoutingPlan,
         physicalRoute: TunManager.PhysicalRoute?,
         xrayApiEndpoint: XrayApiEndpoint,
+        tproxyPlan: TproxyTrafficPlan?,
     ) {
         val configJson = timedStep("Config generation") {
             withContext(Dispatchers.Default) {
@@ -424,6 +518,14 @@ internal class ConnectionManager(
                     xrayApiEndpoint = xrayApiEndpoint,
                     xrayBufferSizeKiB = runtimeSettings.xrayBufferSizeKiB,
                     tunMtu = runtimeSettings.tunMtu,
+                    inbounds = tproxyPlan?.runtimeState?.groups?.map { group ->
+                        XrayInbound.Tproxy(
+                            port = group.port,
+                            tag = group.inboundTag,
+                            outboundMark = runtimeSettings.fwmark,
+                            allowIpv6 = runtimeSettings.allowIpv6,
+                        )
+                    },
                 )
             }
         }
@@ -461,7 +563,14 @@ internal class ConnectionManager(
         physicalRoute: TunManager.PhysicalRoute?,
         ipRulesApplied: Boolean,
         xrayApiEndpoint: XrayApiEndpoint,
+        rootBackend: RootConnectionBackend,
+        tproxyPlan: TproxyTrafficPlan?,
     ) {
+        val transitionGuard = if (transitionGuardInstalled && preserveGuardOnFailure) {
+            stateStore.read()?.let { it.tproxy ?: it.transitionGuard }
+        } else {
+            null
+        }
         stateStore.write(
             XrayState(
                 xrayPid = pid,
@@ -477,6 +586,9 @@ internal class ConnectionManager(
                 physicalInterface = physicalRoute?.dev ?: VPN_SERVICE_INTERFACE_LABEL,
                 physicalGateway = physicalRoute?.gateway,
                 physicalTable = physicalRoute?.table,
+                rootConnectionBackend = rootBackend,
+                tproxy = tproxyPlan?.runtimeState,
+                transitionGuard = transitionGuard,
             ),
         )
     }
@@ -510,7 +622,25 @@ internal class ConnectionManager(
         allowIpv6: Boolean,
         appRoutingPlan: AppRoutingPlan,
         pid: Int,
+        rootBackend: RootConnectionBackend,
+        tproxyPlan: TproxyTrafficPlan?,
     ): Boolean {
+        if (rootBackend == RootConnectionBackend.Tproxy && tproxyPlan != null) {
+            if (!waitForXrayApiReady(pid)) return false
+            val routingResult = timedStep("TPROXY routing setup") { tproxyGateway.activate(tproxyPlan) }
+            if (!routingResult.success) {
+                diagnostics.logTproxyDiagnostics("tproxy-activation-failure", tproxyPlan.runtimeState, pid)
+                failRouting(routingResult)
+                return false
+            }
+            if (!tproxyGateway.verify(tproxyPlan.runtimeState)) {
+                diagnostics.logTproxyDiagnostics("tproxy-health-failure", tproxyPlan.runtimeState, pid)
+                fail(environment.localizedString(R.string.connection_error_tproxy_health_check))
+                return false
+            }
+            log.append(LogSource.APP, "TPROXY routing applied")
+            return finishTransitionGuard()
+        }
         if (
             !waitForRootTun(
                 managesSystemRouting = managesSystemRouting,
@@ -536,7 +666,31 @@ internal class ConnectionManager(
         ) {
             return false
         }
-        return waitForXrayApiReady(pid)
+        if (!waitForXrayApiReady(pid)) return false
+        return finishTransitionGuard()
+    }
+
+    private suspend fun finishTransitionGuard(): Boolean {
+        if (!transitionGuardInstalled) return true
+        if (!tproxyGateway.removeGuard()) {
+            fail(environment.localizedString(R.string.connection_error_cleanup_failed))
+            return false
+        }
+        transitionGuardInstalled = false
+        preserveGuardOnFailure = false
+        stateStore.read()?.let { state ->
+            if (state.transitionGuard != null) stateStore.write(state.copy(transitionGuard = null))
+        }
+        return true
+    }
+
+    private suspend fun failRouting(result: TunManager.RoutingResult) {
+        fail(
+            environment.localizedString(
+                R.string.connection_error_apply_ip_routing,
+                result.error ?: environment.localizedString(R.string.error_unknown),
+            ),
+        )
     }
 
     private suspend fun waitForAppTuns(appRoutingPlan: AppRoutingPlan, allowIpv6: Boolean, pid: Int): Boolean {
@@ -650,6 +804,8 @@ internal class ConnectionManager(
         ipRulesApplied: Boolean,
         connectStartedAt: Long,
         xrayApiEndpoint: XrayApiEndpoint,
+        rootBackend: RootConnectionBackend,
+        tproxyPlan: TproxyTrafficPlan?,
     ) {
         writeConnectionStateFile(
             pid = pid,
@@ -663,6 +819,8 @@ internal class ConnectionManager(
             physicalRoute = physicalRoute,
             ipRulesApplied = ipRulesApplied,
             xrayApiEndpoint = xrayApiEndpoint,
+            rootBackend = rootBackend,
+            tproxyPlan = tproxyPlan,
         )
 
         log.append(LogSource.APP, "Connected to ${server.name}")
@@ -690,25 +848,86 @@ internal class ConnectionManager(
     suspend fun applyAppRoutingChanges(
         connectedState: ConnectionState.Connected,
         runtimeSettings: XrayRuntimeSettings,
-    ): Boolean = activeRouting.applyAppRoutingChanges(
-        connectedState = connectedState,
-        tunName = connectedState.tunName,
-        fwmark = runtimeSettings.fwmark,
-        routeTable = runtimeSettings.routeTable,
-        allowIpv6 = runtimeSettings.allowIpv6,
-    )
+    ): Boolean {
+        if (runtimeSettings.rootConnectionBackend != RootConnectionBackend.Tproxy) {
+            return activeRouting.applyAppRoutingChanges(
+                connectedState = connectedState,
+                tunName = connectedState.tunName,
+                fwmark = runtimeSettings.fwmark,
+                routeTable = runtimeSettings.routeTable,
+                allowIpv6 = runtimeSettings.allowIpv6,
+            )
+        }
+
+        val persistedState = stateStore.read() ?: return false
+        val tproxyState = persistedState.tproxy ?: return false
+        if (persistedState.appProxyServerIds.isEmpty() && tproxyState.groups.size > 1) return false
+        if (!isProcessAlive(connectedState.corePid)) return false
+        val appRoutingPlan = appRoutingPlanner.build(
+            baseTunName = TPROXY_INTERFACE_LABEL,
+            baseRouteTable = runtimeSettings.routeTable,
+            includeProxyRoutes = false,
+            includeTunRoutes = true,
+            allowIpv6 = runtimeSettings.allowIpv6,
+        )
+        if (appRoutingPlan.proxyServerIds != persistedState.appProxyServerIds) return false
+        val plan = tproxyGateway.createPlan(
+            appRoutingPlan = appRoutingPlan,
+            routeTable = runtimeSettings.routeTable,
+            outboundMark = runtimeSettings.fwmark,
+            allowIpv6 = runtimeSettings.allowIpv6,
+            existingState = tproxyState,
+        )
+        val result = tproxyGateway.update(plan, tproxyState.outputChainSlot)
+        if (!result.success) {
+            log.append(LogSource.APP, "Fast TPROXY app routing update skipped: ${result.error ?: "unknown error"}")
+            return false
+        }
+        val nextSlot = if (tproxyState.outputChainSlot == "a") "b" else "a"
+        stateStore.write(
+            persistedState.copy(
+                tproxy = tproxyState.copy(outputChainSlot = nextSlot),
+                ipRulesApplied = true,
+            ),
+        )
+        return true
+    }
 
     suspend fun updatePhysicalBypassRoute(
         connectedState: ConnectionState.Connected,
         physicalRoute: TunManager.PhysicalRoute,
         runtimeSettings: XrayRuntimeSettings,
-    ): PhysicalRouteUpdateResult = activeRouting.updatePhysicalBypassRoute(
-        connectedState = connectedState,
-        physicalRoute = physicalRoute,
-        tunName = connectedState.tunName,
-        fwmark = runtimeSettings.fwmark,
-        routeTable = runtimeSettings.routeTable,
-    )
+    ): PhysicalRouteUpdateResult {
+        val persistedState = stateStore.read()
+        if (persistedState?.rootConnectionBackend == RootConnectionBackend.Tproxy) {
+            if (connectedState.physicalInterface != physicalRoute.dev) return PhysicalRouteUpdateResult.RequiresReconnect
+            stateStore.write(
+                persistedState.copy(
+                    physicalInterface = physicalRoute.dev,
+                    physicalGateway = physicalRoute.gateway,
+                    physicalTable = physicalRoute.table,
+                ),
+            )
+            return PhysicalRouteUpdateResult.Applied(physicalRoute)
+        }
+        return activeRouting.updatePhysicalBypassRoute(
+            connectedState = connectedState,
+            physicalRoute = physicalRoute,
+            tunName = connectedState.tunName,
+            fwmark = runtimeSettings.fwmark,
+            routeTable = runtimeSettings.routeTable,
+        )
+    }
+
+    suspend fun isRootTrafficAvailable(tunAvailable: Boolean): Boolean {
+        val state = stateStore.read() ?: return false
+        val tproxyState = state.tproxy
+        return if (state.rootConnectionBackend == RootConnectionBackend.Tproxy && tproxyState != null) {
+            tproxyGateway.verify(tproxyState)
+        } else {
+            tunAvailable
+        }
+    }
 
     suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? {
         if (!rootRuntime.open()) return null
@@ -747,7 +966,11 @@ internal class ConnectionManager(
 
     suspend fun disconnect(): Boolean = disconnect(updateState = true, fastCleanup = true)
 
-    suspend fun disconnect(updateState: Boolean, fastCleanup: Boolean = false): Boolean {
+    suspend fun disconnect(
+        updateState: Boolean,
+        fastCleanup: Boolean = false,
+        preserveTproxyGuard: Boolean = false,
+    ): Boolean {
         if (updateState) {
             stateCoordinator.markDisconnecting()
             log.append(LogSource.APP, "Disconnecting...")
@@ -755,13 +978,20 @@ internal class ConnectionManager(
         // With no runtime of our own and nothing recorded by an earlier one, there is nothing
         // installed to take back.
         val cleaned = (runtimeState.strategy ?: persistedRuntimeStrategy())
-            ?.release(fastCleanup = fastCleanup)
+            ?.release(fastCleanup = fastCleanup, preserveTproxyGuard = preserveTproxyGuard)
             ?: true
         runtimeState = XrayRuntimeState.Inactive
         closeXrayApiClients()
         if (!cleaned) {
             stateCoordinator.markError(environment.localizedString(R.string.connection_error_cleanup_failed))
             return false
+        }
+        if (!preserveTproxyGuard) {
+            // The release above took the guard chain back down. Carrying these flags into an unrelated
+            // later connection attempt would make its failure path preserve a guard that DROPs every
+            // app UID, taking the whole device offline instead of just reporting a failed connection.
+            transitionGuardInstalled = false
+            preserveGuardOnFailure = false
         }
         if (updateState) {
             log.append(LogSource.APP, "Disconnected")
@@ -770,16 +1000,74 @@ internal class ConnectionManager(
         return true
     }
 
+    suspend fun prepareSeamlessReconnect(): Boolean {
+        val state = stateStore.read() ?: return true
+        val tproxyState = state.tproxy ?: state.transitionGuard ?: return true
+        val appRoutingPlan = try {
+            appRoutingPlanner.build(
+                baseTunName = TPROXY_INTERFACE_LABEL,
+                baseRouteTable = state.routeTable,
+                includeProxyRoutes = false,
+                includeTunRoutes = true,
+            )
+        } catch (error: IllegalArgumentException) {
+            log.append(LogSource.APP, "Could not prepare TPROXY reconnect guard: ${error.message}")
+            return false
+        } catch (error: IllegalStateException) {
+            log.append(LogSource.APP, "Could not prepare TPROXY reconnect guard: ${error.message}")
+            return false
+        } catch (error: SerializationException) {
+            log.append(LogSource.APP, "Could not prepare TPROXY reconnect guard: ${error.message}")
+            return false
+        }
+        val plan = TproxyTrafficPlan(
+            runtimeState = tproxyState,
+            groups = tproxyState.groups.mapIndexed { index, group ->
+                com.material.xray.core.xray.TproxyTrafficGroup(group, emptySet(), isBase = index == 0)
+            },
+            bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
+            routeProfileIds = appRoutingPlan.routeProfileIds,
+            outboundMark = state.fwmark,
+        )
+        val result = tproxyGateway.installGuard(plan)
+        if (!result.success) {
+            log.append(LogSource.APP, "Could not prepare TPROXY reconnect guard: ${result.error ?: "unknown error"}")
+            return false
+        }
+        transitionGuardInstalled = true
+        preserveGuardOnFailure = true
+        return true
+    }
+
+    val hasTransitionGuard: Boolean
+        get() = transitionGuardInstalled
+
     fun prepareForServiceDestruction() {
         runtimeState.strategy?.requestStop()
         requestXrayApiClientClose()
     }
 
-    suspend fun ensureCleanRootRuntime(): Boolean {
-        val cleaned = cleanup.ensureCleanState()
+    suspend fun adoptPersistedTransitionGuard(): Boolean {
+        val state = stateStore.read() ?: return false
+        if (state.transitionGuard == null && state.tproxy == null) return false
+        if (!tproxyGateway.hasGuard()) return false
+        transitionGuardInstalled = true
+        preserveGuardOnFailure = true
+        return true
+    }
+
+    suspend fun ensureCleanRootRuntime(preserveTproxyGuard: Boolean = false): Boolean {
+        val cleaned = cleanup.ensureCleanState(preserveTproxyGuard = preserveTproxyGuard)
         runtimeState = XrayRuntimeState.Inactive
         if (!cleaned) stateCoordinator.markError(environment.localizedString(R.string.connection_error_cleanup_failed))
         return cleaned
+    }
+
+    suspend fun clearFailedTransitionGuard() {
+        if (!transitionGuardInstalled) return
+        cleanup.ensureCleanState(preserveTproxyGuard = false)
+        transitionGuardInstalled = false
+        preserveGuardOnFailure = false
     }
 
     private suspend fun fail(
@@ -790,9 +1078,17 @@ internal class ConnectionManager(
         log.append(LogSource.APP, "ERROR: $message")
         var finalMessage = message
         if (cleanState) {
-            if (!releaseStartedRuntime()) {
+            if (!releaseStartedRuntime(preserveGuardOnFailure)) {
                 finalMessage = environment.localizedString(R.string.connection_error_cleanup_failed)
                 log.append(LogSource.APP, "ERROR: $finalMessage")
+            }
+            if (transitionGuardInstalled && !preserveGuardOnFailure) {
+                if (!tproxyGateway.removeGuard()) {
+                    finalMessage = environment.localizedString(R.string.connection_error_cleanup_failed)
+                    log.append(LogSource.APP, "ERROR: $finalMessage")
+                } else {
+                    transitionGuardInstalled = false
+                }
             }
             runtimeState = XrayRuntimeState.Inactive
         }
@@ -804,13 +1100,20 @@ internal class ConnectionManager(
     private suspend fun cleanCancelledConnectionAttempt() {
         val cleanupErrors = mutableListOf<Exception>()
         try {
-            if (!releaseStartedRuntime()) {
+            if (!releaseStartedRuntime(preserveGuardOnFailure)) {
                 log.append(LogSource.APP, "ERROR: Could not clean up cancelled Xray startup")
             }
         } catch (error: Exception) {
             cleanupErrors += error
         } finally {
             runtimeState = XrayRuntimeState.Inactive
+            if (transitionGuardInstalled && !preserveGuardOnFailure) {
+                try {
+                    if (tproxyGateway.removeGuard()) transitionGuardInstalled = false
+                } catch (error: Exception) {
+                    cleanupErrors += error
+                }
+            }
             try {
                 closeXrayApiClients()
             } catch (error: Exception) {
@@ -825,6 +1128,15 @@ internal class ConnectionManager(
     override suspend fun isProcessAlive(pid: Int): Boolean = processFor(pid)?.isAlive(pid) ?: false
 
     suspend fun isRestorableRootProcessAlive(pid: Int): Boolean = processSupervisor.isAlive(pid)
+
+    suspend fun isRestorableRootRoutingAvailable(state: XrayState, tunAvailable: Boolean): Boolean {
+        val tproxyState = state.tproxy
+        return if (state.rootConnectionBackend == RootConnectionBackend.Tproxy && tproxyState != null) {
+            tproxyGateway.verify(tproxyState)
+        } else {
+            tunAvailable
+        }
+    }
 
     suspend fun killProcess(pid: Int, signal: Int = 15): Boolean = processFor(pid)?.kill(pid, signal) ?: false
 
@@ -927,8 +1239,8 @@ internal class ConnectionManager(
      * failure is itself cancelled part-way through; root cleanup is the safe choice there because
      * it is the only runtime that can leave routing behind.
      */
-    private suspend fun releaseStartedRuntime(): Boolean = (runtimeState.strategy ?: rootStrategy)
-        .release(fastCleanup = false)
+    private suspend fun releaseStartedRuntime(preserveTproxyGuard: Boolean = false): Boolean = (runtimeState.strategy ?: rootStrategy)
+        .release(fastCleanup = false, preserveTproxyGuard = preserveTproxyGuard)
 
     private fun selectPersistedPhysicalRoute(state: XrayState): TunManager.PhysicalRoute? = state.physicalInterface
         ?.takeIf { it.isNotBlank() && it != VPN_SERVICE_INTERFACE_LABEL }
@@ -970,6 +1282,14 @@ private sealed interface XrayRuntimeState {
     ) : XrayRuntimeState
 }
 
+private data class TproxyPlanPreparation(val plan: TproxyTrafficPlan?)
+
+private fun effectiveRootBackend(
+    managesSystemRouting: Boolean,
+    configuredBackend: RootConnectionBackend,
+): RootConnectionBackend = if (managesSystemRouting) configuredBackend else RootConnectionBackend.Tun
+
 private const val LEGACY_DEFAULT_TUN_NAME = "xray0"
+internal const val TPROXY_INTERFACE_LABEL = "TPROXY"
 private const val XRAY_API_READY_TIMEOUT_MS = 10_000L
 private const val XRAY_API_READY_RETRY_DELAY_MS = 250L

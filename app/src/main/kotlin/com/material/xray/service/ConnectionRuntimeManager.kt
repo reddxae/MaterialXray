@@ -8,6 +8,7 @@ import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.ConnectionState
+import com.material.xray.model.RootConnectionBackend
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,15 +41,17 @@ class ConnectionRuntimeManager @Inject constructor(
     }
 
     private suspend fun detectTunnelInterfaceState(): ConnectionState? = withContext(Dispatchers.IO) {
-        if (!settingsRepository.useRootService.first()) return@withContext null
-
         val persistedState = stateFile.read()
+        if (!settingsRepository.useRootService.first() && persistedState?.transitionGuard == null) return@withContext null
         val activeTunName = persistedState
             ?.tunName
             ?.takeIf { it.isNotBlank() }
             ?: settingsRepository.tunName.first().trim().takeIf { it.isNotEmpty() }
             ?: return@withContext null
-        if (!TunInterfaceDetector.isInterfaceUp(activeTunName)) return@withContext null
+        val tproxyRecorded = persistedState?.transitionGuard != null ||
+            persistedState?.rootConnectionBackend == RootConnectionBackend.Tproxy &&
+            persistedState.tproxy != null
+        if (!tproxyRecorded && !TunInterfaceDetector.isInterfaceUp(activeTunName)) return@withContext null
         if (activeTunName == AMBIGUOUS_TUN_NAME && TunInterfaceDetector.isVpnServiceActive(context)) {
             return@withContext ConnectionState.InterfaceBusy(activeTunName)
         }

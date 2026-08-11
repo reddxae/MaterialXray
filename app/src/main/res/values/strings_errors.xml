@@ -17,4 +17,6 @@
     <string name="connection_error_secure_xray_api">Could not secure the Xray control API</string>
     <string name="connection_error_cleanup_failed">Could not fully stop the previous Xray runtime</string>
     <string name="connection_error_stop_runtime">Could not stop the active Xray connection</string>
+    <string name="connection_error_tproxy_unsupported">TPROXY is not supported: %1$s</string>
+    <string name="connection_error_tproxy_health_check">TPROXY routing did not pass its activation check</string>
 </resources>

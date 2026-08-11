@@ -76,6 +76,7 @@ internal fun buildRouting(
     domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     domainMatcher: String? = null,
     defaultDnsOutboundTag: String = "proxy",
+    dataInboundTags: List<String> = listOf("tun-in") + appProxyRoutes.map { it.inboundTag },
 ) = buildJsonObject {
     val hasDomesticDomains = directDomains(routingRules, bypassLan).isNotEmpty()
     put("domainStrategy", SubscriptionRouting.normalizeDomainStrategy(domainStrategy))
@@ -83,8 +84,8 @@ internal fun buildRouting(
     put(
         "rules",
         buildJsonArray {
-            add(dnsRoutingRule(appProxyRoutes))
-            add(dnsOverTlsRoutingRule(appProxyRoutes))
+            add(dnsRoutingRule(dataInboundTags))
+            add(dnsOverTlsRoutingRule(dataInboundTags))
             if (dnsServers.commaSeparatedValues().isNotEmpty()) {
                 add(defaultDnsRoutingRule(defaultDnsOutboundTag))
             }
@@ -126,26 +127,24 @@ private fun directDomains(routingRules: List<RoutingRule>, bypassLan: Boolean): 
         .forEach(::add)
 }.toList()
 
-private fun dnsRoutingRule(appProxyRoutes: List<AppProxyRoute>) = buildJsonObject {
+private fun dnsRoutingRule(dataInboundTags: List<String>) = buildJsonObject {
     put("type", "field")
     put(
         "inboundTag",
         buildJsonArray {
-            add("tun-in")
-            appProxyRoutes.forEach { add(it.inboundTag) }
+            dataInboundTags.forEach { add(it) }
         },
     )
     put("port", "53")
     put("outboundTag", "dns-out")
 }
 
-private fun dnsOverTlsRoutingRule(appProxyRoutes: List<AppProxyRoute>) = buildJsonObject {
+private fun dnsOverTlsRoutingRule(dataInboundTags: List<String>) = buildJsonObject {
     put("type", "field")
     put(
         "inboundTag",
         buildJsonArray {
-            add("tun-in")
-            appProxyRoutes.forEach { add(it.inboundTag) }
+            dataInboundTags.forEach { add(it) }
         },
     )
     put("network", "tcp")

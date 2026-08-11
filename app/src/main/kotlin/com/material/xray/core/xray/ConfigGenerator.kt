@@ -34,7 +34,13 @@ class ConfigGenerator {
         xrayApiEndpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
         xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
         tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
+        inbounds: List<XrayInbound>? = null,
     ): String {
+        val effectiveInbounds = inbounds ?: buildList {
+            add(XrayInbound.Tun(tunName, "tun-in", tunMtu))
+            appProxyRoutes.forEach { route -> add(XrayInbound.Tun(route.tunName, route.inboundTag, tunMtu)) }
+        }
+        val dataInboundTags = effectiveInbounds.map { it.tag }
         val bootstrapDnsHosts = bootstrapDnsHosts(server, appProxyRoutes)
         if (server.rawConfigJson.isNotBlank()) {
             return injectTunIntoRawConfig(
@@ -57,6 +63,7 @@ class ConfigGenerator {
                 xrayApiEndpoint = xrayApiEndpoint,
                 xrayBufferSizeKiB = xrayBufferSizeKiB,
                 tunMtu = tunMtu,
+                inbounds = effectiveInbounds,
             )
         }
 
@@ -66,10 +73,7 @@ class ConfigGenerator {
             put(
                 "inbounds",
                 buildJsonArray {
-                    add(buildTunInbound(tunName, "tun-in", tunMtu))
-                    appProxyRoutes.forEach { route ->
-                        add(buildTunInbound(route.tunName, route.inboundTag, tunMtu))
-                    }
+                    effectiveInbounds.forEach { add(it.toJson()) }
                 },
             )
             put(
@@ -100,6 +104,7 @@ class ConfigGenerator {
                     domesticDnsServers = domesticDnsServers,
                     domainStrategy = routingDomainStrategy,
                     domainMatcher = routingDomainMatcher,
+                    dataInboundTags = dataInboundTags,
                 ),
             )
         }
@@ -126,6 +131,7 @@ class ConfigGenerator {
         xrayApiEndpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
         xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
         tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
+        inbounds: List<XrayInbound>? = null,
     ): String = RawConfigTunInjector(json).inject(
         rawJson = rawJson,
         tunName = tunName,
@@ -145,6 +151,7 @@ class ConfigGenerator {
         xrayApiEndpoint = xrayApiEndpoint,
         xrayBufferSizeKiB = xrayBufferSizeKiB,
         tunMtu = tunMtu,
+        inbounds = inbounds,
     )
 
     private fun bootstrapDnsHosts(

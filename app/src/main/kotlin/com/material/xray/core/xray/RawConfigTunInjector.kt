@@ -35,9 +35,14 @@ internal class RawConfigTunInjector(
         xrayApiEndpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
         xrayBufferSizeKiB: Int = XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
         tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
+        inbounds: List<XrayInbound>? = null,
     ): String {
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
-        original["inbounds"] = buildTunInbounds(tunName, appProxyRoutes, tunMtu)
+        val effectiveInbounds = inbounds ?: buildList {
+            add(XrayInbound.Tun(tunName, "tun-in", tunMtu))
+            appProxyRoutes.forEach { route -> add(XrayInbound.Tun(route.tunName, route.inboundTag, tunMtu)) }
+        }
+        original["inbounds"] = JsonArray(effectiveInbounds.map(XrayInbound::toJson))
 
         val normalizedOutbounds = normalizeOutbounds(original["outbounds"] as? JsonArray, fwmark, physicalInterface, allowIpv6)
         val proxyOutbound = normalizedOutbounds.firstOrNull { outbound ->
@@ -89,6 +94,7 @@ internal class RawConfigTunInjector(
                 domainStrategy = routingDomainStrategy,
                 domainMatcher = routingDomainMatcher,
                 defaultDnsOutboundTag = proxyOutboundTag,
+                dataInboundTags = effectiveInbounds.map { it.tag },
             ),
             raw = original["routing"] as? JsonObject,
         )
@@ -112,19 +118,6 @@ internal class RawConfigTunInjector(
             },
         )
     }
-
-    private fun buildTunInbounds(
-        tunName: String,
-        appProxyRoutes: List<AppProxyRoute>,
-        tunMtu: Int,
-    ): JsonArray = JsonArray(
-        buildList {
-            add(buildTunInbound(tunName, "tun-in", tunMtu))
-            appProxyRoutes.forEach { route ->
-                add(buildTunInbound(route.tunName, route.inboundTag, tunMtu))
-            }
-        },
-    )
 
     private fun normalizeOutbounds(
         outbounds: JsonArray?,

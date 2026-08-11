@@ -64,7 +64,11 @@ class StartupDiagnosticsLogger @Inject constructor(
             } else {
                 null
             },
-            serviceMode = if (runtimeSettings.useRootService) "root" else "VpnService",
+            serviceMode = if (runtimeSettings.useRootService) {
+                "root/${runtimeSettings.rootConnectionBackend.persistedValue}"
+            } else {
+                "VpnService"
+            },
             autoConnect = settingsRepository.autoConnect.first(),
             passiveHealthMonitoring = settingsRepository.passiveHealthMonitoringEnabled.first(),
             tunName = runtimeSettings.tunName,

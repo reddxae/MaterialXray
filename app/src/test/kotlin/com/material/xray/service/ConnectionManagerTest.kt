@@ -3,6 +3,10 @@ package com.material.xray.service
 import com.material.xray.R
 import com.material.xray.core.xray.ConfigGenerator
 import com.material.xray.core.xray.GeoDataStatus
+import com.material.xray.core.xray.TproxyManager
+import com.material.xray.core.xray.TproxyRuntimeState
+import com.material.xray.core.xray.TproxyTrafficGroup
+import com.material.xray.core.xray.TproxyTrafficPlan
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayApiEndpoint
 import com.material.xray.core.xray.XrayState
@@ -10,6 +14,7 @@ import com.material.xray.core.xray.XraySysStats
 import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.Protocol
+import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
@@ -144,6 +149,76 @@ class ConnectionManagerTest {
         assertEquals(XrayApiEndpoint.LoopbackTcp(48_123), harness.createdApiEndpoints.single())
         assertEquals(48_123, harness.stateStore.state?.xrayApiPort)
         assertEquals(listOf(48_123 to harness.environment.appUid), harness.rootRuntime.protectedApis)
+    }
+
+    @Test
+    fun `TPROXY root connection creates no TUN and persists backend state`() = runTest {
+        val harness = Harness()
+
+        harness.manager.connect(
+            server(),
+            runtimeSettings().copy(rootConnectionBackend = RootConnectionBackend.Tproxy),
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
+        )
+
+        assertEquals(0, harness.tunGateway.nameDetectionCalls)
+        assertEquals(0, harness.tunGateway.configureCalls)
+        assertEquals(0, harness.tunGateway.applyCalls)
+        assertEquals(1, harness.tproxyGateway.guardCalls)
+        assertEquals(1, harness.tproxyGateway.activateCalls)
+        assertEquals(RootConnectionBackend.Tproxy, harness.stateStore.state?.rootConnectionBackend)
+        assertEquals("TPROXY", harness.stateStore.state?.tunName)
+        val config = Json.parseToJsonElement(requireNotNull(harness.binary.configJson)).jsonObject
+        assertTrue(config.getValue("inbounds").jsonArray.none { it.jsonObject["protocol"]?.jsonPrimitive?.content == "tun" })
+    }
+
+    @Test
+    fun `backend switch preserves guard until replacement runtime is ready`() = runTest {
+        val harness = Harness()
+        val tproxySettings = runtimeSettings().copy(rootConnectionBackend = RootConnectionBackend.Tproxy)
+        harness.manager.connect(server(), tproxySettings, preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertTrue(harness.manager.prepareSeamlessReconnect())
+        assertTrue(harness.manager.hasTransitionGuard)
+        assertTrue(
+            harness.manager.disconnect(
+                updateState = false,
+                fastCleanup = true,
+                preserveTproxyGuard = true,
+            ),
+        )
+        assertTrue(harness.cleanup.lastPreserveTproxyGuard)
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertFalse(harness.manager.hasTransitionGuard)
+        assertEquals(2, harness.tproxyGateway.removeGuardCalls)
+    }
+
+    @Test
+    fun `failed seamless replacement keeps guard for retry`() = runTest {
+        val harness = Harness()
+        val settings = runtimeSettings().copy(rootConnectionBackend = RootConnectionBackend.Tproxy)
+        harness.manager.connect(server(), settings, preparation = ConnectionPreparation.ReusePreparedRuntime)
+        assertTrue(harness.manager.prepareSeamlessReconnect())
+        assertTrue(
+            harness.manager.disconnect(
+                updateState = false,
+                fastCleanup = true,
+                preserveTproxyGuard = true,
+            ),
+        )
+        harness.tproxyGateway.activationResult = TunManager.RoutingResult(
+            success = false,
+            error = "iptables: Resource temporarily unavailable",
+        )
+
+        harness.manager.connect(server(), settings, preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertTrue(harness.manager.hasTransitionGuard)
+        assertTrue(harness.cleanup.lastPreserveTproxyGuard)
+        harness.manager.clearFailedTransitionGuard()
+        assertFalse(harness.manager.hasTransitionGuard)
     }
 
     @Test
@@ -452,6 +527,7 @@ class ConnectionManagerTest {
         val rootRuntime = FakeRootRuntime()
         val binary = FakeXrayBinary()
         val tunGateway = FakeTunGateway()
+        val tproxyGateway = FakeTproxyGateway(environment.appUid)
         val cleanup = FakeCleanup()
         val stateStore = FakeStateStore()
         val rootProcess = FakeRootProcess()
@@ -473,6 +549,7 @@ class ConnectionManagerTest {
                 routingData = FakeRoutingData(),
                 serverResolver = serverResolver,
                 tunGateway = tunGateway,
+                tproxyGateway = tproxyGateway,
                 cleanup = cleanup,
                 stateStore = stateStore,
                 rootProcess = rootProcess,
@@ -563,6 +640,7 @@ class ConnectionManagerTest {
         var availableWlanName: String? = "wlan0"
         var nameDetectionCalls = 0
         var lastAllowIpv6 = false
+        var configureCalls = 0
         val configuredIpv6Addresses = mutableListOf<String>()
         val detectedRouteTunNames = mutableListOf<String>()
 
@@ -586,6 +664,7 @@ class ConnectionManagerTest {
             ipv6AddressCidr: String?,
             isProcessAlive: suspend () -> Boolean,
         ): TunManager.TunSetupResult {
+            configureCalls += 1
             ipv6AddressCidr?.let(configuredIpv6Addresses::add)
             return configureResult
         }
@@ -613,6 +692,51 @@ class ConnectionManagerTest {
         ): TunManager.RoutingResult = routingResult
     }
 
+    private class FakeTproxyGateway(private val appUid: Int) : TproxyRoutingGateway {
+        var guardCalls = 0
+        var activateCalls = 0
+        var removeGuardCalls = 0
+        var activationResult = TunManager.RoutingResult(success = true)
+
+        override fun createPlan(
+            appRoutingPlan: AppRoutingPlan,
+            routeTable: Int,
+            outboundMark: Int,
+            allowIpv6: Boolean,
+            existingState: TproxyRuntimeState?,
+        ): TproxyTrafficPlan {
+            val state = existingState ?: TproxyManager.createRuntimeState(
+                routeTable = routeTable + 200,
+                groups = listOf(Long.MAX_VALUE to "tproxy-in-default"),
+                ports = listOf(48_321),
+                allowIpv6 = allowIpv6,
+            )
+            return TproxyTrafficPlan(
+                runtimeState = state,
+                groups = listOf(TproxyTrafficGroup(state.groups.single(), emptySet(), isBase = true)),
+                bypassUids = appRoutingPlan.directUids + appUid,
+                routeProfileIds = appRoutingPlan.routeProfileIds,
+                outboundMark = outboundMark,
+            )
+        }
+
+        override suspend fun installGuard(plan: TproxyTrafficPlan): TunManager.RoutingResult {
+            guardCalls += 1
+            return TunManager.RoutingResult(success = true)
+        }
+        override suspend fun activate(plan: TproxyTrafficPlan): TunManager.RoutingResult {
+            activateCalls += 1
+            return activationResult
+        }
+        override suspend fun update(plan: TproxyTrafficPlan, currentSlot: String) = TunManager.RoutingResult(success = true)
+        override suspend fun verify(state: TproxyRuntimeState): Boolean = true
+        override suspend fun removeGuard(): Boolean {
+            removeGuardCalls += 1
+            return true
+        }
+        override suspend fun hasGuard(): Boolean = true
+    }
+
     private class FakeCleanup : ConnectionCleanup {
         var cleanCalls = 0
         var knownStateStopCalls = 0
@@ -620,16 +744,19 @@ class ConnectionManagerTest {
         var cleanResult = true
         var cleanStarted: CompletableDeferred<Unit>? = null
         var releaseClean: CompletableDeferred<Unit>? = null
+        var lastPreserveTproxyGuard = false
 
-        override suspend fun ensureCleanState(fallbackTunName: String): Boolean {
+        override suspend fun ensureCleanState(fallbackTunName: String, preserveTproxyGuard: Boolean): Boolean {
             cleanCalls += 1
+            lastPreserveTproxyGuard = preserveTproxyGuard
             cleanStarted?.complete(Unit)
             releaseClean?.await()
             return cleanResult
         }
 
-        override suspend fun ensureKnownStateStopped(fallbackTunName: String): Boolean {
+        override suspend fun ensureKnownStateStopped(fallbackTunName: String, preserveTproxyGuard: Boolean): Boolean {
             knownStateStopCalls += 1
+            lastPreserveTproxyGuard = preserveTproxyGuard
             return knownStateStopped
         }
     }
@@ -781,6 +908,7 @@ class ConnectionManagerTest {
             fwmark = 255,
             routeTable = 100,
             useRootService = true,
+            rootConnectionBackend = RootConnectionBackend.Tun,
             dnsServers = "1.1.1.1",
             domesticDnsServers = "223.5.5.5",
             logLevel = XrayLogLevel.Error,

@@ -42,6 +42,7 @@
     <string name="notification_connection_failed">Не удалось подключиться</string>
     <string name="notification_vpn_service_active">Служба VPN активна</string>
     <string name="notification_root_service_active">Служба с root-доступом активна (%1$s привязан к %2$s)</string>
+    <string name="notification_root_tproxy_active">Прозрачный root-прокси активен через %1$s</string>
     <string name="notification_disconnect">Отключиться</string>
     <string name="notification_channel_service">Служба Xray</string>
     <string name="notification_channel_connection_failures">Ошибки подключения</string>

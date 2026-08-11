@@ -77,6 +77,7 @@ fun <T> ReadOnlyDropdownField(
                         expanded = false
                         onSelected(option.value)
                     },
+                    enabled = option.enabled,
                 )
             }
         }
@@ -94,4 +95,5 @@ data class DropdownOption<out T>(
     val value: T,
     val label: String,
     val description: String? = null,
+    val enabled: Boolean = true,
 )

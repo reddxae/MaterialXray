@@ -20,7 +20,7 @@
     <string name="settings_xray_buffer_size_label">Размер буфера Xray</string>
     <string name="settings_xray_buffer_size_supporting_text">Буфер пользовательского пространства для каждого запроса. Диапазон: %1$d–%2$d КиБ. По умолчанию: %3$d КиБ.</string>
     <string name="settings_tun_mtu_label">MTU интерфейса TUN</string>
-    <string name="settings_tun_mtu_supporting_text">MTU пакетов для Xray и Android VPN. Диапазон: %1$d–%2$d байт. По умолчанию: %3$d байт.</string>
+    <string name="settings_tun_mtu_supporting_text">MTU пакета для Android VPN и TUN с root-доступом; не применяется к TPROXY. Диапазон: %1$d–%2$d байт. По умолчанию: %3$d байт.</string>
     <string name="settings_xray_memory_restart_threshold_label">Порог ОЗУ для перезапуска ядра</string>
     <string name="settings_xray_memory_restart_threshold_supporting_text">Принудительно перезапускать туннель, когда xray-core превышает этот объём ОЗУ. Диапазон: %1$d–%2$d МиБ. По умолчанию: %3$d МиБ.</string>
     <string name="settings_passive_health_monitoring_title">Контроль состояния соединения</string>
@@ -108,6 +108,9 @@
     <string name="settings_app_version_unknown">Версия %1$s неизвестна</string>
     <string name="settings_section_service">Служба</string>
     <string name="settings_use_root_service">Использовать root-доступ</string>
+    <string name="settings_root_connection_backend">Способ подключения ядра</string>
+    <string name="settings_tproxy_unsupported">TPROXY недоступен: %1$s</string>
+    <string name="settings_retry_compatibility_check">Повторить проверку совместимости</string>
     <string name="settings_unavailable">Недоступно</string>
     <string name="settings_auto_connect_on_boot">Подключаться при запуске устройства</string>
     <string name="settings_root_access_denied">Не удалось получить root-доступ на устройстве</string>

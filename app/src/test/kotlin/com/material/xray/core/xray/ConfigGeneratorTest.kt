@@ -51,6 +51,42 @@ class ConfigGeneratorTest {
     }
 
     @Test
+    fun `generates transparent inbound without a TUN interface`() {
+        val config = generator.generate(
+            vlessReality,
+            fwmark = 255,
+            inbounds = listOf(
+                XrayInbound.Tproxy(
+                    port = 48_321,
+                    tag = "tproxy-in-default",
+                    outboundMark = 255,
+                    allowIpv6 = false,
+                ),
+            ),
+        )
+        val json = Json.parseToJsonElement(config).jsonObject
+        val inbounds = json.getValue("inbounds").jsonArray
+        val inbound = inbounds.single().jsonObject
+
+        assertEquals("tunnel", inbound.getValue("protocol").jsonPrimitive.content)
+        assertEquals("0.0.0.0", inbound.getValue("listen").jsonPrimitive.content)
+        assertEquals(48_321, inbound.getValue("port").jsonPrimitive.int)
+        assertTrue(inbound.getValue("settings").jsonObject.getValue("followRedirect").jsonPrimitive.boolean)
+        assertEquals(
+            "tproxy",
+            inbound.getValue("streamSettings").jsonObject
+                .getValue("sockopt").jsonObject
+                .getValue("tproxy").jsonPrimitive.content,
+        )
+        assertTrue(inbounds.none { it.jsonObject["protocol"]?.jsonPrimitive?.content == "tun" })
+        val firstRoutingRule = json.getValue("routing").jsonObject.getValue("rules").jsonArray.first().jsonObject
+        assertEquals(
+            listOf("tproxy-in-default"),
+            firstRoutingRule.getValue("inboundTag").jsonArray.map { it.jsonPrimitive.content },
+        )
+    }
+
+    @Test
     fun `configures xray request buffer size`() {
         val config = generator.generate(vlessReality, xrayBufferSizeKiB = 1024)
         val json = Json.parseToJsonElement(config).jsonObject
@@ -190,6 +226,27 @@ class ConfigGeneratorTest {
             .first().jsonObject
 
         assertEquals("direct", firstOutbound.getValue("tag").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `raw config receives transparent inbounds in TPROXY mode`() {
+        val rawServer = vlessReality.copy(
+            rawConfigJson = """
+                {
+                  "inbounds": [{"tag":"provider-in","protocol":"socks","port":1080}],
+                  "outbounds": [{"tag":"proxy","protocol":"vless","settings":{}}]
+                }
+            """.trimIndent(),
+        )
+
+        val config = generator.generate(
+            rawServer,
+            inbounds = listOf(XrayInbound.Tproxy(48_321, "tproxy-in-default", 255, allowIpv6 = false)),
+        )
+        val inbounds = Json.parseToJsonElement(config).jsonObject.getValue("inbounds").jsonArray
+
+        assertEquals(listOf("tunnel"), inbounds.map { it.jsonObject.getValue("protocol").jsonPrimitive.content })
+        assertEquals("tproxy-in-default", inbounds.single().jsonObject.getValue("tag").jsonPrimitive.content)
     }
 
     @Test

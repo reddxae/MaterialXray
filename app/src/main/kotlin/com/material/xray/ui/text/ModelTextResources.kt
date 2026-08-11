@@ -2,10 +2,12 @@ package com.material.xray.ui.text
 
 import androidx.annotation.StringRes
 import com.material.xray.R
+import com.material.xray.core.xray.TproxyCompatibility
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationStyle
 import com.material.xray.model.PingMethod
+import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.XrayLogLevel
@@ -53,6 +55,37 @@ val RoutingPolicyControl.descriptionResource: Int
     get() = when (this) {
         RoutingPolicyControl.User -> R.string.routing_policy_user_description
         RoutingPolicyControl.SubscriptionProvider -> R.string.routing_policy_subscription_provider_description
+    }
+
+@get:StringRes
+val RootConnectionBackend.labelResource: Int
+    get() = when (this) {
+        RootConnectionBackend.Tun -> R.string.root_connection_backend_tun_label
+        RootConnectionBackend.Tproxy -> R.string.root_connection_backend_tproxy_label
+    }
+
+@get:StringRes
+val RootConnectionBackend.descriptionResource: Int
+    get() = when (this) {
+        RootConnectionBackend.Tun -> R.string.root_connection_backend_tun_description
+        RootConnectionBackend.Tproxy -> R.string.root_connection_backend_tproxy_description
+    }
+
+@get:StringRes
+val TproxyCompatibility.Reason.descriptionResource: Int
+    get() = when (this) {
+        TproxyCompatibility.Reason.RootUnavailable -> R.string.tproxy_unsupported_root
+        TproxyCompatibility.Reason.InitNetworkNamespaceUnavailable -> R.string.tproxy_unsupported_init_namespace
+        TproxyCompatibility.Reason.IptablesMangleUnavailable -> R.string.tproxy_unsupported_iptables
+        TproxyCompatibility.Reason.OwnerMatchUnavailable -> R.string.tproxy_unsupported_owner
+        TproxyCompatibility.Reason.MarkTargetUnavailable -> R.string.tproxy_unsupported_mark
+        TproxyCompatibility.Reason.TproxyIpv4Unavailable -> R.string.tproxy_unsupported_ipv4
+        TproxyCompatibility.Reason.PolicyRoutingUnavailable -> R.string.tproxy_unsupported_policy_routing
+        TproxyCompatibility.Reason.RouteTableConflict -> R.string.tproxy_unsupported_route_table_conflict
+        TproxyCompatibility.Reason.TproxyIpv6Unavailable -> R.string.tproxy_unsupported_ipv6
+        TproxyCompatibility.Reason.MarkNamespaceConflict -> R.string.tproxy_unsupported_mark_conflict
+        TproxyCompatibility.Reason.ProbeCleanupFailed -> R.string.tproxy_unsupported_cleanup
+        TproxyCompatibility.Reason.CommandTimedOut -> R.string.tproxy_unsupported_timeout
     }
 
 @get:StringRes

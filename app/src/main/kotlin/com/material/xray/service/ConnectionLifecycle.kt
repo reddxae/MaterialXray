@@ -45,7 +45,7 @@ internal class ConnectionLifecycle(
     private val currentFailure: () -> ConnectionFailure,
     private val onRetry: (attempt: Int, maxAttempts: Int, transitionState: ConnectionState) -> Unit,
     private val onConnected: () -> Unit,
-    private val onExhausted: (ConnectionFailure) -> Unit,
+    private val onExhausted: suspend (ConnectionFailure) -> Unit,
     private val onCommandFailure: suspend (Throwable) -> Unit,
     private val waitBeforeRetry: suspend (Long) -> Unit = { delay(it) },
 ) {

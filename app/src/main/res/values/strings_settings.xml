@@ -20,7 +20,7 @@
     <string name="settings_xray_buffer_size_label">Xray buffer size</string>
     <string name="settings_xray_buffer_size_supporting_text">Per-request userspace buffer. Range: %1$d-%2$d KiB. Default: %3$d KiB.</string>
     <string name="settings_tun_mtu_label">TUN MTU</string>
-    <string name="settings_tun_mtu_supporting_text">Packet MTU used by Xray and Android VPN. Range: %1$d-%2$d bytes. Default: %3$d bytes.</string>
+    <string name="settings_tun_mtu_supporting_text">Packet MTU used by Android VPN and rootful TUN, not TPROXY. Range: %1$d-%2$d bytes. Default: %3$d bytes.</string>
     <string name="settings_xray_memory_restart_threshold_label">Core RAM restart threshold</string>
     <string name="settings_xray_memory_restart_threshold_supporting_text">Force-restart the tunnel when xray-core exceeds this RAM usage. Range: %1$d-%2$d MiB. Default: %3$d MiB.</string>
     <string name="settings_passive_health_monitoring_title">Connection health watchdog</string>
@@ -106,6 +106,9 @@
     <string name="settings_app_version_unknown">%1$s version unknown</string>
     <string name="settings_section_service">Service</string>
     <string name="settings_use_root_service">Use root service</string>
+    <string name="settings_root_connection_backend">Core connection backend</string>
+    <string name="settings_tproxy_unsupported">TPROXY unavailable: %1$s</string>
+    <string name="settings_retry_compatibility_check">Retry compatibility check</string>
     <string name="settings_unavailable">Unavailable</string>
     <string name="settings_auto_connect_on_boot">Auto-connect on boot</string>
     <string name="settings_root_access_denied">Unable to access root on device</string>

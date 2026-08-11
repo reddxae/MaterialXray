@@ -43,6 +43,7 @@
     <string name="notification_connection_failed">Connection failed</string>
     <string name="notification_vpn_service_active">VPN service active</string>
     <string name="notification_root_service_active">Root service active (pinned %1$s to %2$s)</string>
+    <string name="notification_root_tproxy_active">Root transparent proxy active via %1$s</string>
     <string name="notification_disconnect">Disconnect</string>
     <string name="notification_channel_service">Xray Service</string>
     <string name="notification_channel_connection_failures">Connection failures</string>

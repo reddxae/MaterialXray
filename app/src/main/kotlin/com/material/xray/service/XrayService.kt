@@ -46,6 +46,7 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
+import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.primaryBalancerTag
@@ -214,6 +215,7 @@ class XrayService : VpnService() {
                 alwaysOnRetryJob = null
             },
             onExhausted = { failure ->
+                connectionManager.clearFailedTransitionGuard()
                 closeVpnInterface()
                 if (isRunningAlwaysOnVpn() && failure.retryable) {
                     scheduleAlwaysOnRetry()
@@ -242,7 +244,7 @@ class XrayService : VpnService() {
             elapsedRealtime = SystemClock::elapsedRealtime,
             tunnelAvailable = { state ->
                 if (connectionManager.isUsingRootRuntime) {
-                    TunInterfaceDetector.isInterfaceUp(state.tunName)
+                    connectionManager.isRootTrafficAvailable(TunInterfaceDetector.isInterfaceUp(state.tunName))
                 } else {
                     vpnInterface?.fileDescriptor?.valid() == true
                 }
@@ -495,7 +497,16 @@ class XrayService : VpnService() {
         preparation: ConnectionPreparation = ConnectionPreparation.ReusePreparedRuntime,
         reconnectDelayMs: Long = 0,
     ): Boolean {
-        if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return false
+        if (!connectionManager.prepareSeamlessReconnect()) return false
+        if (
+            !connectionManager.disconnect(
+                updateState = false,
+                fastCleanup = true,
+                preserveTproxyGuard = connectionManager.hasTransitionGuard,
+            )
+        ) {
+            return false
+        }
         // A no-op in root mode, where the tunnel belongs to the system rather than to this
         // process. Rootless reconnects establish a fresh descriptor either way.
         closeVpnInterface()
@@ -519,6 +530,15 @@ class XrayService : VpnService() {
             false
         }
         if (runtimeSettings.useRootService && !forceVpnService && !rootServiceAvailable) {
+            if (runtimeSettings.rootConnectionBackend == RootConnectionBackend.Tproxy) {
+                val message = localizedString(
+                    R.string.connection_error_tproxy_unsupported,
+                    "root access or the init network namespace is unavailable",
+                )
+                logBuffer.append(LogSource.APP, message)
+                connectionStateCoordinator.markError(message)
+                return false
+            }
             settingsRepo.setUseRootService(false)
             rootServiceRequested = false
             logBuffer.append(
@@ -566,7 +586,16 @@ class XrayService : VpnService() {
         val rootModeConfigured = settingsRepo.useRootService.first()
         when {
             state is ConnectionState.Connected -> {
-                if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return
+                if (!connectionManager.prepareSeamlessReconnect()) return
+                if (
+                    !connectionManager.disconnect(
+                        updateState = false,
+                        fastCleanup = true,
+                        preserveTproxyGuard = connectionManager.hasTransitionGuard,
+                    )
+                ) {
+                    return
+                }
             }
             rootModeConfigured ||
                 // An unreadable state file may still describe a live root-managed runtime, so it
@@ -675,6 +704,26 @@ class XrayService : VpnService() {
 
         val restoredState = detectRestorableRunningConnection()
         if (restoredState == null) {
+            val staleState = withContext(Dispatchers.IO) { stateFile.read() }
+            if (
+                staleState?.rootConnectionBackend == RootConnectionBackend.Tproxy ||
+                staleState?.transitionGuard != null
+            ) {
+                logBuffer.append(LogSource.APP, "Cleaning incomplete TPROXY runtime before reconnecting")
+                var preserveGuard = connectionManager.adoptPersistedTransitionGuard()
+                if (!preserveGuard && (staleState.tproxy != null || staleState.transitionGuard != null)) {
+                    if (!connectionManager.prepareSeamlessReconnect()) return
+                    preserveGuard = connectionManager.hasTransitionGuard
+                }
+                if (!connectionManager.ensureCleanRootRuntime(preserveTproxyGuard = preserveGuard)) return
+                val config = loadLastServerConfig()
+                if (config != null) {
+                    connectionLifecycle.updateActiveConfig(config)
+                    connectWithCurrentSettings(config)
+                    return
+                }
+                connectionManager.clearFailedTransitionGuard()
+            }
             logBuffer.append(LogSource.APP, "No restorable running Xray state was found")
             connectionStateCoordinator.markDisconnected()
             updateNotification()
@@ -724,9 +773,17 @@ class XrayService : VpnService() {
         if (!runtimeSettings.useRootService) return@withContext null
 
         val state = stateFile.read() ?: return@withContext null
+        if (state.rootConnectionBackend != runtimeSettings.rootConnectionBackend) return@withContext null
         if (state.xrayPid <= 0) return@withContext null
         if (!connectionManager.isRestorableRootProcessAlive(state.xrayPid)) return@withContext null
-        if (!TunInterfaceDetector.isInterfaceUp(state.tunName)) return@withContext null
+        if (
+            !connectionManager.isRestorableRootRoutingAvailable(
+                state,
+                TunInterfaceDetector.isInterfaceUp(state.tunName),
+            )
+        ) {
+            return@withContext null
+        }
 
         val persistedRoute = selectRestoredPhysicalRoute(state, fallback = null)
         val fallbackRoute = if (persistedRoute == null) {
@@ -1550,10 +1607,13 @@ class XrayService : VpnService() {
     }
 
     private fun connectedNotificationText(state: ConnectionState.Connected): String {
-        val baseText = if (state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL) {
-            localizedString(R.string.notification_vpn_service_active)
-        } else {
-            localizedString(
+        val baseText = when {
+            state.physicalInterface == VPN_SERVICE_INTERFACE_LABEL -> localizedString(R.string.notification_vpn_service_active)
+            state.tunName == TPROXY_INTERFACE_LABEL -> localizedString(
+                R.string.notification_root_tproxy_active,
+                state.physicalInterface,
+            )
+            else -> localizedString(
                 R.string.notification_root_service_active,
                 state.tunName,
                 state.physicalInterface,

@@ -93,12 +93,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.material.xray.R
 import com.material.xray.core.locale.setAppLocales
+import com.material.xray.core.xray.TproxyCompatibility
 import com.material.xray.data.repository.BackupSummary
 import com.material.xray.model.AppUpdateCheckStatus
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
+import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
@@ -124,7 +126,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val domesticDnsServers by viewModel.domesticDnsServers.collectAsStateWithLifecycle()
     val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
     val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
+    val rootConnectionBackend by viewModel.rootConnectionBackend.collectAsStateWithLifecycle()
     val rootAvailable by viewModel.rootAvailable.collectAsStateWithLifecycle()
+    val tproxyCompatibility by viewModel.tproxyCompatibility.collectAsStateWithLifecycle()
     val bypassLan by viewModel.bypassLan.collectAsStateWithLifecycle()
     val allowIpv6 by viewModel.allowIpv6.collectAsStateWithLifecycle()
     val xrayBufferSizeKiB by viewModel.xrayBufferSizeKiB.collectAsStateWithLifecycle()
@@ -309,8 +313,12 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 rootServiceAvailable = rootServiceAvailable,
                 rootServiceActive = rootServiceActive,
                 useRootService = useRootService,
+                rootConnectionBackend = rootConnectionBackend,
+                tproxyCompatibility = tproxyCompatibility,
                 autoConnect = autoConnect,
                 onUseRootServiceChange = viewModel::setUseRootService,
+                onRootConnectionBackendChange = viewModel::setRootConnectionBackend,
+                onRetryTproxyCompatibility = viewModel::retryTproxyCompatibilityCheck,
                 onAutoConnectChange = viewModel::setAutoConnect,
             )
 
@@ -330,6 +338,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         title = stringResource(R.string.settings_allow_ipv6_connections),
                         checked = allowIpv6,
                         onCheckedChange = { viewModel.setAllowIpv6(it) },
+                        enabled = isIpv6SelectionEnabled(rootServiceActive, rootConnectionBackend, tproxyCompatibility),
                     )
                 }
 
@@ -372,7 +381,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             Text(stringResource(R.string.settings_section_network), style = MaterialTheme.typography.titleMedium)
 
             RootTunNameSetting(
-                visible = rootServiceActive,
+                visible = rootServiceActive && rootConnectionBackend == RootConnectionBackend.Tun,
                 editingTunName = editingTunName,
                 hasTunNameChanges = hasTunNameChanges,
                 onEditingTunNameChange = { editingTunName = it },
@@ -395,17 +404,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                     hasChanges = hasXrayBufferSizeKiBChanges,
                     onSave = { parsedXrayBufferSizeKiB?.let(viewModel::setXrayBufferSizeKiB) },
                 )
-                AdvancedIntegerSetting(
+                TunMtuSetting(
+                    visible = shouldShowTunMtu(rootServiceActive, rootConnectionBackend),
                     value = editingTunMtu,
                     onValueChange = { editingTunMtu = it },
-                    label = stringResource(R.string.settings_tun_mtu_label),
-                    supportingText = stringResource(
-                        R.string.settings_tun_mtu_supporting_text,
-                        XrayRuntimeSettings.MIN_TUN_MTU,
-                        XrayRuntimeSettings.MAX_TUN_MTU,
-                        XrayRuntimeSettings.DEFAULT_TUN_MTU,
-                    ),
-                    suffix = stringResource(R.string.settings_bytes_abbreviation),
                     isValid = isTunMtuValid,
                     hasChanges = hasTunMtuChanges,
                     onSave = { parsedTunMtu?.let(viewModel::setTunMtu) },
@@ -800,8 +802,12 @@ private fun SettingsServiceSection(
     rootServiceAvailable: Boolean,
     rootServiceActive: Boolean,
     useRootService: Boolean,
+    rootConnectionBackend: RootConnectionBackend,
+    tproxyCompatibility: TproxyCompatibility,
     autoConnect: Boolean,
     onUseRootServiceChange: (Boolean) -> Unit,
+    onRootConnectionBackendChange: (RootConnectionBackend) -> Unit,
+    onRetryTproxyCompatibility: () -> Unit,
     onAutoConnectChange: (Boolean) -> Unit,
 ) {
     Text(stringResource(R.string.settings_section_service), style = MaterialTheme.typography.titleMedium)
@@ -820,6 +826,65 @@ private fun SettingsServiceSection(
             },
         )
 
+        if (rootServiceActive) {
+            val tproxySelectable = tproxyCompatibility !is TproxyCompatibility.Unsupported
+            val supportingText = tproxyCompatibilitySupportingText(tproxyCompatibility)
+            SettingsNestedSection(title = stringResource(R.string.settings_root_connection_backend)) {
+                RootConnectionBackend.entries.forEach { backend ->
+                    val enabled = backend == RootConnectionBackend.Tun || tproxySelectable
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .selectable(
+                                selected = backend == rootConnectionBackend,
+                                enabled = enabled,
+                                role = Role.RadioButton,
+                                onClick = { onRootConnectionBackendChange(backend) },
+                            )
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(backend.labelResource),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (enabled) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                            Text(
+                                stringResource(backend.descriptionResource),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        RadioButton(
+                            selected = backend == rootConnectionBackend,
+                            onClick = null,
+                            enabled = enabled,
+                        )
+                    }
+                }
+                supportingText?.let { text ->
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (tproxyCompatibility is TproxyCompatibility.Unsupported) {
+                TextButton(onClick = onRetryTproxyCompatibility) {
+                    Text(stringResource(R.string.settings_retry_compatibility_check))
+                }
+            }
+        }
+
         SettingsSwitchRow(
             title = stringResource(R.string.settings_auto_connect_on_boot),
             checked = autoConnect,
@@ -828,6 +893,23 @@ private fun SettingsServiceSection(
         )
     }
 }
+
+@Composable
+private fun tproxyCompatibilitySupportingText(compatibility: TproxyCompatibility): String? = when (compatibility) {
+    TproxyCompatibility.Unknown,
+    TproxyCompatibility.Checking,
+    -> null
+    is TproxyCompatibility.Supported -> null
+    is TproxyCompatibility.Unsupported -> stringResource(
+        R.string.settings_tproxy_unsupported,
+        stringResource(compatibility.reason.descriptionResource),
+    )
+}
+
+internal fun shouldShowTunMtu(
+    rootServiceActive: Boolean,
+    backend: RootConnectionBackend,
+): Boolean = !rootServiceActive || backend == RootConnectionBackend.Tun
 
 @Composable
 private fun SettingsNestedSection(
@@ -1231,6 +1313,33 @@ private fun RootTunNameSetting(
     if (hasTunNameChanges) {
         Button(onClick = onSave) { Text(stringResource(R.string.settings_save)) }
     }
+}
+
+@Composable
+private fun TunMtuSetting(
+    visible: Boolean,
+    value: String,
+    onValueChange: (String) -> Unit,
+    isValid: Boolean,
+    hasChanges: Boolean,
+    onSave: () -> Unit,
+) {
+    if (!visible) return
+    AdvancedIntegerSetting(
+        value = value,
+        onValueChange = onValueChange,
+        label = stringResource(R.string.settings_tun_mtu_label),
+        supportingText = stringResource(
+            R.string.settings_tun_mtu_supporting_text,
+            XrayRuntimeSettings.MIN_TUN_MTU,
+            XrayRuntimeSettings.MAX_TUN_MTU,
+            XrayRuntimeSettings.DEFAULT_TUN_MTU,
+        ),
+        suffix = stringResource(R.string.settings_bytes_abbreviation),
+        isValid = isValid,
+        hasChanges = hasChanges,
+        onSave = onSave,
+    )
 }
 
 @Composable

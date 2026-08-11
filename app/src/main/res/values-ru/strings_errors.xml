@@ -17,4 +17,6 @@
     <string name="connection_error_secure_xray_api">Не удалось защитить управляющий API Xray</string>
     <string name="connection_error_cleanup_failed">Не удалось полностью остановить предыдущую среду Xray</string>
     <string name="connection_error_stop_runtime">Не удалось остановить активное подключение Xray</string>
+    <string name="connection_error_tproxy_unsupported">TPROXY не поддерживается: %1$s</string>
+    <string name="connection_error_tproxy_health_check">Маршрутизация TPROXY не прошла проверку после включения</string>
 </resources>

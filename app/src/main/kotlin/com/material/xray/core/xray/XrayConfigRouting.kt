@@ -17,6 +17,12 @@ private const val DEFAULT_DNS_TAG = "default-dns"
 private const val DOMESTIC_DNS_TAG = "domestic-dns"
 private const val SYSTEM_DNS_SERVER = "localhost"
 
+internal sealed interface XrayRouteTarget {
+    data class Outbound(val tag: String) : XrayRouteTarget
+
+    data class Balancer(val tag: String) : XrayRouteTarget
+}
+
 internal fun buildDns(
     servers: String,
     domesticServers: String = "",
@@ -75,7 +81,7 @@ internal fun buildRouting(
     domesticDnsServers: String = "",
     domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     domainMatcher: String? = null,
-    defaultDnsOutboundTag: String = "proxy",
+    defaultRouteTarget: XrayRouteTarget = XrayRouteTarget.Outbound("proxy"),
     dataInboundTags: List<String> = listOf("tun-in") + appProxyRoutes.map { it.inboundTag },
 ) = buildJsonObject {
     val hasDomesticDomains = directDomains(routingRules, bypassLan).isNotEmpty()
@@ -87,7 +93,7 @@ internal fun buildRouting(
             add(dnsRoutingRule(dataInboundTags))
             add(dnsOverTlsRoutingRule(dataInboundTags))
             if (dnsServers.commaSeparatedValues().isNotEmpty()) {
-                add(defaultDnsRoutingRule(defaultDnsOutboundTag))
+                add(defaultDnsRoutingRule(defaultRouteTarget))
             }
             if (
                 hasDomesticDomains &&
@@ -110,7 +116,7 @@ internal fun buildRouting(
                 }
             }
             appProxyRoutes.filter { it.applyRoutingRules }.forEach { route ->
-                add(appProxyRoutingRule(route.inboundTag, route.outboundTag))
+                add(appProxyRoutingRule(route.inboundTag, defaultRouteTarget))
             }
         },
     )
@@ -152,10 +158,13 @@ private fun dnsOverTlsRoutingRule(dataInboundTags: List<String>) = buildJsonObje
     put("outboundTag", "direct")
 }
 
-private fun defaultDnsRoutingRule(outboundTag: String) = buildJsonObject {
+private fun defaultDnsRoutingRule(target: XrayRouteTarget) = buildJsonObject {
     put("type", "field")
     put("inboundTag", buildJsonArray { add(DEFAULT_DNS_TAG) })
-    put("outboundTag", outboundTag)
+    when (target) {
+        is XrayRouteTarget.Outbound -> put("outboundTag", target.tag)
+        is XrayRouteTarget.Balancer -> put("balancerTag", target.tag)
+    }
 }
 
 private fun domesticDnsRoutingRule() = buildJsonObject {
@@ -168,6 +177,15 @@ private fun appProxyRoutingRule(inboundTag: String, outboundTag: String) = build
     put("type", "field")
     put("inboundTag", buildJsonArray { add(inboundTag) })
     put("outboundTag", outboundTag)
+}
+
+private fun appProxyRoutingRule(inboundTag: String, target: XrayRouteTarget) = buildJsonObject {
+    put("type", "field")
+    put("inboundTag", buildJsonArray { add(inboundTag) })
+    when (target) {
+        is XrayRouteTarget.Outbound -> put("outboundTag", target.tag)
+        is XrayRouteTarget.Balancer -> put("balancerTag", target.tag)
+    }
 }
 
 private fun lanIpRoutingRule() = buildJsonObject {

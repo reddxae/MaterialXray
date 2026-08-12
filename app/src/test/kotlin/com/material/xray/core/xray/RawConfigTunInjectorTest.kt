@@ -194,11 +194,14 @@ class RawConfigTunInjectorTest {
         val defaultDnsRule = rules.first {
             it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
         }
-        assertEquals("proxy", defaultDnsRule.getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("balance", defaultDnsRule.getValue("balancerTag").jsonPrimitive.content)
+        assertTrue("outboundTag" !in defaultDnsRule)
         val rawEndpointRuleIndex = rules.indexOfFirst {
             it["ip"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "1.1.1.1"
         }
-        val rawBalancerRuleIndex = rules.indexOfFirst { it["balancerTag"]?.jsonPrimitive?.content == "balance" }
+        val rawBalancerRuleIndex = rules.indexOfFirst {
+            it["balancerTag"]?.jsonPrimitive?.content == "balance" && "inboundTag" !in it
+        }
         val defaultDnsRuleIndex = rules.indexOf(defaultDnsRule)
         assertTrue("Raw endpoint route must be preserved", rawEndpointRuleIndex >= 0)
         assertTrue("Raw balancer route must be preserved", rawBalancerRuleIndex >= 0)
@@ -220,6 +223,85 @@ class RawConfigTunInjectorTest {
             root.getValue("burstObservatory").jsonObject
                 .getValue("subjectSelector").jsonArray.single().jsonPrimitive.content,
         )
+    }
+
+    @Test
+    fun `inject routes default DNS through raw catch-all outbound`() {
+        val result = injector.inject(
+            rawJson = """
+                {
+                  "outbounds": [
+                    {"tag":"proxy","protocol":"vless","settings":{}},
+                    {"tag":"proxy-2","protocol":"vless","settings":{}}
+                  ],
+                  "routing": {
+                    "rules": [
+                      {"domain":["example.com"],"outboundTag":"proxy"},
+                      {"network":"tcp,udp","outboundTag":"proxy-2"}
+                    ]
+                  }
+                }
+            """.trimIndent(),
+            tunName = "xray0",
+            fwmark = 1,
+            dnsServers = "1.1.1.1",
+            domesticDnsServers = "",
+            logLevel = XrayLogLevel.Error,
+            defaultOutbound = XrayOutbound.Proxy,
+            bypassLan = false,
+            routingRules = emptyList(),
+            appProxyRoutes = emptyList(),
+            physicalInterface = null,
+        )
+
+        val defaultDnsRule = json.parseToJsonElement(result).jsonObject
+            .getValue("routing").jsonObject
+            .getValue("rules").jsonArray
+            .map { it.jsonObject }
+            .first { it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns" }
+        assertEquals("proxy-2", defaultDnsRule.getValue("outboundTag").jsonPrimitive.content)
+        assertTrue("balancerTag" !in defaultDnsRule)
+    }
+
+    @Test
+    fun `inject routes default-selected app fallback through raw catch-all balancer`() {
+        val result = injector.inject(
+            rawJson = """
+                {
+                  "outbounds": [{"tag":"proxy","protocol":"vless","settings":{}}],
+                  "routing": {
+                    "rules": [{"network":"tcp,udp","balancerTag":"balance"}],
+                    "balancers": [{"tag":"balance","selector":["proxy"]}]
+                  }
+                }
+            """.trimIndent(),
+            tunName = "xray0",
+            fwmark = 1,
+            dnsServers = "1.1.1.1",
+            domesticDnsServers = "",
+            logLevel = XrayLogLevel.Error,
+            defaultOutbound = XrayOutbound.Proxy,
+            bypassLan = false,
+            routingRules = emptyList(),
+            appProxyRoutes = listOf(
+                AppProxyRoute(
+                    inboundTag = "app-in-default-selected",
+                    tunName = "xray0a1",
+                    outboundTag = "proxy",
+                    server = server("Default selected"),
+                    applyRoutingRules = true,
+                ),
+            ),
+            physicalInterface = null,
+        )
+
+        val appFallback = json.parseToJsonElement(result).jsonObject
+            .getValue("routing").jsonObject
+            .getValue("rules").jsonArray
+            .map { it.jsonObject }
+            .first { it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "app-in-default-selected" }
+        assertEquals("balance", appFallback.getValue("balancerTag").jsonPrimitive.content)
+        assertTrue("outboundTag" !in appFallback)
     }
 
     @Test

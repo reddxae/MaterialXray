@@ -49,6 +49,9 @@ internal class RawConfigTunInjector(
             outbound["tag"]?.jsonPrimitive?.contentOrNull.equals("proxy", ignoreCase = true)
         } ?: error("Raw JSON config has no proxy outbound")
         val proxyOutboundTag = requireNotNull(proxyOutbound["tag"]?.jsonPrimitive?.contentOrNull)
+        val rawRouting = original["routing"] as? JsonObject
+        val defaultRouteTarget = rawRouting.defaultTcpRouteTarget()
+            ?: XrayRouteTarget.Outbound(proxyOutboundTag)
 
         val appProxyOutbounds = appProxyRoutes.filterNot { it.applyRoutingRules }.map { route ->
             buildProxyOutbound(route.server, fwmark, physicalInterface, route.outboundTag, allowIpv6)
@@ -93,19 +96,17 @@ internal class RawConfigTunInjector(
                 domesticDnsServers = domesticDnsServers,
                 domainStrategy = routingDomainStrategy,
                 domainMatcher = routingDomainMatcher,
-                defaultDnsOutboundTag = proxyOutboundTag,
+                defaultRouteTarget = defaultRouteTarget,
                 dataInboundTags = effectiveInbounds.map { it.tag },
             ),
-            raw = original["routing"] as? JsonObject,
+            raw = rawRouting,
         )
 
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))
     }
 
-    // The app owns DNS for raw configs: it replaces their `dns` block outright, so the rules that route
-    // its injected resolvers stay ahead of the raw rules. `default-dns` only matches Xray's own DNS
-    // client, so leading with it cannot capture unrelated traffic, while trailing it would let any raw
-    // catch-all divert resolver traffic away from the proxy.
+    // The app owns DNS for raw configs, so its resolver rule stays ahead of provider rules that could
+    // capture the resolver endpoint. The rule still inherits a raw catch-all's target when one exists.
     private fun mergeRouting(generated: JsonObject, raw: JsonObject?): JsonObject {
         if (raw == null) return generated
 
@@ -156,5 +157,37 @@ internal class RawConfigTunInjector(
         add("dns-out")
         add("block")
         appProxyRoutes.filterNot { it.applyRoutingRules }.forEach { add(it.outboundTag) }
+    }
+
+    private fun JsonObject?.defaultTcpRouteTarget(): XrayRouteTarget? = (this?.get("rules") as? JsonArray)
+        ?.mapNotNull { it as? JsonObject }
+        ?.firstNotNullOfOrNull { rule -> rule.takeIf { it.isCatchAllTcpRoute() }?.routeTarget() }
+
+    private fun JsonObject.isCatchAllTcpRoute(): Boolean {
+        if (keys.any { it !in DEFAULT_ROUTE_FIELDS }) return false
+        val type = (get("type") as? JsonPrimitive)?.contentOrNull
+        if (type != null && type != "field") return false
+
+        val networks = when (val network = get("network")) {
+            null -> return true
+            is JsonPrimitive -> network.contentOrNull?.split(',').orEmpty()
+            is JsonArray -> network.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            else -> return false
+        }
+        return networks.any { it.trim().equals("tcp", ignoreCase = true) }
+    }
+
+    private fun JsonObject.routeTarget(): XrayRouteTarget? {
+        val outboundTag = (get("outboundTag") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+        val balancerTag = (get("balancerTag") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+        return when {
+            outboundTag != null && balancerTag == null -> XrayRouteTarget.Outbound(outboundTag)
+            balancerTag != null && outboundTag == null -> XrayRouteTarget.Balancer(balancerTag)
+            else -> null
+        }
+    }
+
+    private companion object {
+        val DEFAULT_ROUTE_FIELDS = setOf("type", "network", "outboundTag", "balancerTag", "ruleTag")
     }
 }

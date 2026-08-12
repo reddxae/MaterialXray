@@ -155,6 +155,38 @@ class XrayConfigRoutingTest {
     }
 
     @Test
+    fun `buildRouting routes default DNS through a balancer target`() {
+        val routing = buildRouting(
+            routingRules = emptyList(),
+            dnsServers = "1.1.1.1",
+            defaultRouteTarget = XrayRouteTarget.Balancer("balance"),
+        )
+
+        val defaultDnsRule = routing.getValue("rules").jsonArray
+            .map { it.jsonObject }
+            .first { it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns" }
+        assertEquals("balance", defaultDnsRule.getValue("balancerTag").jsonPrimitive.content)
+        assertTrue("outboundTag" !in defaultDnsRule)
+    }
+
+    @Test
+    fun `buildRouting routes apply-rules app fallback through default balancer`() {
+        val routing = buildRouting(
+            routingRules = emptyList(),
+            appProxyRoutes = listOf(
+                appProxyRoute(inboundTag = "app-in-default-selected", outboundTag = "proxy", applyRoutingRules = true),
+            ),
+            defaultRouteTarget = XrayRouteTarget.Balancer("balance"),
+        )
+
+        val appFallback = routing.getValue("rules").jsonArray
+            .map { it.jsonObject }
+            .first { it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "app-in-default-selected" }
+        assertEquals("balance", appFallback.getValue("balancerTag").jsonPrimitive.content)
+        assertTrue("outboundTag" !in appFallback)
+    }
+
+    @Test
     fun `buildRouting omits domestic upstream rule without direct domains`() {
         val routing = buildRouting(
             routingRules = emptyList(),

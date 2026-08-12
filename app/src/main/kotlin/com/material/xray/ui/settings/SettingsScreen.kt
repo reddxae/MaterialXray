@@ -13,12 +13,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -64,7 +66,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,7 +74,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -115,7 +115,6 @@ import com.material.xray.ui.components.rememberSystemState
 import com.material.xray.ui.text.descriptionResource
 import com.material.xray.ui.text.labelResource
 import java.util.Locale
-import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collect
 import org.xmlpull.v1.XmlPullParser
 
@@ -133,6 +132,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("CyclomaticComplexMethod")
 @Composable
 private fun SettingsScreenContent(
     viewModel: SettingsViewModel,
@@ -174,23 +174,15 @@ private fun SettingsScreenContent(
     val context = LocalContext.current
     val resources = LocalResources.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val scrollState = rememberScrollState()
+    val scrollState = rememberLazyListState()
     var showRootAccessDeniedDialog by rememberSaveable { mutableStateOf(false) }
     var showNotificationFieldsDialog by rememberSaveable { mutableStateOf(false) }
     var showFieldStyleDialog by rememberSaveable { mutableStateOf(false) }
     var showUpdateFrequencyDialog by rememberSaveable { mutableStateOf(false) }
     var showResetDatabaseDialog by rememberSaveable { mutableStateOf(false) }
     var showOpenSourceLicensesDialog by rememberSaveable { mutableStateOf(false) }
-    var showAdvancedOptionsRowTop by remember { mutableStateOf<Int?>(null) }
-    var pendingAdvancedOptionsScrollAnchor by remember { mutableStateOf<AdvancedOptionsScrollAnchor?>(null) }
     val rootServiceAvailable = rootAvailable != false
     val rootServiceActive = useRootService && rootAvailable == true
-    val appVersion = remember(context) {
-        runCatching {
-            @Suppress("DEPRECATION")
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        }.getOrNull()
-    }
 
     var editingTunName by rememberSaveable(tunName) { mutableStateOf(tunName) }
     var editingXrayBufferSizeKiB by rememberSaveable(xrayBufferSizeKiB) { mutableStateOf(xrayBufferSizeKiB.toString()) }
@@ -299,14 +291,6 @@ private fun SettingsScreenContent(
         }
     }
 
-    AdvancedOptionsScrollAnchorEffect(
-        showAdvancedOptions = showAdvancedOptions,
-        anchor = pendingAdvancedOptionsScrollAnchor,
-        rowTop = showAdvancedOptionsRowTop,
-        scrollState = scrollState,
-        onConsumed = { pendingAdvancedOptionsScrollAnchor = null },
-    )
-
     Scaffold(
         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0.dp),
@@ -317,424 +301,495 @@ private fun SettingsScreenContent(
             )
         },
     ) { padding ->
-        Column(
+        LazyColumn(
+            state = scrollState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(16.dp),
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SettingsServiceSection(
-                rootAvailable = rootAvailable,
-                rootServiceAvailable = rootServiceAvailable,
-                rootServiceActive = rootServiceActive,
-                useRootService = useRootService,
-                rootConnectionBackend = rootConnectionBackend,
-                tproxyCompatibility = tproxyCompatibility,
-                autoConnect = autoConnect,
-                onUseRootServiceChange = viewModel::setUseRootService,
-                onRootConnectionBackendChange = viewModel::setRootConnectionBackend,
-                onRetryTproxyCompatibility = viewModel::retryTproxyCompatibilityCheck,
-                onAutoConnectChange = viewModel::setAutoConnect,
-            )
-
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_section_routing), style = MaterialTheme.typography.titleMedium)
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SettingsNestedSection(title = stringResource(R.string.settings_connectivity_title)) {
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_bypass_lan_title),
-                        description = stringResource(R.string.settings_bypass_lan_description),
-                        checked = bypassLan,
-                        onCheckedChange = { viewModel.setBypassLan(it) },
+            item(key = "service") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    SettingsServiceSection(
+                        rootAvailable = rootAvailable,
+                        rootServiceAvailable = rootServiceAvailable,
+                        rootServiceActive = rootServiceActive,
+                        useRootService = useRootService,
+                        rootConnectionBackend = rootConnectionBackend,
+                        tproxyCompatibility = tproxyCompatibility,
+                        autoConnect = autoConnect,
+                        onUseRootServiceChange = viewModel::setUseRootService,
+                        onRootConnectionBackendChange = viewModel::setRootConnectionBackend,
+                        onRetryTproxyCompatibility = viewModel::retryTproxyCompatibilityCheck,
+                        onAutoConnectChange = viewModel::setAutoConnect,
                     )
-
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_allow_ipv6_connections),
-                        checked = allowIpv6,
-                        onCheckedChange = { viewModel.setAllowIpv6(it) },
-                        enabled = isIpv6SelectionEnabled(rootServiceActive, rootConnectionBackend, tproxyCompatibility),
-                    )
-                }
-
-                SettingsNestedSection(title = stringResource(R.string.settings_routing_policy_title)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        RoutingPolicyControl.entries.forEach { policy ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .selectable(
-                                        selected = policy == routingPolicyControl,
-                                        role = Role.RadioButton,
-                                        onClick = { viewModel.setRoutingPolicyControl(policy) },
-                                    )
-                                    .padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(policy.labelResource), style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        stringResource(policy.descriptionResource),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                RadioButton(
-                                    selected = policy == routingPolicyControl,
-                                    onClick = null,
-                                )
-                            }
-                        }
-                    }
                 }
             }
 
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_section_network), style = MaterialTheme.typography.titleMedium)
+            item(key = "routing_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_section_routing), style = MaterialTheme.typography.titleMedium)
+                }
+            }
 
-            RootTunNameSetting(
-                visible = rootServiceActive && rootConnectionBackend == RootConnectionBackend.Tun,
-                editingTunName = editingTunName,
-                hasTunNameChanges = hasTunNameChanges,
-                onEditingTunNameChange = { editingTunName = it },
-                onSave = { viewModel.setTunName(editingTunName) },
-            )
-
-            if (showAdvancedOptions) {
-                AdvancedIntegerSetting(
-                    value = editingXrayBufferSizeKiB,
-                    onValueChange = { editingXrayBufferSizeKiB = it },
-                    label = stringResource(R.string.settings_xray_buffer_size_label),
-                    supportingText = stringResource(
-                        R.string.settings_xray_buffer_size_supporting_text,
-                        XrayRuntimeSettings.MIN_XRAY_BUFFER_SIZE_KIB,
-                        XrayRuntimeSettings.MAX_XRAY_BUFFER_SIZE_KIB,
-                        XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
-                    ),
-                    suffix = stringResource(R.string.settings_kib_abbreviation),
-                    isValid = isXrayBufferSizeKiBValid,
-                    hasChanges = hasXrayBufferSizeKiBChanges,
-                    onSave = { parsedXrayBufferSizeKiB?.let(viewModel::setXrayBufferSizeKiB) },
-                )
-                TunMtuSetting(
-                    visible = shouldShowTunMtu(rootServiceActive, rootConnectionBackend),
-                    value = editingTunMtu,
-                    onValueChange = { editingTunMtu = it },
-                    isValid = isTunMtuValid,
-                    hasChanges = hasTunMtuChanges,
-                    onSave = { parsedTunMtu?.let(viewModel::setTunMtu) },
-                )
-                AdvancedIntegerSetting(
-                    value = editingXrayMemoryRestartThresholdMiB,
-                    onValueChange = { editingXrayMemoryRestartThresholdMiB = it },
-                    label = stringResource(R.string.settings_xray_memory_restart_threshold_label),
-                    supportingText = stringResource(
-                        R.string.settings_xray_memory_restart_threshold_supporting_text,
-                        XrayRuntimeSettings.MIN_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
-                        XrayRuntimeSettings.MAX_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
-                        XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
-                    ),
-                    suffix = stringResource(R.string.settings_mib_abbreviation),
-                    isValid = isXrayMemoryRestartThresholdMiBValid,
-                    hasChanges = hasXrayMemoryRestartThresholdMiBChanges,
-                    onSave = {
-                        parsedXrayMemoryRestartThresholdMiB
-                            ?.let(viewModel::setXrayMemoryRestartThresholdMiB)
-                    },
-                )
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_passive_health_monitoring_title),
-                    description = stringResource(R.string.settings_passive_health_monitoring_description),
-                    checked = passiveHealthMonitoringEnabled,
-                    onCheckedChange = viewModel::setPassiveHealthMonitoringEnabled,
-                )
-                ReadOnlyDropdownField(
-                    label = stringResource(R.string.settings_default_outbound_label),
-                    selectedText = stringResource(defaultOutbound.labelResource),
-                    supportingText = stringResource(defaultOutbound.descriptionResource),
-                    options = XrayOutbound.entries.map { outbound ->
-                        DropdownOption(
-                            value = outbound,
-                            label = stringResource(outbound.labelResource),
-                            description = stringResource(outbound.descriptionResource),
+            item(key = "routing") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsNestedSection(title = stringResource(R.string.settings_connectivity_title)) {
+                        SettingsSwitchRow(
+                            title = stringResource(R.string.settings_bypass_lan_title),
+                            description = stringResource(R.string.settings_bypass_lan_description),
+                            checked = bypassLan,
+                            onCheckedChange = { viewModel.setBypassLan(it) },
                         )
-                    },
-                    onSelected = viewModel::setDefaultOutbound,
-                )
-            }
 
-            OutlinedTextField(
-                value = editingDns,
-                onValueChange = { editingDns = it },
-                label = { Text(stringResource(R.string.settings_dns_servers_label)) },
-                placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text(stringResource(R.string.settings_dns_servers_supporting_text)) },
-            )
-            if (hasDnsChanges) {
-                Button(
-                    onClick = {
-                        editingDns = viewModel.normalizeDnsServers(editingDns)
-                        viewModel.setDnsServers(editingDns)
-                    },
-                ) {
-                    Text(stringResource(R.string.settings_save))
-                }
-            }
-
-            OutlinedTextField(
-                value = editingDomesticDns,
-                onValueChange = { editingDomesticDns = it },
-                label = { Text(stringResource(R.string.settings_domestic_dns_label)) },
-                placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text(stringResource(R.string.settings_domestic_dns_supporting_text)) },
-            )
-            if (hasDomesticDnsChanges) {
-                Button(
-                    onClick = {
-                        editingDomesticDns = viewModel.normalizeDnsServers(editingDomesticDns)
-                        viewModel.setDomesticDnsServers(editingDomesticDns)
-                    },
-                ) {
-                    Text(stringResource(R.string.settings_save))
-                }
-            }
-
-            if (showAdvancedOptions) {
-                ReadOnlyDropdownField(
-                    label = stringResource(R.string.settings_xray_log_level_label),
-                    selectedText = stringResource(xrayLogLevel.labelResource),
-                    supportingText = stringResource(
-                        R.string.settings_default_value,
-                        stringResource(XrayLogLevel.default.labelResource),
-                    ),
-                    options = XrayLogLevel.entries.map { level ->
-                        DropdownOption(value = level, label = stringResource(level.labelResource))
-                    },
-                    onSelected = viewModel::setXrayLogLevel,
-                )
-            }
-
-            OutlinedTextField(
-                value = editingGeoipUrl,
-                onValueChange = { editingGeoipUrl = it },
-                label = { Text(stringResource(R.string.settings_geoip_url_label)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = {
-                    Text(stringResource(R.string.settings_geoip_url_supporting_text))
-                },
-            )
-            if (hasGeoipUrlChanges) {
-                Button(onClick = { viewModel.setGeoipUrl(editingGeoipUrl) }) {
-                    Text(stringResource(R.string.settings_save))
-                }
-            }
-            OutlinedButton(
-                onClick = { viewModel.updateGeoipAsset(editingGeoipUrl) },
-                enabled = !geoipUpdating,
-            ) {
-                Text(
-                    stringResource(
-                        if (geoipUpdating) R.string.settings_updating else R.string.settings_update,
-                    ),
-                )
-            }
-
-            OutlinedTextField(
-                value = editingGeositeUrl,
-                onValueChange = { editingGeositeUrl = it },
-                label = { Text(stringResource(R.string.settings_geosite_url_label)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = {
-                    Text(stringResource(R.string.settings_geosite_url_supporting_text))
-                },
-            )
-            if (hasGeositeUrlChanges) {
-                Button(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) {
-                    Text(stringResource(R.string.settings_save))
-                }
-            }
-            OutlinedButton(
-                onClick = { viewModel.updateGeositeAsset(editingGeositeUrl) },
-                enabled = !geositeUpdating,
-            ) {
-                Text(
-                    stringResource(
-                        if (geositeUpdating) R.string.settings_updating else R.string.settings_update,
-                    ),
-                )
-            }
-
-            if (showAdvancedOptions) {
-                OutlinedTextField(
-                    value = editingLatencyCheckUrl,
-                    onValueChange = { editingLatencyCheckUrl = it },
-                    label = { Text(stringResource(R.string.settings_latency_check_url_label)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = {
-                        Text(stringResource(R.string.settings_latency_check_url_supporting_text))
-                    },
-                )
-                if (hasLatencyCheckUrlChanges) {
-                    Button(onClick = { viewModel.setLatencyCheckUrl(editingLatencyCheckUrl) }) {
-                        Text(stringResource(R.string.settings_save))
+                        SettingsSwitchRow(
+                            title = stringResource(R.string.settings_allow_ipv6_connections),
+                            checked = allowIpv6,
+                            onCheckedChange = { viewModel.setAllowIpv6(it) },
+                            enabled = isIpv6SelectionEnabled(rootServiceActive, rootConnectionBackend, tproxyCompatibility),
+                        )
                     }
-                }
-            }
 
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                AppLanguageSetting()
-
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_sort_outbounds_by_latency_title),
-                    description = stringResource(R.string.settings_sort_outbounds_by_latency_description),
-                    checked = sortOutboundsByLatency,
-                    onCheckedChange = viewModel::setSortOutboundsByLatency,
-                )
-
-                NotificationSettingsSection(
-                    settings = notificationSettings,
-                    onEnabledChange = viewModel::setNotificationEnabled,
-                    onConfigureFields = { showNotificationFieldsDialog = true },
-                    onConfigureStyle = { showFieldStyleDialog = true },
-                    onConfigureFrequency = { showUpdateFrequencyDialog = true },
-                )
-
-                SettingsNestedSection(title = stringResource(R.string.settings_app_icon_title)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        LauncherIcon.entries.forEach { icon ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .selectable(
-                                        selected = icon == launcherIcon,
-                                        role = Role.RadioButton,
-                                        onClick = { viewModel.setLauncherIcon(icon) },
+                    SettingsNestedSection(title = stringResource(R.string.settings_routing_policy_title)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            RoutingPolicyControl.entries.forEach { policy ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .selectable(
+                                            selected = policy == routingPolicyControl,
+                                            role = Role.RadioButton,
+                                            onClick = { viewModel.setRoutingPolicyControl(policy) },
+                                        )
+                                        .padding(vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(policy.labelResource), style = MaterialTheme.typography.bodyLarge)
+                                        Text(
+                                            stringResource(policy.descriptionResource),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    RadioButton(
+                                        selected = policy == routingPolicyControl,
+                                        onClick = null,
                                     )
-                                    .padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(stringResource(icon.labelResource), style = MaterialTheme.typography.bodyLarge)
                                 }
-                                RadioButton(
-                                    selected = icon == launcherIcon,
-                                    onClick = null,
-                                )
                             }
                         }
                     }
                 }
             }
 
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
+            item(key = "network_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_section_network), style = MaterialTheme.typography.titleMedium)
+                }
+            }
 
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_send_hardware_id_title),
-                    description = stringResource(R.string.settings_send_hardware_id_description),
-                    checked = subscriptionSendHardwareId,
-                    onCheckedChange = viewModel::setSubscriptionSendHardwareId,
-                )
+            if (rootServiceActive && rootConnectionBackend == RootConnectionBackend.Tun) {
+                item(key = "tun_name") {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        RootTunNameSetting(
+                            visible = true,
+                            editingTunName = editingTunName,
+                            hasTunNameChanges = hasTunNameChanges,
+                            onEditingTunNameChange = { editingTunName = it },
+                            onSave = { viewModel.setTunName(editingTunName) },
+                        )
+                    }
+                }
+            }
 
-                SettingsSwitchRow(
-                    title = stringResource(R.string.settings_show_advanced_options),
-                    checked = showAdvancedOptions,
-                    onCheckedChange = { enabled ->
-                        showAdvancedOptionsRowTop?.let { rowTop ->
-                            pendingAdvancedOptionsScrollAnchor = AdvancedOptionsScrollAnchor(
-                                targetEnabled = enabled,
-                                rowTop = rowTop,
-                                scrollValue = scrollState.value,
+            if (showAdvancedOptions) {
+                item(key = "xray_buffer") {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        AdvancedIntegerSetting(
+                            value = editingXrayBufferSizeKiB,
+                            onValueChange = { editingXrayBufferSizeKiB = it },
+                            label = stringResource(R.string.settings_xray_buffer_size_label),
+                            supportingText = stringResource(
+                                R.string.settings_xray_buffer_size_supporting_text,
+                                XrayRuntimeSettings.MIN_XRAY_BUFFER_SIZE_KIB,
+                                XrayRuntimeSettings.MAX_XRAY_BUFFER_SIZE_KIB,
+                                XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
+                            ),
+                            suffix = stringResource(R.string.settings_kib_abbreviation),
+                            isValid = isXrayBufferSizeKiBValid,
+                            hasChanges = hasXrayBufferSizeKiBChanges,
+                            onSave = { parsedXrayBufferSizeKiB?.let(viewModel::setXrayBufferSizeKiB) },
+                        )
+                    }
+                }
+                if (shouldShowTunMtu(rootServiceActive, rootConnectionBackend)) {
+                    item(key = "tun_mtu") {
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            TunMtuSetting(
+                                visible = true,
+                                value = editingTunMtu,
+                                onValueChange = { editingTunMtu = it },
+                                isValid = isTunMtuValid,
+                                hasChanges = hasTunMtuChanges,
+                                onSave = { parsedTunMtu?.let(viewModel::setTunMtu) },
                             )
                         }
-                        viewModel.setShowAdvancedOptions(enabled)
-                    },
-                    modifier = Modifier.onGloballyPositioned { coordinates ->
-                        showAdvancedOptionsRowTop = coordinates.positionInRoot().y.roundToInt()
-                    },
-                )
+                    }
+                }
+                item(key = "memory_restart_threshold") {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        AdvancedIntegerSetting(
+                            value = editingXrayMemoryRestartThresholdMiB,
+                            onValueChange = { editingXrayMemoryRestartThresholdMiB = it },
+                            label = stringResource(R.string.settings_xray_memory_restart_threshold_label),
+                            supportingText = stringResource(
+                                R.string.settings_xray_memory_restart_threshold_supporting_text,
+                                XrayRuntimeSettings.MIN_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
+                                XrayRuntimeSettings.MAX_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
+                                XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
+                            ),
+                            suffix = stringResource(R.string.settings_mib_abbreviation),
+                            isValid = isXrayMemoryRestartThresholdMiBValid,
+                            hasChanges = hasXrayMemoryRestartThresholdMiBChanges,
+                            onSave = {
+                                parsedXrayMemoryRestartThresholdMiB
+                                    ?.let(viewModel::setXrayMemoryRestartThresholdMiB)
+                            },
+                        )
+                    }
+                }
+                item(key = "passive_health_monitoring") {
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_passive_health_monitoring_title),
+                        description = stringResource(R.string.settings_passive_health_monitoring_description),
+                        checked = passiveHealthMonitoringEnabled,
+                        onCheckedChange = viewModel::setPassiveHealthMonitoringEnabled,
+                    )
+                }
+                item(key = "default_outbound") {
+                    ReadOnlyDropdownField(
+                        label = stringResource(R.string.settings_default_outbound_label),
+                        selectedText = stringResource(defaultOutbound.labelResource),
+                        supportingText = stringResource(defaultOutbound.descriptionResource),
+                        options = XrayOutbound.entries.map { outbound ->
+                            DropdownOption(
+                                value = outbound,
+                                label = stringResource(outbound.labelResource),
+                                description = stringResource(outbound.descriptionResource),
+                            )
+                        },
+                        onSelected = viewModel::setDefaultOutbound,
+                    )
+                }
             }
 
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_section_data), style = MaterialTheme.typography.titleMedium)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    enabled = !backupBusy,
-                    onClick = { exportLauncher.launch("material-xray-backup.json") },
-                ) {
-                    Text(stringResource(R.string.settings_export))
+            item(key = "dns") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedTextField(
+                        value = editingDns,
+                        onValueChange = { editingDns = it },
+                        label = { Text(stringResource(R.string.settings_dns_servers_label)) },
+                        placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = { Text(stringResource(R.string.settings_dns_servers_supporting_text)) },
+                    )
+                    if (hasDnsChanges) {
+                        Button(
+                            onClick = {
+                                editingDns = viewModel.normalizeDnsServers(editingDns)
+                                viewModel.setDnsServers(editingDns)
+                            },
+                        ) {
+                            Text(stringResource(R.string.settings_save))
+                        }
+                    }
                 }
-                OutlinedButton(
-                    enabled = !backupBusy,
-                    onClick = { importLauncher.launch(arrayOf("application/json")) },
-                ) {
-                    Text(stringResource(R.string.settings_import))
+            }
+
+            item(key = "domestic_dns") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedTextField(
+                        value = editingDomesticDns,
+                        onValueChange = { editingDomesticDns = it },
+                        label = { Text(stringResource(R.string.settings_domestic_dns_label)) },
+                        placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = { Text(stringResource(R.string.settings_domestic_dns_supporting_text)) },
+                    )
+                    if (hasDomesticDnsChanges) {
+                        Button(
+                            onClick = {
+                                editingDomesticDns = viewModel.normalizeDnsServers(editingDomesticDns)
+                                viewModel.setDomesticDnsServers(editingDomesticDns)
+                            },
+                        ) {
+                            Text(stringResource(R.string.settings_save))
+                        }
+                    }
+                }
+            }
+
+            if (showAdvancedOptions) {
+                item(key = "log_level") {
+                    ReadOnlyDropdownField(
+                        label = stringResource(R.string.settings_xray_log_level_label),
+                        selectedText = stringResource(xrayLogLevel.labelResource),
+                        supportingText = stringResource(
+                            R.string.settings_default_value,
+                            stringResource(XrayLogLevel.default.labelResource),
+                        ),
+                        options = XrayLogLevel.entries.map { level ->
+                            DropdownOption(value = level, label = stringResource(level.labelResource))
+                        },
+                        onSelected = viewModel::setXrayLogLevel,
+                    )
+                }
+            }
+
+            item(key = "geoip") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedTextField(
+                        value = editingGeoipUrl,
+                        onValueChange = { editingGeoipUrl = it },
+                        label = { Text(stringResource(R.string.settings_geoip_url_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = { Text(stringResource(R.string.settings_geoip_url_supporting_text)) },
+                    )
+                    if (hasGeoipUrlChanges) {
+                        Button(onClick = { viewModel.setGeoipUrl(editingGeoipUrl) }) {
+                            Text(stringResource(R.string.settings_save))
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.updateGeoipAsset(editingGeoipUrl) },
+                        enabled = !geoipUpdating,
+                    ) {
+                        Text(stringResource(if (geoipUpdating) R.string.settings_updating else R.string.settings_update))
+                    }
+                }
+            }
+
+            item(key = "geosite") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedTextField(
+                        value = editingGeositeUrl,
+                        onValueChange = { editingGeositeUrl = it },
+                        label = { Text(stringResource(R.string.settings_geosite_url_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = { Text(stringResource(R.string.settings_geosite_url_supporting_text)) },
+                    )
+                    if (hasGeositeUrlChanges) {
+                        Button(onClick = { viewModel.setGeositeUrl(editingGeositeUrl) }) {
+                            Text(stringResource(R.string.settings_save))
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.updateGeositeAsset(editingGeositeUrl) },
+                        enabled = !geositeUpdating,
+                    ) {
+                        Text(stringResource(if (geositeUpdating) R.string.settings_updating else R.string.settings_update))
+                    }
+                }
+            }
+
+            if (showAdvancedOptions) {
+                item(key = "latency_check_url") {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        OutlinedTextField(
+                            value = editingLatencyCheckUrl,
+                            onValueChange = { editingLatencyCheckUrl = it },
+                            label = { Text(stringResource(R.string.settings_latency_check_url_label)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            supportingText = { Text(stringResource(R.string.settings_latency_check_url_supporting_text)) },
+                        )
+                        if (hasLatencyCheckUrlChanges) {
+                            Button(onClick = { viewModel.setLatencyCheckUrl(editingLatencyCheckUrl) }) {
+                                Text(stringResource(R.string.settings_save))
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(key = "appearance_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item(key = "appearance") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppLanguageSetting()
+
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_sort_outbounds_by_latency_title),
+                        description = stringResource(R.string.settings_sort_outbounds_by_latency_description),
+                        checked = sortOutboundsByLatency,
+                        onCheckedChange = viewModel::setSortOutboundsByLatency,
+                    )
+
+                    NotificationSettingsSection(
+                        settings = notificationSettings,
+                        onEnabledChange = viewModel::setNotificationEnabled,
+                        onConfigureFields = { showNotificationFieldsDialog = true },
+                        onConfigureStyle = { showFieldStyleDialog = true },
+                        onConfigureFrequency = { showUpdateFrequencyDialog = true },
+                    )
+
+                    SettingsNestedSection(title = stringResource(R.string.settings_app_icon_title)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LauncherIcon.entries.forEach { icon ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .selectable(
+                                            selected = icon == launcherIcon,
+                                            role = Role.RadioButton,
+                                            onClick = { viewModel.setLauncherIcon(icon) },
+                                        )
+                                        .padding(vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(icon.labelResource), style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                    RadioButton(selected = icon == launcherIcon, onClick = null)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(key = "settings_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item(key = "app_settings") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_send_hardware_id_title),
+                        description = stringResource(R.string.settings_send_hardware_id_description),
+                        checked = subscriptionSendHardwareId,
+                        onCheckedChange = viewModel::setSubscriptionSendHardwareId,
+                    )
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_show_advanced_options),
+                        checked = showAdvancedOptions,
+                        onCheckedChange = viewModel::setShowAdvancedOptions,
+                    )
+                }
+            }
+
+            item(key = "data_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_section_data), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item(key = "backup") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        enabled = !backupBusy,
+                        onClick = { exportLauncher.launch("material-xray-backup.json") },
+                    ) {
+                        Text(stringResource(R.string.settings_export))
+                    }
+                    OutlinedButton(
+                        enabled = !backupBusy,
+                        onClick = { importLauncher.launch(arrayOf("application/json")) },
+                    ) {
+                        Text(stringResource(R.string.settings_import))
+                    }
                 }
             }
             if (showAdvancedOptions) {
-                SettingsActionRow(
-                    title = stringResource(R.string.settings_reset_internal_database),
-                    subtitle = stringResource(
-                        if (databaseResetting) {
-                            R.string.settings_resetting_internal_database
-                        } else {
-                            R.string.settings_reset_internal_database_description
-                        },
-                    ),
-                    enabled = !databaseResetting,
-                    onClick = { showResetDatabaseDialog = true },
-                )
+                item(key = "database_reset") {
+                    SettingsActionRow(
+                        title = stringResource(R.string.settings_reset_internal_database),
+                        subtitle = stringResource(
+                            if (databaseResetting) {
+                                R.string.settings_resetting_internal_database
+                            } else {
+                                R.string.settings_reset_internal_database_description
+                            },
+                        ),
+                        enabled = !databaseResetting,
+                        onClick = { showResetDatabaseDialog = true },
+                    )
+                }
             }
 
-            HorizontalDivider()
-            Text(stringResource(R.string.settings_section_about), style = MaterialTheme.typography.titleMedium)
-            SettingsSwitchRow(
-                title = stringResource(R.string.settings_app_update_checks_title),
-                description = stringResource(R.string.settings_app_update_checks_description),
-                checked = appUpdateChecksEnabled,
-                onCheckedChange = viewModel::setAppUpdateChecksEnabled,
-            )
-            SettingsActionRow(
-                title = stringResource(R.string.settings_check_for_updates),
-                subtitle = appUpdateCheckDescription,
-                enabled = !appUpdateCheckInProgress,
-                inProgress = appUpdateCheckInProgress,
-                onClick = viewModel::checkForAppUpdate,
-            )
-            SettingsActionRow(
-                title = stringResource(R.string.settings_open_source_licenses),
-                subtitle = stringResource(R.string.settings_open_source_licenses_description),
-                onClick = { showOpenSourceLicensesDialog = true },
-            )
-            Text(
-                text = if (appVersion == null) {
-                    stringResource(R.string.settings_app_version_unknown, stringResource(R.string.app_name))
-                } else {
-                    stringResource(R.string.settings_app_version, stringResource(R.string.app_name), appVersion)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(xrayCoreVersionText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            item(key = "about_header") {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_section_about), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item(key = "update_checks") {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_app_update_checks_title),
+                    description = stringResource(R.string.settings_app_update_checks_description),
+                    checked = appUpdateChecksEnabled,
+                    onCheckedChange = viewModel::setAppUpdateChecksEnabled,
+                )
+            }
+            item(key = "check_for_updates") {
+                SettingsActionRow(
+                    title = stringResource(R.string.settings_check_for_updates),
+                    subtitle = appUpdateCheckDescription,
+                    enabled = !appUpdateCheckInProgress,
+                    inProgress = appUpdateCheckInProgress,
+                    onClick = viewModel::checkForAppUpdate,
+                )
+            }
+            item(key = "licenses") {
+                SettingsActionRow(
+                    title = stringResource(R.string.settings_open_source_licenses),
+                    subtitle = stringResource(R.string.settings_open_source_licenses_description),
+                    onClick = { showOpenSourceLicensesDialog = true },
+                )
+            }
+            item(key = "app_version") {
+                val appVersion = remember(context) {
+                    runCatching {
+                        @Suppress("DEPRECATION")
+                        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                    }.getOrNull()
+                }
+                Text(
+                    text = if (appVersion == null) {
+                        stringResource(R.string.settings_app_version_unknown, stringResource(R.string.app_name))
+                    } else {
+                        stringResource(R.string.settings_app_version, stringResource(R.string.app_name), appVersion)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            item(key = "xray_version") {
+                Text(
+                    xrayCoreVersionText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 
@@ -805,34 +860,6 @@ private fun BackupOperationEventEffect(viewModel: SettingsViewModel) {
                 Toast.makeText(context, text, Toast.LENGTH_LONG).show()
             }
         }
-    }
-}
-
-private data class AdvancedOptionsScrollAnchor(
-    val targetEnabled: Boolean,
-    val rowTop: Int,
-    val scrollValue: Int,
-)
-
-@Composable
-private fun AdvancedOptionsScrollAnchorEffect(
-    showAdvancedOptions: Boolean,
-    anchor: AdvancedOptionsScrollAnchor?,
-    rowTop: Int?,
-    scrollState: ScrollState,
-    onConsumed: () -> Unit,
-) {
-    LaunchedEffect(showAdvancedOptions) {
-        anchor ?: return@LaunchedEffect
-        if (anchor.targetEnabled != showAdvancedOptions) return@LaunchedEffect
-
-        withFrameNanos { }
-        rowTop ?: return@LaunchedEffect
-        val scrollDelta = rowTop - anchor.rowTop
-        if (scrollDelta != 0) {
-            scrollState.scrollTo((anchor.scrollValue + scrollDelta).coerceIn(0, scrollState.maxValue))
-        }
-        onConsumed()
     }
 }
 

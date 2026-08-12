@@ -1411,7 +1411,6 @@ private fun SubscriptionTrafficUsage(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SubscriptionHeader(
     subscription: SubscriptionEntity,
@@ -1443,17 +1442,7 @@ private fun SubscriptionHeader(
         horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .combinedClickable(
-                    role = Role.Button,
-                    onClick = {
-                        if (hasDescription) {
-                            onDescriptionHiddenChange(!subscription.descriptionHidden)
-                        }
-                    },
-                    onLongClick = onEdit,
-                ),
+            modifier = Modifier.weight(1f),
         ) {
             Text(
                 text = subscription.name,

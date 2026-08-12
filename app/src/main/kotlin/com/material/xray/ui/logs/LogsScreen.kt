@@ -272,7 +272,7 @@ private fun LogEntriesList(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        contentPadding = PaddingValues(vertical = 4.dp),
     ) {
         items(
             items = entries,
@@ -307,6 +307,6 @@ private fun LogEntryRow(entry: LogEntry, onCopy: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(onClick = {}, onLongClick = onCopy)
-            .padding(vertical = 2.dp),
+            .padding(horizontal = 8.dp, vertical = 2.dp),
     )
 }

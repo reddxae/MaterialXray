@@ -1,7 +1,13 @@
 package com.material.xray.ui.routing
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -65,6 +71,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -470,6 +477,7 @@ private fun RoutingRulesTab(
                     border = BorderStroke(1.dp, borderColor),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.medium)
                         .combinedClickable(
                             onClick = { onRuleClick(rule) },
                             onLongClick = { onRuleLongClick(rule) },
@@ -479,18 +487,31 @@ private fun RoutingRulesTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (selectionMode) {
-                            Checkbox(
-                                checked = selected,
-                                onCheckedChange = null,
-                            )
+                        AnimatedVisibility(
+                            visible = selectionMode,
+                            enter = expandHorizontally(
+                                animationSpec = tween(durationMillis = 180),
+                                expandFrom = Alignment.Start,
+                            ) + fadeIn(animationSpec = tween(durationMillis = 120)),
+                            exit = shrinkHorizontally(
+                                animationSpec = tween(durationMillis = 150),
+                                shrinkTowards = Alignment.Start,
+                            ) + fadeOut(animationSpec = tween(durationMillis = 90)),
+                        ) {
+                            Box(modifier = Modifier.padding(end = 12.dp)) {
+                                Checkbox(
+                                    checked = selected,
+                                    onCheckedChange = null,
+                                )
+                            }
                         }
 
                         Column(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text(

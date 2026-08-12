@@ -306,7 +306,7 @@ private fun SettingsScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item(key = "service") {
@@ -328,7 +328,10 @@ private fun SettingsScreenContent(
             }
 
             item(key = "routing_header") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     HorizontalDivider()
                     Text(stringResource(R.string.settings_section_routing), style = MaterialTheme.typography.titleMedium)
                 }
@@ -359,13 +362,12 @@ private fun SettingsScreenContent(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
-                                        .clip(RoundedCornerShape(12.dp))
                                         .selectable(
                                             selected = policy == routingPolicyControl,
                                             role = Role.RadioButton,
                                             onClick = { viewModel.setRoutingPolicyControl(policy) },
                                         )
-                                        .padding(vertical = 8.dp),
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -389,7 +391,10 @@ private fun SettingsScreenContent(
             }
 
             item(key = "network_header") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     HorizontalDivider()
                     Text(stringResource(R.string.settings_section_network), style = MaterialTheme.typography.titleMedium)
                 }
@@ -397,7 +402,10 @@ private fun SettingsScreenContent(
 
             if (rootServiceActive && rootConnectionBackend == RootConnectionBackend.Tun) {
                 item(key = "tun_name") {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
                         RootTunNameSetting(
                             visible = true,
                             editingTunName = editingTunName,
@@ -411,7 +419,10 @@ private fun SettingsScreenContent(
 
             if (showAdvancedOptions) {
                 item(key = "xray_buffer") {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
                         AdvancedIntegerSetting(
                             value = editingXrayBufferSizeKiB,
                             onValueChange = { editingXrayBufferSizeKiB = it },
@@ -431,7 +442,10 @@ private fun SettingsScreenContent(
                 }
                 if (shouldShowTunMtu(rootServiceActive, rootConnectionBackend)) {
                     item(key = "tun_mtu") {
-                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
                             TunMtuSetting(
                                 visible = true,
                                 value = editingTunMtu,
@@ -444,7 +458,10 @@ private fun SettingsScreenContent(
                     }
                 }
                 item(key = "memory_restart_threshold") {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
                         AdvancedIntegerSetting(
                             value = editingXrayMemoryRestartThresholdMiB,
                             onValueChange = { editingXrayMemoryRestartThresholdMiB = it },
@@ -486,12 +503,16 @@ private fun SettingsScreenContent(
                             )
                         },
                         onSelected = viewModel::setDefaultOutbound,
+                        modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
             }
 
             item(key = "dns") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     OutlinedTextField(
                         value = editingDns,
                         onValueChange = { editingDns = it },
@@ -515,7 +536,10 @@ private fun SettingsScreenContent(
             }
 
             item(key = "domestic_dns") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     OutlinedTextField(
                         value = editingDomesticDns,
                         onValueChange = { editingDomesticDns = it },
@@ -551,12 +575,16 @@ private fun SettingsScreenContent(
                             DropdownOption(value = level, label = stringResource(level.labelResource))
                         },
                         onSelected = viewModel::setXrayLogLevel,
+                        modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
             }
 
             item(key = "geoip") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     OutlinedTextField(
                         value = editingGeoipUrl,
                         onValueChange = { editingGeoipUrl = it },
@@ -580,7 +608,10 @@ private fun SettingsScreenContent(
             }
 
             item(key = "geosite") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     OutlinedTextField(
                         value = editingGeositeUrl,
                         onValueChange = { editingGeositeUrl = it },
@@ -605,7 +636,10 @@ private fun SettingsScreenContent(
 
             if (showAdvancedOptions) {
                 item(key = "latency_check_url") {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
                         OutlinedTextField(
                             value = editingLatencyCheckUrl,
                             onValueChange = { editingLatencyCheckUrl = it },
@@ -624,7 +658,10 @@ private fun SettingsScreenContent(
             }
 
             item(key = "appearance_header") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     HorizontalDivider()
                     Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
                 }
@@ -655,13 +692,12 @@ private fun SettingsScreenContent(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
-                                        .clip(RoundedCornerShape(12.dp))
                                         .selectable(
                                             selected = icon == launcherIcon,
                                             role = Role.RadioButton,
                                             onClick = { viewModel.setLauncherIcon(icon) },
                                         )
-                                        .padding(vertical = 8.dp),
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -677,7 +713,10 @@ private fun SettingsScreenContent(
             }
 
             item(key = "settings_header") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     HorizontalDivider()
                     Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
                 }
@@ -699,13 +738,19 @@ private fun SettingsScreenContent(
             }
 
             item(key = "data_header") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     HorizontalDivider()
                     Text(stringResource(R.string.settings_section_data), style = MaterialTheme.typography.titleMedium)
                 }
             }
             item(key = "backup") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     OutlinedButton(
                         enabled = !backupBusy,
                         onClick = { exportLauncher.launch("material-xray-backup.json") },
@@ -738,7 +783,10 @@ private fun SettingsScreenContent(
             }
 
             item(key = "about_header") {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
                     HorizontalDivider()
                     Text(stringResource(R.string.settings_section_about), style = MaterialTheme.typography.titleMedium)
                 }
@@ -780,12 +828,14 @@ private fun SettingsScreenContent(
                     } else {
                         stringResource(R.string.settings_app_version, stringResource(R.string.app_name), appVersion)
                     },
+                    modifier = Modifier.padding(horizontal = 16.dp),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             item(key = "xray_version") {
                 Text(
                     xrayCoreVersionText,
+                    modifier = Modifier.padding(horizontal = 16.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -877,7 +927,11 @@ private fun SettingsServiceSection(
     onRetryTproxyCompatibility: () -> Unit,
     onAutoConnectChange: (Boolean) -> Unit,
 ) {
-    Text(stringResource(R.string.settings_section_service), style = MaterialTheme.typography.titleMedium)
+    Text(
+        text = stringResource(R.string.settings_section_service),
+        modifier = Modifier.padding(horizontal = 16.dp),
+        style = MaterialTheme.typography.titleMedium,
+    )
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SettingsSwitchRow(
@@ -903,14 +957,13 @@ private fun SettingsServiceSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
                             .selectable(
                                 selected = backend == rootConnectionBackend,
                                 enabled = enabled,
                                 role = Role.RadioButton,
                                 onClick = { onRootConnectionBackendChange(backend) },
                             )
-                            .padding(vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -940,13 +993,17 @@ private fun SettingsServiceSection(
                 supportingText?.let { text ->
                     Text(
                         text,
+                        modifier = Modifier.padding(horizontal = 16.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             if (tproxyCompatibility is TproxyCompatibility.Unsupported) {
-                TextButton(onClick = onRetryTproxyCompatibility) {
+                TextButton(
+                    onClick = onRetryTproxyCompatibility,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                ) {
                     Text(stringResource(R.string.settings_retry_compatibility_check))
                 }
             }
@@ -989,7 +1046,7 @@ private fun SettingsNestedSection(
     ) {
         Text(
             text = title,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp, end = 16.dp),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -1460,9 +1517,8 @@ private fun SettingsActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

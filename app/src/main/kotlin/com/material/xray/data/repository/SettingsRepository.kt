@@ -32,6 +32,33 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
+data class SettingsSnapshot(
+    val tunName: String,
+    val dnsServers: String,
+    val domesticDnsServers: String,
+    val autoConnect: Boolean,
+    val useRootService: Boolean,
+    val rootConnectionBackend: RootConnectionBackend,
+    val bypassLan: Boolean,
+    val allowIpv6: Boolean,
+    val xrayBufferSizeKiB: Int,
+    val tunMtu: Int,
+    val xrayMemoryRestartThresholdMiB: Int,
+    val passiveHealthMonitoringEnabled: Boolean,
+    val xrayLogLevel: XrayLogLevel,
+    val defaultOutbound: XrayOutbound,
+    val launcherIcon: LauncherIcon,
+    val showAdvancedOptions: Boolean,
+    val notificationSettings: NotificationSettings,
+    val subscriptionSendHardwareId: Boolean,
+    val routingPolicyControl: RoutingPolicyControl,
+    val geoipUrl: String,
+    val geositeUrl: String,
+    val latencyCheckUrl: String,
+    val sortOutboundsByLatency: Boolean,
+    val appUpdateChecksEnabled: Boolean,
+)
+
 private val Context.dataStore by preferencesDataStore(
     name = "settings",
     produceMigrations = { listOf(SettingsDefaultMigration()) },
@@ -212,6 +239,57 @@ class SettingsRepository @Inject constructor(
     }
     val appUpdateChecksEnabled: Flow<Boolean> = store.data.map { prefs ->
         prefs[APP_UPDATE_CHECKS_ENABLED] ?: true
+    }
+
+    /** All persisted values needed for the Settings screen, emitted as one coherent frame. */
+    val settingsSnapshot: Flow<SettingsSnapshot> = store.data.map { prefs ->
+        val showAdvancedOptions = prefs[SHOW_ADVANCED_OPTIONS] ?: false
+        SettingsSnapshot(
+            tunName = prefs[TUN_NAME] ?: DEFAULT_TUN_NAME,
+            dnsServers = prefs[DNS_SERVERS] ?: DEFAULT_DNS_SERVERS,
+            domesticDnsServers = prefs[DOMESTIC_DNS_SERVERS] ?: DEFAULT_DOMESTIC_DNS_SERVERS,
+            autoConnect = prefs[AUTO_CONNECT] ?: false,
+            useRootService = prefs[USE_ROOT_SERVICE] ?: false,
+            rootConnectionBackend = RootConnectionBackend.fromValue(prefs[ROOT_CONNECTION_BACKEND]),
+            bypassLan = prefs[BYPASS_LAN] ?: true,
+            allowIpv6 = prefs[ALLOW_IPV6] ?: false,
+            xrayBufferSizeKiB = XrayRuntimeSettings.normalizeXrayBufferSizeKiB(prefs[XRAY_BUFFER_SIZE_KIB]),
+            tunMtu = XrayRuntimeSettings.normalizeTunMtu(prefs[TUN_MTU]),
+            xrayMemoryRestartThresholdMiB =
+            XrayRuntimeSettings.normalizeXrayMemoryRestartThresholdMiB(prefs[XRAY_MEMORY_RESTART_THRESHOLD_MIB]),
+            passiveHealthMonitoringEnabled =
+            prefs[PASSIVE_HEALTH_MONITORING_ENABLED] ?: DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED,
+            xrayLogLevel = if (showAdvancedOptions) {
+                XrayLogLevel.fromValue(prefs[XRAY_LOG_LEVEL] ?: prefs[LAST_XRAY_LOG_LEVEL])
+            } else {
+                XrayLogLevel.None
+            },
+            defaultOutbound = XrayOutbound.fromTag(prefs[DEFAULT_OUTBOUND]),
+            launcherIcon = LauncherIcon.fromValue(prefs[LAUNCHER_ICON]),
+            showAdvancedOptions = showAdvancedOptions,
+            notificationSettings = NotificationSettings(
+                enabled = prefs[NOTIFICATION_ENABLED] ?: true,
+                updateIntervalMs =
+                (prefs[NOTIFICATION_UPDATE_INTERVAL_MS] ?: NotificationSettings.DEFAULT_UPDATE_INTERVAL_MS)
+                    .coerceIn(NotificationSettings.MIN_UPDATE_INTERVAL_MS, NotificationSettings.MAX_UPDATE_INTERVAL_MS),
+                style = NotificationStyle.fromValue(prefs[NOTIFICATION_STYLE]),
+                showTrafficSpeed = prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] ?: false,
+                showRamUsage = prefs[NOTIFICATION_SHOW_RAM_USAGE] ?: false,
+                showConnectionCount = prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] ?: false,
+                fieldOrder = decodeNotificationFieldOrder(prefs[NOTIFICATION_FIELD_ORDER]),
+            ),
+            subscriptionSendHardwareId = prefs[SUBSCRIPTION_SEND_HWID] ?: true,
+            routingPolicyControl = RoutingPolicyControl.fromValue(prefs[ROUTING_POLICY_CONTROL]),
+            geoipUrl = prefs[GEOIP_URL]
+                ?: prefs[LEGACY_GEO_DATA_BASE_URL]?.let { appendLegacyFileName(it, "geoip.dat") }
+                ?: DEFAULT_GEOIP_URL,
+            geositeUrl = prefs[GEOSITE_URL]
+                ?: prefs[LEGACY_GEO_DATA_BASE_URL]?.let { appendLegacyFileName(it, "geosite.dat") }
+                ?: DEFAULT_GEOSITE_URL,
+            latencyCheckUrl = prefs[LATENCY_CHECK_URL] ?: DEFAULT_LATENCY_CHECK_URL,
+            sortOutboundsByLatency = prefs[SORT_OUTBOUNDS_BY_LATENCY] ?: false,
+            appUpdateChecksEnabled = prefs[APP_UPDATE_CHECKS_ENABLED] ?: true,
+        )
     }
 
     suspend fun runtimeSettingsSnapshot(): XrayRuntimeSettings = XrayRuntimeSettings(

@@ -95,6 +95,7 @@ import com.material.xray.R
 import com.material.xray.core.locale.setAppLocales
 import com.material.xray.core.xray.TproxyCompatibility
 import com.material.xray.data.repository.BackupSummary
+import com.material.xray.data.repository.SettingsSnapshot
 import com.material.xray.model.AppUpdateCheckStatus
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
@@ -121,39 +122,55 @@ import org.xmlpull.v1.XmlPullParser
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
-    val tunName by viewModel.tunName.collectAsStateWithLifecycle()
-    val dnsServers by viewModel.dnsServers.collectAsStateWithLifecycle()
-    val domesticDnsServers by viewModel.domesticDnsServers.collectAsStateWithLifecycle()
-    val autoConnect by viewModel.autoConnect.collectAsStateWithLifecycle()
-    val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
-    val rootConnectionBackend by viewModel.rootConnectionBackend.collectAsStateWithLifecycle()
+    val persistedSettings by viewModel.settings.collectAsStateWithLifecycle()
+    val startupReady by viewModel.startupReady.collectAsStateWithLifecycle()
+    val settings = persistedSettings
+    if (settings == null || !startupReady) {
+        SettingsLoadingScreen()
+    } else {
+        SettingsScreenContent(viewModel, settings)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsScreenContent(
+    viewModel: SettingsViewModel,
+    settings: SettingsSnapshot,
+) {
     val rootAvailable by viewModel.rootAvailable.collectAsStateWithLifecycle()
     val tproxyCompatibility by viewModel.tproxyCompatibility.collectAsStateWithLifecycle()
-    val bypassLan by viewModel.bypassLan.collectAsStateWithLifecycle()
-    val allowIpv6 by viewModel.allowIpv6.collectAsStateWithLifecycle()
-    val xrayBufferSizeKiB by viewModel.xrayBufferSizeKiB.collectAsStateWithLifecycle()
-    val tunMtu by viewModel.tunMtu.collectAsStateWithLifecycle()
-    val xrayMemoryRestartThresholdMiB by viewModel.xrayMemoryRestartThresholdMiB.collectAsStateWithLifecycle()
-    val passiveHealthMonitoringEnabled by viewModel.passiveHealthMonitoringEnabled.collectAsStateWithLifecycle()
-    val xrayLogLevel by viewModel.xrayLogLevel.collectAsStateWithLifecycle()
-    val defaultOutbound by viewModel.defaultOutbound.collectAsStateWithLifecycle()
-    val launcherIcon by viewModel.launcherIcon.collectAsStateWithLifecycle()
-    val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
-    val notificationSettings by viewModel.notificationSettings.collectAsStateWithLifecycle()
-    val subscriptionSendHardwareId by viewModel.subscriptionSendHardwareId.collectAsStateWithLifecycle()
-    val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
-    val geoipUrl by viewModel.geoipUrl.collectAsStateWithLifecycle()
-    val geositeUrl by viewModel.geositeUrl.collectAsStateWithLifecycle()
-    val latencyCheckUrl by viewModel.latencyCheckUrl.collectAsStateWithLifecycle()
-    val sortOutboundsByLatency by viewModel.sortOutboundsByLatency.collectAsStateWithLifecycle()
     val geoipUpdating by viewModel.geoipUpdating.collectAsStateWithLifecycle()
     val geositeUpdating by viewModel.geositeUpdating.collectAsStateWithLifecycle()
     val xrayCoreVersion by viewModel.xrayCoreVersion.collectAsStateWithLifecycle()
     val databaseResetting by viewModel.databaseResetting.collectAsStateWithLifecycle()
     val backupBusy by viewModel.backupBusy.collectAsStateWithLifecycle()
     val backupImportSummary by viewModel.backupImportSummary.collectAsStateWithLifecycle()
-    val appUpdateChecksEnabled by viewModel.appUpdateChecksEnabled.collectAsStateWithLifecycle()
     val appUpdateCheckStatus by viewModel.appUpdateCheckStatus.collectAsStateWithLifecycle()
+    val tunName = settings.tunName
+    val dnsServers = settings.dnsServers
+    val domesticDnsServers = settings.domesticDnsServers
+    val autoConnect = settings.autoConnect
+    val useRootService = settings.useRootService
+    val rootConnectionBackend = settings.rootConnectionBackend
+    val bypassLan = settings.bypassLan
+    val allowIpv6 = settings.allowIpv6
+    val xrayBufferSizeKiB = settings.xrayBufferSizeKiB
+    val tunMtu = settings.tunMtu
+    val xrayMemoryRestartThresholdMiB = settings.xrayMemoryRestartThresholdMiB
+    val passiveHealthMonitoringEnabled = settings.passiveHealthMonitoringEnabled
+    val xrayLogLevel = settings.xrayLogLevel
+    val defaultOutbound = settings.defaultOutbound
+    val launcherIcon = settings.launcherIcon
+    val showAdvancedOptions = settings.showAdvancedOptions
+    val notificationSettings = settings.notificationSettings
+    val subscriptionSendHardwareId = settings.subscriptionSendHardwareId
+    val routingPolicyControl = settings.routingPolicyControl
+    val geoipUrl = settings.geoipUrl
+    val geositeUrl = settings.geositeUrl
+    val latencyCheckUrl = settings.latencyCheckUrl
+    val sortOutboundsByLatency = settings.sortOutboundsByLatency
+    val appUpdateChecksEnabled = settings.appUpdateChecksEnabled
     val context = LocalContext.current
     val resources = LocalResources.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -166,8 +183,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     var showOpenSourceLicensesDialog by rememberSaveable { mutableStateOf(false) }
     var showAdvancedOptionsRowTop by remember { mutableStateOf<Int?>(null) }
     var pendingAdvancedOptionsScrollAnchor by remember { mutableStateOf<AdvancedOptionsScrollAnchor?>(null) }
-    val rootServiceAvailable = rootAvailable == true
-    val rootServiceActive = useRootService && rootServiceAvailable
+    val rootServiceAvailable = rootAvailable != false
+    val rootServiceActive = useRootService && rootAvailable == true
     val appVersion = remember(context) {
         runCatching {
             @Suppress("DEPRECATION")
@@ -748,6 +765,29 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     )
     if (showOpenSourceLicensesDialog) {
         OpenSourceLicensesDialog(onDismiss = { showOpenSourceLicensesDialog = false })
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsLoadingScreen() {
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
+    Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
+        topBar = {
+            ScrolledTopAppBar(
+                title = stringResource(R.string.settings_title),
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            CircularProgressIndicator()
+        }
     }
 }
 

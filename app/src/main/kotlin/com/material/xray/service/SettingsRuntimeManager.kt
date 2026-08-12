@@ -17,7 +17,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
@@ -33,6 +35,14 @@ class SettingsRuntimeManager @Inject constructor(
     private val tproxyCompatibilityDetector: TproxyCompatibilityDetector,
     private val log: LogBuffer,
 ) {
+    private val _rootAvailable = MutableStateFlow<Boolean?>(null)
+    private val _xrayCoreVersion = MutableStateFlow<String?>(null)
+    private val _startupReady = MutableStateFlow(false)
+
+    val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
+    val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
+    val startupReady: StateFlow<Boolean> = _startupReady.asStateFlow()
+
     suspend fun setLauncherIcon(icon: LauncherIcon) {
         settingsRepository.setLauncherIcon(icon)
         launcherIconManager.apply(icon)
@@ -50,6 +60,7 @@ class SettingsRuntimeManager @Inject constructor(
             return true
         }
         val available = withContext(Dispatchers.IO) { rootShell.open(RootShell.NetworkNamespace.INIT) }
+        _rootAvailable.value = available
         if (!available) return false
         settingsRepository.setUseRootService(true)
         reloadActiveConnectionIfConnected()
@@ -69,9 +80,15 @@ class SettingsRuntimeManager @Inject constructor(
      * Only root-mode users are probed, because the probe needs a root shell. Enabling root mode later
      * performs the one check at that point instead.
      */
-    suspend fun warmUpTproxyCompatibility() {
-        if (!settingsRepository.useRootService.first()) return
-        detectTproxyCompatibility()
+    suspend fun warmUpSettings() {
+        try {
+            if (settingsRepository.useRootService.first() && checkRootAvailability()) {
+                detectTproxyCompatibility()
+            }
+            _xrayCoreVersion.value = readXrayCoreVersion()
+        } finally {
+            _startupReady.value = true
+        }
     }
 
     val tproxyCompatibility: StateFlow<TproxyCompatibility> get() = tproxyCompatibilityDetector.state
@@ -132,6 +149,7 @@ class SettingsRuntimeManager @Inject constructor(
 
     suspend fun checkRootAvailability(): Boolean {
         val available = withContext(Dispatchers.IO) { rootShell.open(RootShell.NetworkNamespace.INIT) }
+        _rootAvailable.value = available
         if (!available && settingsRepository.useRootService.first()) {
             settingsRepository.setUseRootService(false)
             reloadActiveConnectionIfConnected()

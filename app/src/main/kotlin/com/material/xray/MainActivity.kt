@@ -7,8 +7,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.material.xray.core.locale.notifyAppLocaleChanged
+import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.ui.home.HomeDataState
 import com.material.xray.ui.navigation.MainNavigation
+import com.material.xray.ui.settings.SettingsDataState
 import com.material.xray.ui.theme.MaterialXrayTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -17,6 +19,10 @@ import javax.inject.Inject
 class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var homeDataState: HomeDataState
+
+    @Inject lateinit var settingsDataState: SettingsDataState
+
+    @Inject lateinit var settingsRuntimeManager: SettingsRuntimeManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -30,7 +36,9 @@ class MainActivity : AppCompatActivity() {
         val splashShownAtMillis = SystemClock.uptimeMillis()
         splashScreen.setKeepOnScreenCondition {
             keepSplashOnScreen(
-                homeDataLoaded = homeDataState.data.value != null,
+                initialDataLoaded = homeDataState.data.value != null &&
+                    settingsDataState.data.value != null &&
+                    settingsRuntimeManager.startupReady.value,
                 elapsedMillis = SystemClock.uptimeMillis() - splashShownAtMillis,
             )
         }
@@ -46,6 +54,6 @@ class MainActivity : AppCompatActivity() {
  * The splash screen stays up only while the home data snapshot is still loading, and never longer
  * than [SPLASH_SCREEN_TIMEOUT_MS], so a slow or failed load cannot hold it up indefinitely.
  */
-internal fun keepSplashOnScreen(homeDataLoaded: Boolean, elapsedMillis: Long): Boolean = !homeDataLoaded && elapsedMillis < SPLASH_SCREEN_TIMEOUT_MS
+internal fun keepSplashOnScreen(initialDataLoaded: Boolean, elapsedMillis: Long): Boolean = !initialDataLoaded && elapsedMillis < SPLASH_SCREEN_TIMEOUT_MS
 
 internal const val SPLASH_SCREEN_TIMEOUT_MS = 2_000L

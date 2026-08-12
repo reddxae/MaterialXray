@@ -40,11 +40,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -71,6 +69,7 @@ class SettingsViewModel @Inject constructor(
     private val connectionStateCoordinator: ConnectionStateCoordinator,
     private val providerRoutingCoordinator: ProviderRoutingCoordinator,
     private val settingsRuntimeManager: SettingsRuntimeManager,
+    settingsDataState: SettingsDataState,
 ) : ViewModel() {
     private val _geoipUpdating = MutableStateFlow(false)
     private val _geositeUpdating = MutableStateFlow(false)
@@ -81,117 +80,10 @@ class SettingsViewModel @Inject constructor(
     private val _backupBusy = MutableStateFlow(false)
     private val _backupImportSummary = MutableStateFlow<BackupSummary?>(null)
     private val _backupEvents = Channel<BackupOperationMessage>(Channel.BUFFERED)
-    private val _rootAvailable = MutableStateFlow<Boolean?>(null)
-    private val _xrayCoreVersion = MutableStateFlow<String?>(null)
     private val _appUpdateCheckStatus = MutableStateFlow<AppUpdateCheckStatus?>(null)
     private var preparedBackupImport: PreparedBackupImport? = null
 
-    val tunName = settingsRepo.tunName.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        SettingsRepository.DEFAULT_TUN_NAME,
-    )
-    val dnsServers =
-        settingsRepo.dnsServers.stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            SettingsRepository.DEFAULT_DNS_SERVERS,
-        )
-    val domesticDnsServers =
-        settingsRepo.domesticDnsServers.stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            SettingsRepository.DEFAULT_DOMESTIC_DNS_SERVERS,
-        )
-    val autoConnect = settingsRepo.autoConnect.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val useRootService = settingsRepo.useRootService.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val rootConnectionBackend = settingsRepo.rootConnectionBackend.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        RootConnectionBackend.default,
-    )
-    val bypassLan = settingsRepo.bypassLan.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val allowIpv6 = settingsRepo.allowIpv6.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    val xrayBufferSizeKiB = settingsRepo.xrayBufferSizeKiB.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB,
-    )
-    val tunMtu = settingsRepo.tunMtu.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        XrayRuntimeSettings.DEFAULT_TUN_MTU,
-    )
-    val xrayMemoryRestartThresholdMiB = settingsRepo.xrayMemoryRestartThresholdMiB.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB,
-    )
-    val passiveHealthMonitoringEnabled = settingsRepo.passiveHealthMonitoringEnabled.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        SettingsRepository.DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED,
-    )
-    val xrayLogLevel = settingsRepo.xrayLogLevel.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        XrayLogLevel.default,
-    )
-    val defaultOutbound = settingsRepo.defaultOutbound.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        XrayOutbound.default,
-    )
-    val launcherIcon = settingsRepo.launcherIcon.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        LauncherIcon.default,
-    )
-    val showAdvancedOptions = settingsRepo.showAdvancedOptions.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        false,
-    )
-    val notificationSettings = settingsRepo.notificationSettings.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        com.material.xray.model.NotificationSettings(),
-    )
-    val subscriptionSendHardwareId = settingsRepo.subscriptionSendHardwareId.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        true,
-    )
-    val routingPolicyControl = settingsRepo.routingPolicyControl.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        RoutingPolicyControl.default,
-    )
-    val geoipUrl = settingsRepo.geoipUrl.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        SettingsRepository.DEFAULT_GEOIP_URL,
-    )
-    val geositeUrl = settingsRepo.geositeUrl.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        SettingsRepository.DEFAULT_GEOSITE_URL,
-    )
-    val latencyCheckUrl = settingsRepo.latencyCheckUrl.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        SettingsRepository.DEFAULT_LATENCY_CHECK_URL,
-    )
-    val sortOutboundsByLatency = settingsRepo.sortOutboundsByLatency.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        false,
-    )
-    val appUpdateChecksEnabled = settingsRepo.appUpdateChecksEnabled.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        true,
-    )
+    val settings = settingsDataState.data
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
     val assetUpdateEvents: Flow<AssetUpdateMessage> = _assetUpdateEvents.receiveAsFlow()
@@ -201,54 +93,48 @@ class SettingsViewModel @Inject constructor(
     val backupBusy: StateFlow<Boolean> = _backupBusy.asStateFlow()
     val backupImportSummary: StateFlow<BackupSummary?> = _backupImportSummary.asStateFlow()
     val backupEvents: Flow<BackupOperationMessage> = _backupEvents.receiveAsFlow()
-    val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
+    val rootAvailable: StateFlow<Boolean?> = settingsRuntimeManager.rootAvailable
     val tproxyCompatibility: StateFlow<TproxyCompatibility> = settingsRuntimeManager.tproxyCompatibility
-    val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
+    val xrayCoreVersion: StateFlow<String?> = settingsRuntimeManager.xrayCoreVersion
+    val startupReady: StateFlow<Boolean> = settingsRuntimeManager.startupReady
     val appUpdateCheckStatus: StateFlow<AppUpdateCheckStatus?> = _appUpdateCheckStatus.asStateFlow()
 
-    init {
-        checkRootAvailability()
-        loadXrayCoreVersion()
-    }
-
-    fun setTunName(name: String) = updateXrayConfigStringSetting(name, tunName.value, settingsRepo::setTunName)
-    fun normalizeDnsServers(servers: String): String = normalizeDnsServersForIpv6(servers, allowIpv6.value)
+    fun setTunName(name: String) = updateXrayConfigStringSetting(name, currentSettings().tunName, settingsRepo::setTunName)
+    fun normalizeDnsServers(servers: String): String = normalizeDnsServersForIpv6(servers, currentSettings().allowIpv6)
 
     fun setDnsServers(servers: String) = updateXrayConfigStringSetting(
         normalizeDnsServers(servers),
-        dnsServers.value,
+        currentSettings().dnsServers,
         settingsRepo::setDnsServers,
     )
     fun setDomesticDnsServers(servers: String) = updateXrayConfigStringSetting(
         normalizeDnsServers(servers),
-        domesticDnsServers.value,
+        currentSettings().domesticDnsServers,
         settingsRepo::setDomesticDnsServers,
     )
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
     fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
-        if (enabled == useRootService.value) return@launch
+        if (enabled == currentSettings().useRootService) return@launch
         if (!enabled) {
             settingsRuntimeManager.setUseRootService(false)
             return@launch
         }
 
-        if (_rootAvailable.value == false) {
+        if (rootAvailable.value == false) {
             _rootAccessDeniedEvents.send(Unit)
             return@launch
         }
 
         val rootAvailable = settingsRuntimeManager.setUseRootService(true)
         if (!rootAvailable) {
-            _rootAvailable.value = false
             _rootAccessDeniedEvents.send(Unit)
             return@launch
         }
 
-        _rootAvailable.value = true
         checkTproxyCompatibility()
     }
     fun setRootConnectionBackend(backend: RootConnectionBackend) = viewModelScope.launch {
-        if (backend == rootConnectionBackend.value) return@launch
+        if (backend == currentSettings().rootConnectionBackend) return@launch
         if (backend == RootConnectionBackend.Tproxy && tproxyCompatibility.value is TproxyCompatibility.Unsupported) {
             return@launch
         }
@@ -257,33 +143,37 @@ class SettingsViewModel @Inject constructor(
 
     fun retryTproxyCompatibilityCheck() = checkTproxyCompatibility(forceRefresh = true)
     fun setBypassLan(enabled: Boolean) = viewModelScope.launch {
-        if (enabled == bypassLan.value) return@launch
+        if (enabled == currentSettings().bypassLan) return@launch
         settingsRepo.setBypassLan(enabled)
         reloadActiveConnectionIfConnected()
     }
     fun setAllowIpv6(enabled: Boolean) = viewModelScope.launch {
-        if (enabled == allowIpv6.value) return@launch
-        if (enabled && !isIpv6SelectionEnabled(useRootService.value, rootConnectionBackend.value, tproxyCompatibility.value)) {
+        val settings = currentSettings()
+        if (enabled == settings.allowIpv6) return@launch
+        if (enabled && !isIpv6SelectionEnabled(settings.useRootService, settings.rootConnectionBackend, tproxyCompatibility.value)) {
             return@launch
         }
         settingsRepo.setAllowIpv6(enabled)
         reloadActiveConnectionIfConnected()
     }
     fun setXrayBufferSizeKiB(bufferSizeKiB: Int) = viewModelScope.launch {
-        if (bufferSizeKiB == xrayBufferSizeKiB.value || !XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB)) {
+        if (
+            bufferSizeKiB == currentSettings().xrayBufferSizeKiB ||
+            !XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB)
+        ) {
             return@launch
         }
         settingsRepo.setXrayBufferSizeKiB(bufferSizeKiB)
         reloadActiveConnectionIfConnected()
     }
     fun setTunMtu(mtu: Int) = viewModelScope.launch {
-        if (mtu == tunMtu.value || !XrayRuntimeSettings.isValidTunMtu(mtu)) return@launch
+        if (mtu == currentSettings().tunMtu || !XrayRuntimeSettings.isValidTunMtu(mtu)) return@launch
         settingsRepo.setTunMtu(mtu)
         reloadActiveConnectionIfConnected()
     }
     fun setXrayMemoryRestartThresholdMiB(thresholdMiB: Int) = viewModelScope.launch {
         if (
-            thresholdMiB == xrayMemoryRestartThresholdMiB.value ||
+            thresholdMiB == currentSettings().xrayMemoryRestartThresholdMiB ||
             !XrayRuntimeSettings.isValidXrayMemoryRestartThresholdMiB(thresholdMiB)
         ) {
             return@launch
@@ -291,25 +181,25 @@ class SettingsViewModel @Inject constructor(
         settingsRepo.setXrayMemoryRestartThresholdMiB(thresholdMiB)
     }
     fun setPassiveHealthMonitoringEnabled(enabled: Boolean) = viewModelScope.launch {
-        if (enabled == passiveHealthMonitoringEnabled.value) return@launch
+        if (enabled == currentSettings().passiveHealthMonitoringEnabled) return@launch
         settingsRepo.setPassiveHealthMonitoringEnabled(enabled)
     }
     fun setXrayLogLevel(level: XrayLogLevel) = viewModelScope.launch {
-        if (level == xrayLogLevel.value) return@launch
+        if (level == currentSettings().xrayLogLevel) return@launch
         settingsRepo.setXrayLogLevel(level)
         reloadActiveConnectionIfConnected()
     }
     fun setDefaultOutbound(outbound: XrayOutbound) = viewModelScope.launch {
-        if (outbound == defaultOutbound.value) return@launch
+        if (outbound == currentSettings().defaultOutbound) return@launch
         settingsRepo.setDefaultOutbound(outbound)
         reloadActiveConnectionIfConnected()
     }
     fun setLauncherIcon(icon: LauncherIcon) = viewModelScope.launch {
-        if (icon == launcherIcon.value) return@launch
+        if (icon == currentSettings().launcherIcon) return@launch
         settingsRuntimeManager.setLauncherIcon(icon)
     }
     fun setShowAdvancedOptions(enabled: Boolean) = viewModelScope.launch {
-        if (enabled == showAdvancedOptions.value) return@launch
+        if (enabled == currentSettings().showAdvancedOptions) return@launch
         settingsRepo.setShowAdvancedOptions(enabled)
         reloadActiveConnectionIfConnected()
     }
@@ -345,7 +235,7 @@ class SettingsViewModel @Inject constructor(
         settingsRepo.setSubscriptionSendHardwareId(enabled)
     }
     fun setAppUpdateChecksEnabled(enabled: Boolean) = viewModelScope.launch {
-        if (enabled == appUpdateChecksEnabled.value) return@launch
+        if (enabled == currentSettings().appUpdateChecksEnabled) return@launch
         settingsRuntimeManager.setAppUpdateChecksEnabled(enabled)
     }
     fun checkForAppUpdate() {
@@ -377,7 +267,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
     fun setRoutingPolicyControl(policy: RoutingPolicyControl) = viewModelScope.launch {
-        if (policy == routingPolicyControl.value) return@launch
+        if (policy == currentSettings().routingPolicyControl) return@launch
         settingsRepo.setRoutingPolicyControl(policy)
         if (policy == RoutingPolicyControl.SubscriptionProvider) {
             providerRoutingCoordinator.refreshSelectedServer()
@@ -555,14 +445,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private fun checkRootAvailability() {
-        viewModelScope.launch {
-            // The TPROXY probe is deliberately not started here. It is a kernel capability check that
-            // runs once at application startup; opening the settings screen must not re-run it.
-            _rootAvailable.value = settingsRuntimeManager.checkRootAvailability()
-        }
-    }
-
     private fun checkTproxyCompatibility(forceRefresh: Boolean = false) {
         if (tproxyCompatibility.value == TproxyCompatibility.Checking) return
         viewModelScope.launch {
@@ -570,11 +452,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private fun loadXrayCoreVersion() {
-        viewModelScope.launch {
-            _xrayCoreVersion.value = settingsRuntimeManager.readXrayCoreVersion()
-        }
-    }
+    private fun currentSettings() = checkNotNull(settings.value) { "Settings are not loaded" }
 }
 
 internal fun isIpv6SelectionEnabled(

@@ -12,6 +12,7 @@ import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.service.StartupDiagnosticsLogger
 import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.ui.home.HomeDataState
+import com.material.xray.ui.settings.SettingsDataState
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +44,9 @@ class MaterialXrayApp : Application() {
      */
     @Inject lateinit var homeDataState: HomeDataState
 
+    /** Eagerly starts the atomic Settings snapshot before that tab is first opened. */
+    @Inject lateinit var settingsDataState: SettingsDataState
+
     @Inject @ApplicationScope
     lateinit var appScope: CoroutineScope
 
@@ -53,14 +57,16 @@ class MaterialXrayApp : Application() {
         initializeAppLocales(this)
         super.onCreate()
         appScope.launch {
+            runCatching { settingsRuntimeManager.warmUpSettings() }
+                .onFailure { error -> Log.e(LOG_TAG, "Unable to warm up Settings", error) }
+        }
+        appScope.launch {
             runCatching { backupManager.recoverInterruptedRestore() }
                 .onFailure { error -> Log.e(LOG_TAG, "Unable to recover interrupted backup restore", error) }
             runCatching { startupDiagnosticsLogger.logIfMissing() }
                 .onFailure { error -> Log.e(LOG_TAG, "Unable to record startup diagnostics", error) }
             launcherIconManager.apply(settingsRepository.launcherIcon.first())
             appUpdateScheduler.setEnabled(settingsRepository.appUpdateChecksEnabled.first())
-            runCatching { settingsRuntimeManager.warmUpTproxyCompatibility() }
-                .onFailure { error -> Log.e(LOG_TAG, "Unable to probe TPROXY compatibility", error) }
         }
         subscriptionUpdateScheduler.schedulePeriodicUpdates()
         subscriptionUpdateScheduler.enqueueDueCheckNow()

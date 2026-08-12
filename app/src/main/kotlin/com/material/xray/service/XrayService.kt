@@ -712,10 +712,18 @@ class XrayService : VpnService() {
                 logBuffer.append(LogSource.APP, "Cleaning incomplete TPROXY runtime before reconnecting")
                 var preserveGuard = connectionManager.adoptPersistedTransitionGuard()
                 if (!preserveGuard && (staleState.tproxy != null || staleState.transitionGuard != null)) {
-                    if (!connectionManager.prepareSeamlessReconnect()) return
+                    if (!connectionManager.prepareSeamlessReconnect()) {
+                        // The caller is waiting on a verdict, so a bailout must still reach a terminal
+                        // state rather than leaving the UI asserting a connection attempt forever.
+                        failRuntimeRestore("Could not take over the recorded TPROXY runtime")
+                        return
+                    }
                     preserveGuard = connectionManager.hasTransitionGuard
                 }
-                if (!connectionManager.ensureCleanRootRuntime(preserveTproxyGuard = preserveGuard)) return
+                if (!connectionManager.ensureCleanRootRuntime(preserveTproxyGuard = preserveGuard)) {
+                    failRuntimeRestore("Could not clean the recorded TPROXY runtime")
+                    return
+                }
                 val config = loadLastServerConfig()
                 if (config != null) {
                     connectionLifecycle.updateActiveConfig(config)
@@ -766,6 +774,12 @@ class XrayService : VpnService() {
         if (activeConfig != null) {
             scheduleNetworkRetarget("service state restored", settle = false)
         }
+    }
+
+    private fun failRuntimeRestore(message: String) {
+        logBuffer.append(LogSource.APP, message)
+        connectionStateCoordinator.markError(message)
+        updateNotification()
     }
 
     private suspend fun detectRestorableRunningConnection(): ConnectionState.Connected? = withContext(Dispatchers.IO) {

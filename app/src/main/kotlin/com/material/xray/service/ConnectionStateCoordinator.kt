@@ -52,6 +52,23 @@ class ConnectionStateCoordinator @Inject constructor() {
     fun restoreConnected(state: ConnectionState.Connected) = commit(state)
 
     /**
+     * A root-owned runtime is recorded on disk but cannot be verified from the application process:
+     * TPROXY has no interface to observe, and probing a root process needs root, which only the
+     * service has. Claiming [ConnectionState.Connected] from the record alone would report a tunnel
+     * that may already be dead, and would hide the reconnect the service performs to repair it.
+     *
+     * So this asserts nothing and moves to a transient state instead, leaving the service to settle
+     * it. Returns whether the caller should ask the service to do that; an already live state is left
+     * untouched, because only a cold start can observe a record it did not create.
+     */
+    @Synchronized
+    fun markRestoringRecordedRuntime(): Boolean {
+        if (_state.value !is ConnectionState.Disconnected) return false
+        commit(ConnectionState.Connecting)
+        return true
+    }
+
+    /**
      * Clears a state that claims a running tunnel after the runtime backing it has gone away.
      *
      * This coordinator is a process-wide singleton, so a service that stops without completing a

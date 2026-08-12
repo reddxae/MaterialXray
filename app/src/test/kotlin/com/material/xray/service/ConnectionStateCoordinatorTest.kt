@@ -7,7 +7,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -32,6 +34,40 @@ class ConnectionStateCoordinatorTest {
 
         assertEquals(detected, result)
         assertEquals(detected, coordinator.state.value)
+    }
+
+    @Test
+    fun `an unverifiable recorded runtime is never reported as connected`() {
+        val coordinator = ConnectionStateCoordinator()
+
+        val shouldAskService = coordinator.markRestoringRecordedRuntime()
+
+        assertTrue(shouldAskService)
+        assertEquals(ConnectionState.Connecting, coordinator.state.value)
+    }
+
+    @Test
+    fun `a recorded runtime never disturbs a state this process already owns`() {
+        val live = listOf(
+            connectedState(corePid = 42),
+            ConnectionState.Connecting,
+            ConnectionState.Disconnecting,
+            ConnectionState.Error("boom"),
+        )
+
+        live.forEach { state ->
+            val coordinator = ConnectionStateCoordinator()
+            when (state) {
+                is ConnectionState.Connected -> coordinator.restoreConnected(state)
+                ConnectionState.Connecting -> coordinator.startConnection(ConnectionState.Connecting)
+                ConnectionState.Disconnecting -> coordinator.markDisconnecting()
+                is ConnectionState.Error -> coordinator.markError(state.message)
+                else -> error("unreachable")
+            }
+
+            assertFalse("state=$state", coordinator.markRestoringRecordedRuntime())
+            assertEquals(state, coordinator.state.value)
+        }
     }
 
     @Test

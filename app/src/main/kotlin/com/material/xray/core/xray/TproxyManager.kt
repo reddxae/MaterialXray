@@ -180,8 +180,10 @@ class TproxyManager internal constructor(
                     "grep -q -- '--set-xmark $mark/0xffffffff'"
                 for (protocol in listOf("tcp", "udp")) {
                     commands += "iptables -t mangle -C ${names.prerouting} -p $protocol -m mark " +
-                        "--mark $mark/0xffffffff -j TPROXY --on-port ${group.port} --tproxy-mark $mark/0xffffffff"
-                    commands += "iptables -t mangle -C ${names.slot(state.outputChainSlot)} -m addrtype --dst-type LOCAL " +
+                        "--mark $mark/0xffffffff -j TPROXY --on-ip ${tproxyOnIp("iptables", state.ipv6Enabled)} " +
+                        "--on-port ${group.port} --tproxy-mark $mark/0xffffffff"
+                    commands += "iptables -t mangle -C ${names.slot(state.outputChainSlot)} " +
+                        "${localDestinationMatch("iptables", state.ipv6Enabled)} " +
                         "-p $protocol --dport ${group.port} -j DROP"
                 }
                 commands += "ss -lnt | grep -Eq '[:.]${group.port}([^0-9]|$)'"
@@ -199,9 +201,11 @@ class TproxyManager internal constructor(
                         "grep -q -- '--set-xmark $mark/0xffffffff'"
                     for (protocol in listOf("tcp", "udp")) {
                         commands += "ip6tables -t mangle -C ${names.prerouting} -p $protocol -m mark " +
-                            "--mark $mark/0xffffffff -j TPROXY --on-port ${group.port} --tproxy-mark $mark/0xffffffff"
+                            "--mark $mark/0xffffffff -j TPROXY --on-ip ${tproxyOnIp("ip6tables", state.ipv6Enabled)} " +
+                            "--on-port ${group.port} --tproxy-mark $mark/0xffffffff"
                         commands += "ip6tables -t mangle -C ${names.slot(state.outputChainSlot)} " +
-                            "-m addrtype --dst-type LOCAL -p $protocol --dport ${group.port} -j DROP"
+                            "${localDestinationMatch("ip6tables", state.ipv6Enabled)} " +
+                            "-p $protocol --dport ${group.port} -j DROP"
                     }
                 }
             } else {
@@ -292,7 +296,7 @@ class TproxyManager internal constructor(
             val setup = buildList {
                 add("$tool -t mangle -N $chain")
                 add("$tool -t mangle -A $chain -m owner --uid-owner $appUid -j RETURN")
-                uidRanges(plan.bypassUids).forEach { range ->
+                uidRanges(plan.bypassUids - appUid).forEach { range ->
                     add("$tool -t mangle -A $chain -m owner --uid-owner ${range.asArgument()} -j RETURN")
                 }
                 plan.routeProfileIds.toSortedSet().forEach { profileId ->
@@ -312,10 +316,12 @@ class TproxyManager internal constructor(
             add("$tool -t mangle -N $chain")
             plan.groups.forEach { group ->
                 val mark = hex(group.state.mark)
+                val onIp = tproxyOnIp(tool, plan.runtimeState.ipv6Enabled)
                 for (protocol in listOf("tcp", "udp")) {
                     add(
                         "$tool -t mangle -A $chain -p $protocol -m mark --mark $mark/0xffffffff " +
-                            "-j TPROXY --on-port ${group.state.port} --tproxy-mark $mark/0xffffffff",
+                            "-j TPROXY --on-ip $onIp --on-port ${group.state.port} " +
+                            "--tproxy-mark $mark/0xffffffff",
                     )
                 }
             }
@@ -402,7 +408,7 @@ class TproxyManager internal constructor(
             appUid: Int,
         ): List<String> = buildList {
             add("ip6tables -t filter -A $chain -m owner --uid-owner $appUid -j RETURN")
-            uidRanges(plan.bypassUids).forEach { range ->
+            uidRanges(plan.bypassUids - appUid).forEach { range ->
                 add("ip6tables -t filter -A $chain -m owner --uid-owner ${range.asArgument()} -j RETURN")
             }
             plan.routeProfileIds.toSortedSet().forEach { profileId ->
@@ -427,7 +433,7 @@ class TproxyManager internal constructor(
             state.groups.forEach { group ->
                 for (protocol in listOf("tcp", "udp")) {
                     add(
-                        "$tool -t mangle -A $chain -m addrtype --dst-type LOCAL -p $protocol " +
+                        "$tool -t mangle -A $chain ${localDestinationMatch(tool, state.ipv6Enabled)} -p $protocol " +
                             "--dport ${group.port} -j DROP",
                     )
                 }
@@ -437,7 +443,7 @@ class TproxyManager internal constructor(
             add("$tool -t mangle -A $chain -d $loopback -j RETURN")
             add("$tool -t mangle -A $chain -d $multicast -j RETURN")
             if (tool == "iptables") add("$tool -t mangle -A $chain -d 255.255.255.255/32 -j RETURN")
-            uidRanges(plan.bypassUids).forEach { range ->
+            uidRanges(plan.bypassUids - appUid).forEach { range ->
                 add("$tool -t mangle -A $chain -m owner --uid-owner ${range.asArgument()} -j RETURN")
             }
             plan.groups.filterNot { it.isBase }.forEach { group ->
@@ -472,10 +478,22 @@ class TproxyManager internal constructor(
             }
         }
 
+        private fun localDestinationMatch(tool: String, ipv6Enabled: Boolean): String = when {
+            tool == "ip6tables" -> "-m addrtype --dst-type LOCAL"
+            ipv6Enabled -> "-m addrtype --dst-type LOCAL"
+            else -> "-d 127.0.0.0/8"
+        }
+
+        private fun tproxyOnIp(tool: String, ipv6Enabled: Boolean): String = when {
+            tool == "ip6tables" -> "::"
+            ipv6Enabled -> "0.0.0.0"
+            else -> "127.0.0.1"
+        }
+
         private fun removeGuardCommands(tool: String, chain: String): List<String> = listOf(
-            "$tool -t mangle -D OUTPUT -j $chain 2>/dev/null || true",
-            "$tool -t mangle -F $chain 2>/dev/null || true",
-            "$tool -t mangle -X $chain 2>/dev/null || true",
+            "{ $tool -t mangle -D OUTPUT -j $chain 2>/dev/null || true; }",
+            "{ $tool -t mangle -F $chain 2>/dev/null || true; }",
+            "{ $tool -t mangle -X $chain 2>/dev/null || true; }",
         )
 
         private fun uidRanges(uids: Set<Int>): List<IntRange> {

@@ -74,7 +74,7 @@ internal fun buildTproxyInbound(
     allowIpv6: Boolean,
 ) = buildJsonObject {
     require(port in 1..65_535) { "Invalid TPROXY port: $port" }
-    put("listen", if (allowIpv6) "::" else "0.0.0.0")
+    put("listen", if (allowIpv6) "::" else "127.0.0.1")
     put("port", port)
     put("protocol", "tunnel")
     put(

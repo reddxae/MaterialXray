@@ -1024,10 +1024,7 @@ private fun tproxyCompatibilitySupportingText(compatibility: TproxyCompatibility
     TproxyCompatibility.Checking,
     -> null
     is TproxyCompatibility.Supported -> null
-    is TproxyCompatibility.Unsupported -> stringResource(
-        R.string.settings_tproxy_unsupported,
-        stringResource(compatibility.reason.descriptionResource),
-    )
+    is TproxyCompatibility.Unsupported -> stringResource(R.string.settings_tproxy_unsupported)
 }
 
 internal fun shouldShowTunMtu(

@@ -27,14 +27,14 @@ class RootConnectionBackendUiTest {
             isIpv6SelectionEnabled(
                 rootServiceActive = false,
                 RootConnectionBackend.Tproxy,
-                TproxyCompatibility.Supported(ipv6 = false, socketMatchOptimization = false),
+                TproxyCompatibility.Supported(ipv6 = false),
             ),
         )
         assertFalse(
             isIpv6SelectionEnabled(
                 rootServiceActive = true,
                 RootConnectionBackend.Tproxy,
-                TproxyCompatibility.Supported(ipv6 = false, socketMatchOptimization = false),
+                TproxyCompatibility.Supported(ipv6 = false),
             ),
         )
     }

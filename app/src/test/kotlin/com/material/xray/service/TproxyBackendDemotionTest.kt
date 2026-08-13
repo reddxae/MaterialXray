@@ -55,8 +55,8 @@ class TproxyBackendDemotionTest {
         listOf(
             TproxyCompatibility.Unknown,
             TproxyCompatibility.Checking,
-            TproxyCompatibility.Supported(ipv6 = true, socketMatchOptimization = true),
-            TproxyCompatibility.Supported(ipv6 = false, socketMatchOptimization = false),
+            TproxyCompatibility.Supported(ipv6 = true),
+            TproxyCompatibility.Supported(ipv6 = false),
         ).forEach { result ->
             assertFalse("result=$result", shouldDemoteTproxyBackend(result, RootConnectionBackend.Tproxy))
         }

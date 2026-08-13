@@ -107,7 +107,7 @@
     <string name="settings_section_service">Service</string>
     <string name="settings_use_root_service">Use root service</string>
     <string name="settings_root_connection_backend">Core connection backend</string>
-    <string name="settings_tproxy_unsupported">TPROXY unavailable: %1$s</string>
+    <string name="settings_tproxy_unsupported">TPROXY is unsupported on this device</string>
     <string name="settings_retry_compatibility_check">Retry compatibility check</string>
     <string name="settings_unavailable">Unavailable</string>
     <string name="settings_auto_connect_on_boot">Auto-connect on boot</string>

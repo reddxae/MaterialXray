@@ -104,8 +104,7 @@ class SettingsRuntimeManager @Inject constructor(
             when (result) {
                 is TproxyCompatibility.Supported -> log.append(
                     LogSource.APP,
-                    "TPROXY compatibility: supported " +
-                        "(ipv6=${result.ipv6}, socketMatchOptimization=${result.socketMatchOptimization})",
+                    "TPROXY compatibility: supported (ipv6=${result.ipv6})",
                 )
                 is TproxyCompatibility.Unsupported -> {
                     val details = result.details

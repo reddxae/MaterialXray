@@ -69,7 +69,7 @@ class ConfigGeneratorTest {
         val inbound = inbounds.single().jsonObject
 
         assertEquals("tunnel", inbound.getValue("protocol").jsonPrimitive.content)
-        assertEquals("0.0.0.0", inbound.getValue("listen").jsonPrimitive.content)
+        assertEquals("127.0.0.1", inbound.getValue("listen").jsonPrimitive.content)
         assertEquals(48_321, inbound.getValue("port").jsonPrimitive.int)
         assertTrue(inbound.getValue("settings").jsonObject.getValue("followRedirect").jsonPrimitive.boolean)
         assertEquals(
@@ -247,6 +247,18 @@ class ConfigGeneratorTest {
 
         assertEquals(listOf("tunnel"), inbounds.map { it.jsonObject.getValue("protocol").jsonPrimitive.content })
         assertEquals("tproxy-in-default", inbounds.single().jsonObject.getValue("tag").jsonPrimitive.content)
+        assertEquals("127.0.0.1", inbounds.single().jsonObject.getValue("listen").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `dual stack TPROXY inbound listens on both address families`() {
+        val config = generator.generate(
+            vlessReality,
+            inbounds = listOf(XrayInbound.Tproxy(48_321, "tproxy-in-default", 255, allowIpv6 = true)),
+        )
+        val inbound = Json.parseToJsonElement(config).jsonObject.getValue("inbounds").jsonArray.single().jsonObject
+
+        assertEquals("::", inbound.getValue("listen").jsonPrimitive.content)
     }
 
     @Test

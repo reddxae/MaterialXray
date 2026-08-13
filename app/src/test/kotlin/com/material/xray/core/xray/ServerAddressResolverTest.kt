@@ -136,6 +136,16 @@ class ServerAddressResolverTest {
         assertEquals(addresses.size, startedLookups.value)
     }
 
+    @Test
+    fun `framework DNS failure falls back to the system lookup`() = runTest {
+        val result = dnsLookupWithFallback(
+            primaryLookup = { throw IllegalArgumentException("NETID_UNSET") },
+            fallbackLookup = { listOf("192.0.2.1") },
+        )
+
+        assertEquals(listOf("192.0.2.1"), result)
+    }
+
     private fun rawServer(vararg addresses: String): ServerConfig = ServerConfig(
         protocol = Protocol.RAW,
         name = "Raw",

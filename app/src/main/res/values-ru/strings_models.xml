@@ -19,19 +19,6 @@
     <string name="root_connection_backend_tun_description">Создаёт виртуальные интерфейсы и направляет трафик приложений к ядру через них.</string>
     <string name="root_connection_backend_tproxy_label">Прозрачный прокси</string>
     <string name="root_connection_backend_tproxy_description">Перехватывает трафик без создания интерфейсов с помощью маршрутов ядра. Экспериментальный и может не работать на старых устройствах.</string>
-    <string name="tproxy_unsupported_root">root-доступ недоступен</string>
-    <string name="tproxy_unsupported_init_namespace">пространство имён сети init недоступно</string>
-    <string name="tproxy_unsupported_iptables">таблица mangle iptables недоступна</string>
-    <string name="tproxy_unsupported_owner">модуль owner iptables недоступен</string>
-    <string name="tproxy_unsupported_mark">цель MARK недоступна</string>
-    <string name="tproxy_unsupported_ipv4">цель TPROXY для IPv4 недоступна</string>
-    <string name="tproxy_unsupported_policy_routing">локальная маршрутизация по правилам недоступна</string>
-    <string name="tproxy_unsupported_route_table_conflict">необходимая таблица маршрутизации уже используется</string>
-    <string name="tproxy_unsupported_ipv6">TPROXY для IPv6 недоступен при включённом IPv6</string>
-    <string name="tproxy_unsupported_mark_conflict">пространство меток пакетов уже используется</string>
-    <string name="tproxy_unsupported_cleanup">не удалось очистить состояние проверки совместимости</string>
-    <string name="tproxy_unsupported_timeout">истекло время проверки совместимости</string>
-
     <string name="xray_outbound_proxy_label">прокси</string>
     <string name="xray_outbound_proxy_description">Направлять трафик через выбранный прокси-сервер</string>
     <string name="xray_outbound_direct_label">напрямую</string>

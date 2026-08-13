@@ -15,7 +15,16 @@ class TproxyManagerTest {
         assertTrue(command.indexOf("-I PREROUTING 1") < command.indexOf("-I OUTPUT 1"))
         assertTrue(command.contains("--mark 0xa000000/0xf000000"))
         assertTrue(command.contains("--tproxy-mark 0xa000001/0xffffffff"))
+        assertTrue(command.contains("--on-ip 127.0.0.1"))
         assertTrue(command.contains("--on-port 48321"))
+    }
+
+    @Test
+    fun `best effort guard cleanup cannot mask activation failures`() {
+        val command = TproxyManager.activationCommand(plan(), APP_UID)
+
+        assertTrue(command.contains("&& { iptables -t mangle -D OUTPUT -j MXG278b 2>/dev/null || true; } &&"))
+        assertTrue(command.endsWith("{ ip6tables -t mangle -X MXG278b 2>/dev/null || true; }"))
     }
 
     @Test
@@ -34,6 +43,7 @@ class TproxyManagerTest {
         assertTrue(groupMark < groupReturn)
         assertTrue(groupReturn < profileMark)
         assertTrue(command.contains("--uid-owner 10000-99999 -j DROP"))
+        assertTrue(command.split("--uid-owner $APP_UID -j RETURN").size - 1 == 2)
     }
 
     @Test
@@ -92,6 +102,9 @@ class TproxyManagerTest {
 
         assertTrue(command.contains("ip -6 route replace local ::/0 dev lo table 300"))
         assertTrue(command.contains("ip6tables -t mangle -I PREROUTING 1"))
+        assertTrue(command.contains("--on-ip 0.0.0.0"))
+        assertTrue(command.contains("--on-ip ::"))
+        assertTrue(command.contains("-m addrtype --dst-type LOCAL"))
         assertFalse(command.contains("ip6tables -t filter"))
         assertFalse(command.contains("icmp6-no-route"))
     }
@@ -102,7 +115,7 @@ class TproxyManagerTest {
 
         assertTrue(command.contains("--set-xmark 0xa000001/0xffffffff"))
         assertTrue(command.contains("-p udp -m mark --mark 0xa000001/0xffffffff"))
-        assertTrue(command.contains("-p udp --dport 48321 -j DROP"))
+        assertTrue(command.contains("-d 127.0.0.0/8 -p udp --dport 48321 -j DROP"))
         assertTrue(command.contains("ss -lnu"))
         assertTrue(command.contains("ip6tables -t filter -C OUTPUT"))
         assertTrue(command.contains("--reject-with icmp6-no-route"))

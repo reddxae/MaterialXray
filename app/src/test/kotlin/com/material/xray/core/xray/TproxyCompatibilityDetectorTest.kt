@@ -7,17 +7,38 @@ import org.junit.Test
 
 class TproxyCompatibilityDetectorTest {
     @Test
-    fun `probe checks TCP UDP policy routing and cleans both families`() {
+    fun `dual stack probe exercises production firewall hooks and policy routing`() {
         val command = TproxyCompatibilityDetector.probeCommand("abc123", allowIpv6 = true)
 
-        assertTrue(command.contains("-p tcp -j TPROXY"))
-        assertTrue(command.contains("-p udp -j TPROXY"))
+        assertTrue(command.contains("-p tcp -m mark --mark 0xb000001/0xffffffff -j TPROXY"))
+        assertTrue(command.contains("-p udp -m mark --mark 0xb000001/0xffffffff -j TPROXY"))
+        assertTrue(command.contains("iptables -t mangle -I PREROUTING 1 -j MXPabc1234P"))
+        assertTrue(command.contains("iptables -t mangle -I OUTPUT 1 -j MXPabc1234O"))
+        assertTrue(command.contains("ip6tables -t mangle -I PREROUTING 1 -j MXPabc1236P"))
+        assertTrue(command.contains("ip6tables -t mangle -I OUTPUT 1 -j MXPabc1236O"))
+        assertTrue(command.contains("iptables -t mangle -A MXPabc1234O -m addrtype --dst-type LOCAL"))
+        assertTrue(command.contains("ip6tables -t mangle -A MXPabc1236O -m addrtype --dst-type LOCAL"))
         assertTrue(command.contains("ip route get 192.0.2.1 mark"))
         assertTrue(command.contains("ip -6 route get 2001:db8::1 mark"))
-        assertTrue(command.contains("ip6tables -t mangle -X MXPabc123"))
+        assertTrue(command.contains("ip6tables -t mangle -X MXPabc1236P"))
         assertTrue(command.contains("fail cleanup"))
         assertFalse(command.contains("curl"))
         assertFalse(command.contains("ping"))
+    }
+
+    @Test
+    fun `IPv4 only probe covers loopback binding IPv6 blocking and listener checks`() {
+        val command = TproxyCompatibilityDetector.probeCommand("abc123", allowIpv6 = false)
+
+        assertTrue(command.contains("--on-ip 127.0.0.1"))
+        assertTrue(command.contains("-d 127.0.0.0/8 -p tcp --dport 9 -j DROP"))
+        assertTrue(command.contains("ip6tables -t mangle -I OUTPUT 1 -j MXPabc1236O"))
+        assertTrue(command.contains("ip6tables -t filter -I OUTPUT 1 -j MXPabc1236F"))
+        assertTrue(command.contains("-j REJECT --reject-with icmp6-no-route"))
+        assertTrue(command.contains("--uid-owner 0-1"))
+        assertTrue(command.contains("ss -lnt >/dev/null && ss -lnu >/dev/null"))
+        assertFalse(command.contains("addrtype"))
+        assertFalse(command.contains("-m socket"))
     }
 
     @Test
@@ -86,7 +107,7 @@ class TproxyCompatibilityDetectorTest {
 
     @Test
     fun `IPv6-only failure preserves IPv4 TPROXY support`() {
-        val ipv4 = TproxyCompatibility.Supported(ipv6 = false, socketMatchOptimization = true)
+        val ipv4 = TproxyCompatibility.Supported(ipv6 = false)
 
         val result = resolveDualStackCompatibility(
             ipv4,
@@ -98,9 +119,12 @@ class TproxyCompatibilityDetectorTest {
 
     @Test
     fun `only kernel capability verdicts count as a real statement about the device`() {
-        assertTrue(TproxyCompatibility.Supported(ipv6 = true, socketMatchOptimization = true).isConclusive())
+        assertTrue(TproxyCompatibility.Supported(ipv6 = true).isConclusive())
         assertTrue(
             TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.TproxyIpv6Unavailable).isConclusive(),
+        )
+        assertTrue(
+            TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.Ipv6BlockingUnavailable).isConclusive(),
         )
         assertFalse(TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.RootUnavailable).isConclusive())
         assertFalse(TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.CommandTimedOut).isConclusive())

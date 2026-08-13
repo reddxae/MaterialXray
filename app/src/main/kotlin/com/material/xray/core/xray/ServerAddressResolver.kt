@@ -13,6 +13,7 @@ import java.net.InetAddress
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.random.Random
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -120,13 +121,16 @@ class ServerAddressResolver(
     // information. DnsResolver is preferred because it is asynchronous and cancellable, which lets a
     // stalled query be abandoned after RESOLVE_TIMEOUT_MS; the blocking Dns.SYSTEM lookup is only a
     // fallback for that failure case and the primary path below Android 10.
-    private suspend fun systemLookup(host: String): List<String> {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val addresses = withTimeoutOrNull(RESOLVE_TIMEOUT_MS) { resolveWithAndroidDns(host) }
-            if (!addresses.isNullOrEmpty()) return addresses
-        }
-        return resolveWithOkHttpDns(host)
-    }
+    private suspend fun systemLookup(host: String): List<String> = dnsLookupWithFallback(
+        primaryLookup = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                withTimeoutOrNull(RESOLVE_TIMEOUT_MS) { resolveWithAndroidDns(host) }
+            } else {
+                null
+            }
+        },
+        fallbackLookup = { resolveWithOkHttpDns(host) },
+    )
 
     private fun ServerConfig.withResolvedAddress(address: String, originalHost: String): ServerConfig {
         val resolvedSecurity = if (security.sni.isEmpty() && security.type in setOf("tls", "reality")) {
@@ -200,6 +204,20 @@ class ServerAddressResolver(
         const val RESOLVE_TIMEOUT_MS = 2000L
         val ipv4Pattern = Regex("""\d{1,3}(?:\.\d{1,3}){3}""")
     }
+}
+
+internal suspend fun dnsLookupWithFallback(
+    primaryLookup: suspend () -> List<String>?,
+    fallbackLookup: () -> List<String>,
+): List<String> {
+    val addresses = try {
+        primaryLookup()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+    return addresses?.takeIf(List<String>::isNotEmpty) ?: fallbackLookup()
 }
 
 internal fun rawProxyEndpointHosts(rawJson: String): List<String> = rawProxyEndpoints(rawJson).hosts

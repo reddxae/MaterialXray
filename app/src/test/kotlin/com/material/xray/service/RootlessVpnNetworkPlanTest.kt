@@ -18,6 +18,7 @@ class RootlessVpnNetworkPlanTest {
             plan.routes,
         )
         assertEquals(listOf("10.10.14.2"), plan.dnsServers)
+        assertEquals("10.10.14.2", plan.syntheticDnsAddress)
     }
 
     @Test
@@ -39,5 +40,6 @@ class RootlessVpnNetworkPlanTest {
             plan.routes,
         )
         assertEquals(listOf("10.10.14.2"), plan.dnsServers)
+        assertEquals("10.10.14.2", plan.syntheticDnsAddress)
     }
 }

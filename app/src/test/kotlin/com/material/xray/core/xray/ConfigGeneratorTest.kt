@@ -320,7 +320,13 @@ class ConfigGeneratorTest {
 
     @Test
     fun `includes DNS routing rule for port 53`() {
-        val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255, dnsServers = "1.1.1.1,8.8.8.8")
+        val config = generator.generate(
+            vlessReality,
+            tunName = "xray0",
+            fwmark = 255,
+            dnsServers = "1.1.1.1,8.8.8.8",
+            syntheticDnsAddress = "10.10.14.2",
+        )
         val json = Json.parseToJsonElement(config).jsonObject
         assertNotNull(json["dns"])
         assertEquals("default-dns", json["dns"]!!.jsonObject["tag"]!!.jsonPrimitive.content)
@@ -329,11 +335,16 @@ class ConfigGeneratorTest {
         assertNotNull("Should have DNS port 53 routing rule", dnsRule)
         val inboundTags = dnsRule!!.jsonObject["inboundTag"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertEquals(listOf("tun-in"), inboundTags)
-        val dnsOverTlsRule = rules.firstOrNull {
+        val syntheticDnsRule = rules.first {
+            it.jsonObject["ip"]?.jsonArray?.any { address -> address.jsonPrimitive.content == "10.10.14.2" } == true
+        }
+        assertEquals("block", syntheticDnsRule.jsonObject["outboundTag"]!!.jsonPrimitive.content)
+        assertTrue("port" !in syntheticDnsRule.jsonObject)
+        assertTrue("network" !in syntheticDnsRule.jsonObject)
+        val dnsOverTlsRule = rules.first {
             it.jsonObject["port"]?.jsonPrimitive?.content == "853"
         }
-        assertNotNull("DNS-over-TLS should bypass the proxy balancer", dnsOverTlsRule)
-        assertEquals("direct", dnsOverTlsRule!!.jsonObject["outboundTag"]!!.jsonPrimitive.content)
+        assertEquals("direct", dnsOverTlsRule.jsonObject["outboundTag"]!!.jsonPrimitive.content)
         val upstreamRule = rules.firstOrNull {
             it.jsonObject["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "default-dns"
         }

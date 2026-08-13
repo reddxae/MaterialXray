@@ -119,6 +119,7 @@ class XrayConfigRoutingTest {
             bypassLan = true,
             dnsServers = "1.1.1.1",
             domesticDnsServers = "77.88.8.8",
+            syntheticDnsAddress = "10.10.14.2",
         )
 
         val rules = routing.getValue("rules").jsonArray.map { it.jsonObject }
@@ -126,19 +127,22 @@ class XrayConfigRoutingTest {
         assertEquals(listOf("tun-in", "app-in-direct", "app-in-rules"), rules[0].array("inboundTag"))
         assertEquals("dns-out", rules[0].getValue("outboundTag").jsonPrimitive.content)
         assertEquals(listOf("tun-in", "app-in-direct", "app-in-rules"), rules[1].array("inboundTag"))
-        assertEquals("853", rules[1].getValue("port").jsonPrimitive.content)
-        assertEquals("tcp", rules[1].getValue("network").jsonPrimitive.content)
-        assertEquals("direct", rules[1].getValue("outboundTag").jsonPrimitive.content)
-        assertEquals("default-dns", rules[2].array("inboundTag").single())
-        assertEquals("proxy", rules[2].getValue("outboundTag").jsonPrimitive.content)
-        assertEquals("domestic-dns", rules[3].array("inboundTag").single())
-        assertEquals("app-in-direct", rules[4].array("inboundTag").single())
-        assertEquals("geoip:private", rules[5].array("ip").single())
-        assertEquals("geosite:private", rules[6].array("domain").single())
-        assertEquals(listOf("domain:one", "domain:two"), rules[7].array("domain"))
-        assertEquals(listOf("geoip:one"), rules[8].array("ip"))
-        assertEquals("443", rules[9].getValue("port").jsonPrimitive.content)
-        assertEquals(listOf("tcp", "udp"), rules[10].array("protocol"))
+        assertEquals(listOf("10.10.14.2"), rules[1].array("ip"))
+        assertEquals("block", rules[1].getValue("outboundTag").jsonPrimitive.content)
+        assertEquals(listOf("tun-in", "app-in-direct", "app-in-rules"), rules[2].array("inboundTag"))
+        assertEquals("853", rules[2].getValue("port").jsonPrimitive.content)
+        assertEquals("tcp", rules[2].getValue("network").jsonPrimitive.content)
+        assertEquals("direct", rules[2].getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("default-dns", rules[3].array("inboundTag").single())
+        assertEquals("proxy", rules[3].getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("domestic-dns", rules[4].array("inboundTag").single())
+        assertEquals("app-in-direct", rules[5].array("inboundTag").single())
+        assertEquals("geoip:private", rules[6].array("ip").single())
+        assertEquals("geosite:private", rules[7].array("domain").single())
+        assertEquals(listOf("domain:one", "domain:two"), rules[8].array("domain"))
+        assertEquals(listOf("geoip:one"), rules[9].array("ip"))
+        assertEquals("443", rules[10].getValue("port").jsonPrimitive.content)
+        assertEquals(listOf("tcp", "udp"), rules[11].array("protocol"))
         assertEquals("app-in-rules", rules.last().array("inboundTag").single())
     }
 
@@ -152,6 +156,13 @@ class XrayConfigRoutingTest {
 
         assertEquals("IPIfNonMatch", routing.getValue("domainStrategy").jsonPrimitive.content)
         assertEquals("hybrid", routing.getValue("domainMatcher").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `buildRouting omits synthetic DNS peer block outside rootless mode`() {
+        val rules = buildRouting(routingRules = emptyList()).getValue("rules").jsonArray.map { it.jsonObject }
+
+        assertTrue(rules.none { it["outboundTag"]?.jsonPrimitive?.content == "block" })
     }
 
     @Test

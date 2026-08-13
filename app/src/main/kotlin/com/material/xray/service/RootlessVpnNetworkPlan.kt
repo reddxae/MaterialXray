@@ -9,6 +9,7 @@ internal data class RootlessVpnNetworkPlan(
     val addresses: List<VpnNetworkPrefix>,
     val routes: List<VpnNetworkPrefix>,
     val dnsServers: List<String>,
+    val syntheticDnsAddress: String,
 )
 
 internal fun planRootlessVpnNetwork(allowIpv6: Boolean): RootlessVpnNetworkPlan = RootlessVpnNetworkPlan(
@@ -25,14 +26,15 @@ internal fun planRootlessVpnNetwork(allowIpv6: Boolean): RootlessVpnNetworkPlan 
         }
     },
     // Xray's first routing rule intercepts port 53, so Android only needs an on-link DNS target.
-    dnsServers = listOf(VPN_DNS_ADDRESS),
+    dnsServers = listOf(ROOTLESS_VPN_DNS_ADDRESS),
+    syntheticDnsAddress = ROOTLESS_VPN_DNS_ADDRESS,
 )
 
 private const val VPN_IPV4_ADDRESS = "10.10.14.1"
 private const val VPN_IPV4_PREFIX_LENGTH = 30
 private const val VPN_IPV6_ADDRESS = "fd10:10:14::1"
 private const val VPN_IPV6_PREFIX_LENGTH = 64
-private const val VPN_DNS_ADDRESS = "10.10.14.2"
+private const val ROOTLESS_VPN_DNS_ADDRESS = "10.10.14.2"
 private const val IPV4_DEFAULT_ROUTE = "0.0.0.0"
 private const val IPV6_DEFAULT_ROUTE = "::"
 private const val DEFAULT_ROUTE_PREFIX_LENGTH = 0

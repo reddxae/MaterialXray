@@ -79,6 +79,7 @@ internal fun buildRouting(
     bypassLan: Boolean = true,
     dnsServers: String = "",
     domesticDnsServers: String = "",
+    syntheticDnsAddress: String? = null,
     domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     domainMatcher: String? = null,
     defaultRouteTarget: XrayRouteTarget = XrayRouteTarget.Outbound("proxy"),
@@ -91,6 +92,7 @@ internal fun buildRouting(
         "rules",
         buildJsonArray {
             add(dnsRoutingRule(dataInboundTags))
+            syntheticDnsAddress?.let { add(syntheticDnsPeerBlockRule(dataInboundTags, it)) }
             add(dnsOverTlsRoutingRule(dataInboundTags))
             if (dnsServers.commaSeparatedValues().isNotEmpty()) {
                 add(defaultDnsRoutingRule(defaultRouteTarget))
@@ -143,6 +145,13 @@ private fun dnsRoutingRule(dataInboundTags: List<String>) = buildJsonObject {
     )
     put("port", "53")
     put("outboundTag", "dns-out")
+}
+
+private fun syntheticDnsPeerBlockRule(dataInboundTags: List<String>, address: String) = buildJsonObject {
+    put("type", "field")
+    put("inboundTag", buildJsonArray { dataInboundTags.forEach { add(it) } })
+    put("ip", buildJsonArray { add(address) })
+    put("outboundTag", "block")
 }
 
 private fun dnsOverTlsRoutingRule(dataInboundTags: List<String>) = buildJsonObject {

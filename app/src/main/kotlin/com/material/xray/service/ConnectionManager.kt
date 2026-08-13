@@ -83,6 +83,7 @@ internal class ConnectionManager(
         server: ServerConfig,
         runtimeSettings: XrayRuntimeSettings,
         vpnInterface: ParcelFileDescriptor? = null,
+        syntheticDnsAddress: String? = null,
         transitionState: ConnectionState = ConnectionState.Connecting,
         preparation: ConnectionPreparation = ConnectionPreparation.Full,
     ) {
@@ -155,6 +156,7 @@ internal class ConnectionManager(
                 physicalRouteResult.route,
                 xrayApiEndpoint,
                 tproxyPlan,
+                syntheticDnsAddress,
             )
             val pid = startXrayProcess(strategy, vpnInterface)
 
@@ -496,6 +498,7 @@ internal class ConnectionManager(
         physicalRoute: TunManager.PhysicalRoute?,
         xrayApiEndpoint: XrayApiEndpoint,
         tproxyPlan: TproxyTrafficPlan?,
+        syntheticDnsAddress: String?,
     ) {
         val configJson = timedStep("Config generation") {
             withContext(Dispatchers.Default) {
@@ -505,6 +508,7 @@ internal class ConnectionManager(
                     fwmark = runtimeSettings.fwmark.takeIf { managesSystemRouting } ?: 0,
                     dnsServers = runtimeSettings.dnsServers,
                     domesticDnsServers = runtimeSettings.domesticDnsServers,
+                    syntheticDnsAddress = syntheticDnsAddress,
                     logLevel = runtimeSettings.logLevel,
                     defaultOutbound = runtimeSettings.defaultOutbound,
                     bypassLan = runtimeSettings.bypassLan,

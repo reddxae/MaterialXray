@@ -39,6 +39,7 @@ class RawConfigTunInjectorTest {
             fwmark = 255,
             dnsServers = "1.1.1.1",
             domesticDnsServers = "",
+            syntheticDnsAddress = "10.10.14.2",
             logLevel = XrayLogLevel.Debug,
             defaultOutbound = XrayOutbound.Proxy,
             bypassLan = true,
@@ -88,6 +89,14 @@ class RawConfigTunInjectorTest {
         assertEquals(255, proxySockopt.getValue("mark").jsonPrimitive.content.toInt())
         assertEquals("wlan0", proxySockopt.getValue("interface").jsonPrimitive.content)
         assertEquals("debug", root.getValue("log").jsonObject.getValue("loglevel").jsonPrimitive.content)
+        val syntheticDnsRule = root.getValue("routing").jsonObject.getValue("rules").jsonArray
+            .map { it.jsonObject }
+            .first { rule ->
+                rule["ip"]?.jsonArray?.any { it.jsonPrimitive.content == "10.10.14.2" } == true
+            }
+        assertEquals("block", syntheticDnsRule.getValue("outboundTag").jsonPrimitive.content)
+        assertTrue("port" !in syntheticDnsRule)
+        assertTrue("network" !in syntheticDnsRule)
     }
 
     @Test

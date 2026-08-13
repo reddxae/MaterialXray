@@ -554,16 +554,22 @@ class XrayService : VpnService() {
         } else {
             runtimeSettings.copy(useRootService = false, tunName = ROOTLESS_TUN_NAME)
         }
-        val activeVpnInterface = if (effectiveRuntimeSettings.useRootService) {
+        val rootlessNetworkPlan = if (effectiveRuntimeSettings.useRootService) {
+            null
+        } else {
+            planRootlessVpnNetwork(effectiveRuntimeSettings.allowIpv6)
+        }
+        val activeVpnInterface = if (rootlessNetworkPlan == null) {
             closeVpnInterface()
             null
         } else {
-            setupVpnInterface(effectiveRuntimeSettings) ?: return false
+            setupVpnInterface(effectiveRuntimeSettings, rootlessNetworkPlan) ?: return false
         }
         connectionManager.connect(
             server = config,
             runtimeSettings = effectiveRuntimeSettings,
             vpnInterface = activeVpnInterface,
+            syntheticDnsAddress = rootlessNetworkPlan?.syntheticDnsAddress,
             transitionState = transitionState,
             preparation = preparation,
         )
@@ -1364,7 +1370,10 @@ class XrayService : VpnService() {
         restartRuntime(config)
     }
 
-    private suspend fun setupVpnInterface(runtimeSettings: XrayRuntimeSettings): ParcelFileDescriptor? {
+    private suspend fun setupVpnInterface(
+        runtimeSettings: XrayRuntimeSettings,
+        networkPlan: RootlessVpnNetworkPlan,
+    ): ParcelFileDescriptor? {
         if (prepare(this) != null) {
             connectionStateCoordinator.markError(
                 message = localizedString(R.string.connection_error_vpn_permission_required),
@@ -1374,7 +1383,6 @@ class XrayService : VpnService() {
             return null
         }
 
-        val networkPlan = planRootlessVpnNetwork(runtimeSettings.allowIpv6)
         val builder = Builder()
             .setSession(localizedString(R.string.app_name))
             .setMtu(runtimeSettings.tunMtu)
@@ -1873,7 +1881,7 @@ class XrayService : VpnService() {
         private const val PERIODIC_ROOT_ROUTE_VERIFICATION_REASON = "periodic root route verification"
         private val NETWORK_RETARGET_RETRY_DELAYS_MS = listOf(250L, 500L, 1_000L, 2_000L, 4_000L, 8_000L)
         private const val LOCAL_API_HEALTH_PROBE_INTERVAL_MS = 60_000L
-        private const val MEMORY_HEALTH_CHECK_INTERVAL_MS = 60_000L
+        private const val MEMORY_HEALTH_CHECK_INTERVAL_MS = 10_000L
         private const val LOCAL_HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60_000L
         private const val TUNNEL_FAILURE_THRESHOLD = 2
         private const val LOCAL_API_FAILURE_THRESHOLD = 3

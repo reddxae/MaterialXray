@@ -25,7 +25,6 @@
     <!-- Foreground service and notification chrome -->
     <string name="notification_status_starting">Starting&#8230;</string>
     <string name="notification_status_switching_server">Switching server&#8230;</string>
-    <string name="notification_status_retrying_connection">Retrying connection (%1$d/%2$d)&#8230;</string>
     <string name="notification_status_recovering_core">Recovering native core&#8230;</string>
     <string name="notification_status_waiting_for_physical_route">Waiting for physical route</string>
     <string name="notification_status_waiting_for_physical_network">Waiting for physical network</string>

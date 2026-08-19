@@ -262,6 +262,49 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `server resolution retries without rerunning earlier setup`() = runTest {
+        val unresolved = ServerResolution(
+            server = server(),
+            attempted = true,
+            selectedAddress = null,
+            candidates = emptyList(),
+            unresolvedHosts = listOf(server().address),
+        )
+        val resolved = unresolved.copy(
+            server = server().copy(address = "192.0.2.20"),
+            selectedAddress = "192.0.2.20",
+            candidates = listOf("192.0.2.20"),
+            unresolvedHosts = emptyList(),
+        )
+        val harness = Harness().apply {
+            serverResolver.results += listOf(unresolved, unresolved, resolved)
+        }
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertTrue(harness.stateCoordinator.state.value is ConnectionState.Connected)
+        assertEquals(3, harness.serverResolver.servers.size)
+        assertEquals(1, harness.rootRuntime.openCalls)
+        assertEquals(1, harness.rootProcess.startCalls)
+    }
+
+    @Test
+    fun `physical route detection retries without rerunning earlier setup`() = runTest {
+        val route = TunManager.PhysicalRoute(dev = "wlan0", gateway = "192.0.2.1", table = "main")
+        val harness = Harness().apply {
+            tunGateway.physicalRoutes += listOf(null, null, route)
+        }
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertTrue(harness.stateCoordinator.state.value is ConnectionState.Connected)
+        assertEquals(3, harness.tunGateway.detectedRouteTunNames.size)
+        assertEquals(1, harness.rootRuntime.openCalls)
+        assertEquals(1, harness.serverResolver.servers.size)
+        assertEquals(1, harness.rootProcess.startCalls)
+    }
+
+    @Test
     fun `connection is not published before Xray API readiness`() = runTest {
         val harness = Harness().apply { apiClients.sysStats = null }
 
@@ -581,9 +624,13 @@ class ConnectionManagerTest {
 
     private class FakeRootRuntime : ConnectionRootRuntime {
         var apiProtectionReady = true
+        var openCalls = 0
         val protectedApis = mutableListOf<Pair<Int, Int>>()
 
-        override suspend fun open(): Boolean = true
+        override suspend fun open(): Boolean {
+            openCalls += 1
+            return true
+        }
         override fun networkNamespaceName(): String = "init"
         override suspend fun protectLoopbackApi(port: Int, appUid: Int): Boolean {
             protectedApis += port to appUid
@@ -620,10 +667,12 @@ class ConnectionManagerTest {
 
     private class FakeServerResolver : ConnectionServerResolver {
         var result: ServerResolution? = null
+        val results = mutableListOf<ServerResolution>()
         val servers = mutableListOf<ServerConfig>()
 
         override suspend fun resolve(server: ServerConfig, allowIpv6: Boolean): ServerResolution {
             servers += server
+            if (results.isNotEmpty()) return results.removeAt(0)
             return result ?: ServerResolution(
                 server = server,
                 attempted = false,
@@ -643,14 +692,16 @@ class ConnectionManagerTest {
         var configureCalls = 0
         val configuredIpv6Addresses = mutableListOf<String>()
         val detectedRouteTunNames = mutableListOf<String>()
+        val physicalRoutes = mutableListOf<TunManager.PhysicalRoute?>()
 
         override suspend fun findAvailableWlanName(): String? {
             nameDetectionCalls += 1
             return availableWlanName
         }
 
-        override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute {
+        override suspend fun detectPhysicalRoute(tunName: String): TunManager.PhysicalRoute? {
             detectedRouteTunNames += tunName
+            if (physicalRoutes.isNotEmpty()) return physicalRoutes.removeAt(0)
             return TunManager.PhysicalRoute(
                 dev = "wlan0",
                 gateway = "192.0.2.1",

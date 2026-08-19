@@ -24,7 +24,6 @@
     <!-- Служба переднего плана и уведомления -->
     <string name="notification_status_starting">Запуск&#8230;</string>
     <string name="notification_status_switching_server">Смена сервера&#8230;</string>
-    <string name="notification_status_retrying_connection">Повторное подключение (%1$d/%2$d)&#8230;</string>
     <string name="notification_status_recovering_core">Восстановление нативного ядра&#8230;</string>
     <string name="notification_status_waiting_for_physical_route">Ожидание маршрута физической сети</string>
     <string name="notification_status_waiting_for_physical_network">Ожидание физической сети</string>

@@ -1,6 +1,5 @@
 package com.material.xray.service
 
-import com.material.xray.model.ConnectionState
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
 import kotlinx.coroutines.CompletableDeferred
@@ -16,32 +15,21 @@ import org.junit.Test
 
 class ConnectionLifecycleTest {
     @Test
-    fun `retry uses clean setup and disables fast reconnect after first attempt`() = runTest {
+    fun `connection failure does not rerun the entire attempt`() = runTest {
         val requests = mutableListOf<ConnectionRequest>()
-        val retries = mutableListOf<Int>()
         val lifecycle = lifecycle(
-            attempts = 3,
             runAttempt = { request ->
                 requests += request
-                requests.size == 3
+                false
             },
-            onRetry = { attempt, _, _ -> retries += attempt },
         )
 
         val connected = lifecycle.connect(
             ConnectionRequest(server(), preparation = ConnectionPreparation.FastServerSwitch),
         )
 
-        assertTrue(connected)
-        assertEquals(
-            listOf(
-                ConnectionPreparation.FastServerSwitch,
-                ConnectionPreparation.Full,
-                ConnectionPreparation.Full,
-            ),
-            requests.map { it.preparation },
-        )
-        assertEquals(listOf(2, 3), retries)
+        assertFalse(connected)
+        assertEquals(listOf(ConnectionPreparation.FastServerSwitch), requests.map { it.preparation })
     }
 
     @Test
@@ -50,7 +38,6 @@ class ConnectionLifecycleTest {
         var exhausted: ConnectionFailure? = null
         val failure = ConnectionFailure("permission denied", retryable = false)
         val lifecycle = lifecycle(
-            attempts = 3,
             runAttempt = {
                 attempts++
                 false
@@ -69,7 +56,7 @@ class ConnectionLifecycleTest {
         val firstStarted = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         val order = mutableListOf<String>()
-        val lifecycle = lifecycle(attempts = 1, runAttempt = { true })
+        val lifecycle = lifecycle(runAttempt = { true })
 
         val first = async {
             lifecycle.serialized {
@@ -97,7 +84,6 @@ class ConnectionLifecycleTest {
         val commandOrder = mutableListOf<String>()
         val failures = mutableListOf<Throwable>()
         val lifecycle = lifecycle(
-            attempts = 1,
             runAttempt = { true },
             onCommandFailure = { error ->
                 commandOrder += "failure"
@@ -115,25 +101,19 @@ class ConnectionLifecycleTest {
     }
 
     private fun TestScope.lifecycle(
-        attempts: Int,
         runAttempt: suspend (ConnectionRequest) -> Boolean,
         currentFailure: () -> ConnectionFailure = { ConnectionFailure("failed", retryable = true) },
-        onRetry: (Int, Int, ConnectionState) -> Unit = { _, _, _ -> },
         onExhausted: (ConnectionFailure) -> Unit = {},
         onCommandFailure: suspend (Throwable) -> Unit = {},
     ) = ConnectionLifecycle(
         scope = backgroundScope,
-        maxAttempts = attempts,
-        retryDelayMs = 0,
         beforeCommand = {},
         afterCommand = {},
         runAttempt = runAttempt,
         currentFailure = currentFailure,
-        onRetry = onRetry,
         onConnected = {},
         onExhausted = onExhausted,
         onCommandFailure = onCommandFailure,
-        waitBeforeRetry = {},
     )
 
     private companion object {

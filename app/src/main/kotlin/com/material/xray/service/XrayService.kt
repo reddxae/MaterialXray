@@ -182,8 +182,6 @@ class XrayService : VpnService() {
         connectionManager = connectionManagerFactory.create()
         connectionLifecycle = ConnectionLifecycle(
             scope = scope,
-            maxAttempts = CONNECTION_MAX_ATTEMPTS,
-            retryDelayMs = CONNECTION_RETRY_DELAY_MS,
             beforeCommand = ::acquireConnectionCommandWakeLock,
             afterCommand = ::releaseConnectionCommandWakeLock,
             runAttempt = { request ->
@@ -198,17 +196,6 @@ class XrayService : VpnService() {
                 ConnectionFailure(
                     message = error?.message ?: localizedString(R.string.notification_unknown_connection_error),
                     retryable = error?.retryable != false,
-                )
-            },
-            onRetry = { attempt, maxAttempts, transitionState ->
-                logBuffer.append(LogSource.APP, "Retrying connection ($attempt/$maxAttempts)...")
-                connectionStateCoordinator.startConnection(transitionState)
-                updateNotification(
-                    localizedString(
-                        R.string.notification_status_retrying_connection,
-                        attempt,
-                        maxAttempts,
-                    ),
                 )
             },
             onConnected = {
@@ -1900,8 +1887,6 @@ class XrayService : VpnService() {
         private const val TUNNEL_FAILURE_THRESHOLD = 2
         private const val LOCAL_API_FAILURE_THRESHOLD = 3
         private const val HEALTH_CHECK_FAILURE_LOG_THRESHOLD = 3
-        private const val CONNECTION_MAX_ATTEMPTS = 3
-        private const val CONNECTION_RETRY_DELAY_MS = 1_500L
         private const val ALWAYS_ON_RETRY_DELAY_MS = 30_000L
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L

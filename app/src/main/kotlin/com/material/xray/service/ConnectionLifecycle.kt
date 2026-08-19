@@ -4,9 +4,6 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -37,17 +34,13 @@ internal data class ConnectionFailure(
 
 internal class ConnectionLifecycle(
     private val scope: CoroutineScope,
-    private val maxAttempts: Int,
-    private val retryDelayMs: Long,
     private val beforeCommand: () -> Unit,
     private val afterCommand: () -> Unit,
     private val runAttempt: suspend (ConnectionRequest) -> Boolean,
     private val currentFailure: () -> ConnectionFailure,
-    private val onRetry: (attempt: Int, maxAttempts: Int, transitionState: ConnectionState) -> Unit,
     private val onConnected: () -> Unit,
     private val onExhausted: suspend (ConnectionFailure) -> Unit,
     private val onCommandFailure: suspend (Throwable) -> Unit,
-    private val waitBeforeRetry: suspend (Long) -> Unit = { delay(it) },
 ) {
     private val commandMutex = Mutex()
 
@@ -94,28 +87,12 @@ internal class ConnectionLifecycle(
     }
 
     suspend fun connect(request: ConnectionRequest): Boolean {
-        var attempt = 1
-        var failure = currentFailure()
-        while (attempt <= maxAttempts && currentCoroutineContext().isActive) {
-            if (attempt > 1) onRetry(attempt, maxAttempts, request.transitionState)
-
-            val connected = runAttempt(
-                request.copy(
-                    preparation = if (attempt > 1) ConnectionPreparation.Full else request.preparation,
-                ),
-            )
-            if (connected) {
-                onConnected()
-                return true
-            }
-
-            failure = currentFailure()
-            if (!failure.retryable || attempt == maxAttempts) break
-            waitBeforeRetry(retryDelayMs)
-            attempt++
+        if (runAttempt(request)) {
+            onConnected()
+            return true
         }
 
-        onExhausted(failure)
+        onExhausted(currentFailure())
         return false
     }
 }

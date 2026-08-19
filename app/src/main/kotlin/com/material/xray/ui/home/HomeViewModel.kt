@@ -664,7 +664,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private companion object {
-        const val MAX_CONCURRENT_LATENCY_TESTS = 10
+        const val MAX_CONCURRENT_LATENCY_TESTS = 25
     }
 }
 

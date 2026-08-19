@@ -82,7 +82,6 @@
     <string name="home_connection_progress_inspecting_saved_runtime">Проверка сохранённого состояния&#8230;</string>
     <string name="home_connection_progress_verifying_runtime">Проверка работающего ядра Xray&#8230;</string>
     <string name="home_connection_progress_restoring_control_api">Восстановление API управления Xray&#8230;</string>
-    <string name="home_connection_progress_waiting_for_network">Ожидание физической сети&#8230;</string>
     <string name="home_connection_progress_updating_network_route">Обновление маршрута физической сети&#8230;</string>
     <string name="home_connection_progress_updating_app_routing">Обновление маршрутизации приложений&#8230;</string>
     <string name="home_connection_interface_busy_detail">Выбранный интерфейс уже используется другим клиентом.\nВыберите «Перезапустить», чтобы остановить его и подключиться к выбранному серверу.</string>

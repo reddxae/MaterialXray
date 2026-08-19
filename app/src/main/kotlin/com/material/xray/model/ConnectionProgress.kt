@@ -15,7 +15,6 @@ internal enum class ConnectionProgress {
     InspectingSavedRuntime,
     VerifyingRuntime,
     RestoringControlApi,
-    WaitingForNetwork,
     UpdatingNetworkRoute,
     UpdatingAppRouting,
 }

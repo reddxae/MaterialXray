@@ -80,7 +80,6 @@
     <string name="home_connection_progress_inspecting_saved_runtime">Inspecting saved runtime&#8230;</string>
     <string name="home_connection_progress_verifying_runtime">Verifying running Xray core&#8230;</string>
     <string name="home_connection_progress_restoring_control_api">Restoring Xray control API&#8230;</string>
-    <string name="home_connection_progress_waiting_for_network">Waiting for physical network&#8230;</string>
     <string name="home_connection_progress_updating_network_route">Updating physical network route&#8230;</string>
     <string name="home_connection_progress_updating_app_routing">Updating app routing&#8230;</string>
     <string name="home_connection_interface_busy_detail">The selected interface is currently in use by another client.\nSelect &quot;Restart&quot; to shut it down and connect to the selected server.</string>

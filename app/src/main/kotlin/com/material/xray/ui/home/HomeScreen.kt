@@ -994,7 +994,6 @@ private fun connectionProgressText(progress: ConnectionProgress): String = when 
     ConnectionProgress.InspectingSavedRuntime -> stringResource(R.string.home_connection_progress_inspecting_saved_runtime)
     ConnectionProgress.VerifyingRuntime -> stringResource(R.string.home_connection_progress_verifying_runtime)
     ConnectionProgress.RestoringControlApi -> stringResource(R.string.home_connection_progress_restoring_control_api)
-    ConnectionProgress.WaitingForNetwork -> stringResource(R.string.home_connection_progress_waiting_for_network)
     ConnectionProgress.UpdatingNetworkRoute -> stringResource(R.string.home_connection_progress_updating_network_route)
     ConnectionProgress.UpdatingAppRouting -> stringResource(R.string.home_connection_progress_updating_app_routing)
 }

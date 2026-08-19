@@ -1271,7 +1271,6 @@ class XrayService : VpnService() {
         executeStep(
             ConnectionStep(
                 label = "Stabilize physical network route",
-                progress = ConnectionProgress.WaitingForNetwork,
                 isSuccessful = { it != NetworkRetargetRetryOutcome.Exhausted },
                 slowSuccessLogThresholdMs = SLOW_NETWORK_STABILIZATION_LOG_THRESHOLD_MS,
                 action = { retargetNetworkUntilStableOnce(reason) },

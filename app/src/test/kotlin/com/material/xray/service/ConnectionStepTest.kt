@@ -224,7 +224,7 @@ class ConnectionStepTest {
         executor.execute(
             ConnectionStep(
                 label = "Stabilize physical network route",
-                progress = ConnectionProgress.WaitingForNetwork,
+                progress = ConnectionProgress.UpdatingNetworkRoute,
                 slowSuccessLogThresholdMs = 500,
                 action = { now = 500 },
             ),
@@ -232,7 +232,7 @@ class ConnectionStepTest {
         executor.execute(
             ConnectionStep(
                 label = "Stabilize physical network route",
-                progress = ConnectionProgress.WaitingForNetwork,
+                progress = ConnectionProgress.UpdatingNetworkRoute,
                 slowSuccessLogThresholdMs = 500,
                 action = { now = 1_001 },
             ),
@@ -241,9 +241,9 @@ class ConnectionStepTest {
         assertEquals(listOf("Stabilize physical network route took 501 ms"), logs)
         assertEquals(
             listOf(
-                "start:WaitingForNetwork",
+                "start:UpdatingNetworkRoute",
                 "finish:1",
-                "start:WaitingForNetwork",
+                "start:UpdatingNetworkRoute",
                 "finish:1",
             ),
             progress,

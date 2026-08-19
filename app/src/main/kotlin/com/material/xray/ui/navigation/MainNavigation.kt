@@ -6,9 +6,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -20,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -48,6 +51,9 @@ fun MainNavigation() {
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route
     var previousRoute by remember { mutableStateOf<String?>(currentRoute) }
+    val bottomInset = with(LocalDensity.current) {
+        NavigationBarDefaults.windowInsets.getBottom(this).toDp()
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -93,7 +99,7 @@ fun MainNavigation() {
                         Screen.entries.filterNot { it == Screen.Logs }
                     }
                 }
-                NavigationBar {
+                NavigationBar(modifier = Modifier.height(CompactNavigationBarHeight + bottomInset)) {
                     navigationScreens.forEach { screen ->
                         val label = stringResource(screen.labelRes)
                         NavigationBarItem(
@@ -135,3 +141,5 @@ fun MainNavigation() {
         }
     }
 }
+
+private val CompactNavigationBarHeight = 68.dp

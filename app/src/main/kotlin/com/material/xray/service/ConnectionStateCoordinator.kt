@@ -1,6 +1,7 @@
 package com.material.xray.service
 
 import com.material.xray.model.ActiveBalancerSelection
+import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,6 +16,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 class ConnectionStateCoordinator @Inject constructor() {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val state: StateFlow<ConnectionState> = _state
+    private val _connectionProgress = MutableStateFlow<ConnectionProgress?>(null)
+    internal val connectionProgress: StateFlow<ConnectionProgress?> = _connectionProgress.asStateFlow()
 
     /**
      * One-shot events for the single UI consumer. A conflated channel keeps the latest event
@@ -48,6 +51,11 @@ class ConnectionStateCoordinator @Inject constructor() {
     fun markDisconnected() = commit(ConnectionState.Disconnected)
 
     fun markError(message: String, retryable: Boolean = true) = commit(ConnectionState.Error(message, retryable))
+
+    @Synchronized
+    internal fun updateConnectionProgress(progress: ConnectionProgress) {
+        if (_state.value.keepsConnectionProgress()) _connectionProgress.value = progress
+    }
 
     fun restoreConnected(state: ConnectionState.Connected) = commit(state)
 
@@ -97,6 +105,7 @@ class ConnectionStateCoordinator @Inject constructor() {
     @Synchronized
     private fun commit(newState: ConnectionState) {
         _state.value = newState
+        if (!newState.keepsConnectionProgress()) _connectionProgress.value = null
         if (newState !is ConnectionState.Connected) {
             _activeBalancerSelection.value = null
         }
@@ -111,6 +120,10 @@ class ConnectionStateCoordinator @Inject constructor() {
         _events.send(event)
     }
 }
+
+private fun ConnectionState.keepsConnectionProgress(): Boolean = this == ConnectionState.Connecting ||
+    this == ConnectionState.ApplyingRoutingChanges ||
+    this == ConnectionState.UpdatingRoutingData
 
 /**
  * Reports whether this state claims a runtime that is either established or being brought up, and

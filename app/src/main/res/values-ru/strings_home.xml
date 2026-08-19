@@ -68,6 +68,16 @@
     <string name="home_connection_disconnecting">Отключение&#8230;</string>
     <string name="home_connection_error">Ошибка</string>
     <string name="home_connection_disconnected">Отключено</string>
+    <string name="home_connection_progress_preparing_runtime">Подготовка среды&#8230;</string>
+    <string name="home_connection_progress_preparing_core">Подготовка ядра Xray&#8230;</string>
+    <string name="home_connection_progress_updating_routing_data">Проверка данных маршрутизации&#8230;</string>
+    <string name="home_connection_progress_detecting_network_route">Определение сетевого маршрута&#8230;</string>
+    <string name="home_connection_progress_resolving_entry_server">Разрешение адреса входного сервера&#8230;</string>
+    <string name="home_connection_progress_generating_configuration">Создание конфигурации&#8230;</string>
+    <string name="home_connection_progress_starting_core">Запуск ядра Xray&#8230;</string>
+    <string name="home_connection_progress_configuring_tunnel">Настройка туннельных интерфейсов&#8230;</string>
+    <string name="home_connection_progress_configuring_routing">Настройка таблиц маршрутизации&#8230;</string>
+    <string name="home_connection_progress_waiting_for_core">Ожидание готовности ядра Xray&#8230;</string>
     <string name="home_connection_interface_busy_detail">Выбранный интерфейс уже используется другим клиентом.\nВыберите «Перезапустить», чтобы остановить его и подключиться к выбранному серверу.</string>
     <string name="home_connection_restart_required_detail">Клиент был перезапущен. Выберите «Перезапустить», чтобы восстановить управление.</string>
 

@@ -128,6 +128,7 @@ class HomeViewModel @Inject constructor(
     private val latencySemaphore = Semaphore(MAX_CONCURRENT_LATENCY_TESTS)
 
     val connectionState: StateFlow<ConnectionState> = connectionStateCoordinator.state
+    internal val connectionProgress = connectionStateCoordinator.connectionProgress
     val alwaysOnVpn: StateFlow<Boolean> = alwaysOnVpnState.active
     val connectionEvents: Flow<ConnectionEvent> = connectionStateCoordinator.events
     private val _uiEvents = Channel<HomeUiEvent>(Channel.BUFFERED)
@@ -178,6 +179,9 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), homeData.value?.selectedServerId ?: -1L)
 
     val useRootService: StateFlow<Boolean> = settingsRepo.useRootService
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val showAdvancedOptions: StateFlow<Boolean> = settingsRepo.showAdvancedOptions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val defaultPingMethod: StateFlow<PingMethod> = settingsRepo.defaultPingMethod

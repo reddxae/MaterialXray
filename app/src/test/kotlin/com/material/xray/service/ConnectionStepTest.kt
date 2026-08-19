@@ -1,5 +1,6 @@
 package com.material.xray.service
 
+import com.material.xray.model.ConnectionProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -10,10 +11,12 @@ class ConnectionStepTest {
     @Test
     fun `retryable step reverts only failed attempts`() = runTest {
         val order = mutableListOf<String>()
+        val progress = mutableListOf<ConnectionProgress>()
         val results = mutableListOf(false, false, true)
         val executor = ConnectionStepExecutor(
             elapsedRealtime = { 0 },
             log = {},
+            onProgress = progress::add,
             waitBeforeRetry = { order += "wait" },
         )
         val revert = ConnectionStep(
@@ -22,6 +25,7 @@ class ConnectionStepTest {
         )
         val step = ConnectionStep(
             label = "operation",
+            progress = ConnectionProgress.ResolvingEntryServer,
             retryable = true,
             maxRetries = 2,
             retryDelayMs = 1,
@@ -38,12 +42,13 @@ class ConnectionStepTest {
             listOf("attempt", "revert", "wait", "attempt", "revert", "wait", "attempt"),
             order,
         )
+        assertEquals(List(3) { ConnectionProgress.ResolvingEntryServer }, progress)
     }
 
     @Test
     fun `cancelled step reverts before propagating cancellation`() = runTest {
         var reverted = false
-        val executor = ConnectionStepExecutor(elapsedRealtime = { 0 }, log = {})
+        val executor = ConnectionStepExecutor(elapsedRealtime = { 0 }, log = {}, onProgress = {})
         val step = ConnectionStep(
             label = "operation",
             revertAction = ConnectionStep(
@@ -61,6 +66,6 @@ class ConnectionStepTest {
         }
 
         assertTrue(reverted)
-        assertEquals("cancelled", cancellation?.message)
+        assertEquals("cancelled", cancellation.message)
     }
 }

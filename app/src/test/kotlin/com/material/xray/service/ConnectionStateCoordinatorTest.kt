@@ -1,5 +1,6 @@
 package com.material.xray.service
 
+import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.collect
@@ -113,6 +114,20 @@ class ConnectionStateCoordinatorTest {
         coordinator.markRuntimeStopped()
 
         assertEquals(ConnectionState.Error("boom", retryable = false), coordinator.state.value)
+    }
+
+    @Test
+    fun `connection progress is visible only during a transition`() {
+        val coordinator = ConnectionStateCoordinator()
+        coordinator.updateConnectionProgress(ConnectionProgress.PreparingRuntime)
+        assertNull(coordinator.connectionProgress.value)
+
+        coordinator.startConnection(ConnectionState.Connecting)
+        coordinator.updateConnectionProgress(ConnectionProgress.ResolvingEntryServer)
+        assertEquals(ConnectionProgress.ResolvingEntryServer, coordinator.connectionProgress.value)
+
+        coordinator.markError("boom")
+        assertNull(coordinator.connectionProgress.value)
     }
 
     @Test

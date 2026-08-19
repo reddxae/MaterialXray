@@ -1,5 +1,6 @@
 package com.material.xray.service
 
+import com.material.xray.model.ConnectionProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -7,6 +8,7 @@ import kotlinx.coroutines.withContext
 
 internal data class ConnectionStep<T>(
     val label: String,
+    val progress: ConnectionProgress? = null,
     val retryable: Boolean = false,
     val maxRetries: Int = 0,
     val retryDelayMs: Long = 0,
@@ -24,12 +26,14 @@ internal data class ConnectionStep<T>(
 internal class ConnectionStepExecutor(
     private val elapsedRealtime: () -> Long,
     private val log: (String) -> Unit,
+    private val onProgress: (ConnectionProgress) -> Unit,
     private val waitBeforeRetry: suspend (Long) -> Unit = { delay(it) },
 ) {
     @Suppress("TooGenericExceptionCaught")
     suspend fun <T> execute(step: ConnectionStep<T>): T {
         var retries = 0
         while (true) {
+            step.progress?.let(onProgress)
             val outcome: ConnectionStepOutcome<T> = try {
                 ConnectionStepOutcome.Value(timed(step))
             } catch (error: CancellationException) {

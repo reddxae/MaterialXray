@@ -66,6 +66,16 @@
     <string name="home_connection_disconnecting">Disconnecting&#8230;</string>
     <string name="home_connection_error">Error</string>
     <string name="home_connection_disconnected">Disconnected</string>
+    <string name="home_connection_progress_preparing_runtime">Preparing runtime&#8230;</string>
+    <string name="home_connection_progress_preparing_core">Preparing Xray core&#8230;</string>
+    <string name="home_connection_progress_updating_routing_data">Checking routing data&#8230;</string>
+    <string name="home_connection_progress_detecting_network_route">Detecting network route&#8230;</string>
+    <string name="home_connection_progress_resolving_entry_server">Resolving entry server&#8230;</string>
+    <string name="home_connection_progress_generating_configuration">Generating configuration&#8230;</string>
+    <string name="home_connection_progress_starting_core">Starting Xray core&#8230;</string>
+    <string name="home_connection_progress_configuring_tunnel">Configuring tunnel interfaces&#8230;</string>
+    <string name="home_connection_progress_configuring_routing">Configuring routing tables&#8230;</string>
+    <string name="home_connection_progress_waiting_for_core">Waiting for Xray core&#8230;</string>
     <string name="home_connection_interface_busy_detail">The selected interface is currently in use by another client.\nSelect &quot;Restart&quot; to shut it down and connect to the selected server.</string>
     <string name="home_connection_restart_required_detail">The client has been relaunched. Select Restart to regain control.</string>
 

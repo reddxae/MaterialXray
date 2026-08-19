@@ -124,6 +124,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.data.repository.toSubscriptionRouting
 import com.material.xray.model.AppUpdate
+import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
@@ -276,6 +277,8 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             item {
                 ConnectionPanel(
                     connectionState = uiState.connectionState,
+                    connectionProgress = uiState.connectionProgress,
+                    showProgressDetails = uiState.showAdvancedOptions,
                     selectedServerName = connectionUiState.displayServerName,
                     activeBalancerServer = uiState.activeBalancerServer,
                     buttonColor = connectionUiState.buttonColor,
@@ -719,11 +722,13 @@ private fun InstallPermissionRationaleDialogHost(
 @Composable
 private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val connectionProgress by viewModel.connectionProgress.collectAsStateWithLifecycle()
     val alwaysOnVpn by viewModel.alwaysOnVpn.collectAsStateWithLifecycle()
     val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
     val activeBalancerServer by viewModel.activeBalancerServer.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
     val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
+    val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
@@ -737,11 +742,13 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
 
     return HomeUiState(
         connectionState = connectionState,
+        connectionProgress = connectionProgress,
         alwaysOnVpn = alwaysOnVpn,
         selectedServer = selectedServer,
         activeBalancerServer = activeBalancerServer,
         selectedServerId = selectedServerId,
         useRootService = useRootService,
+        showAdvancedOptions = showAdvancedOptions,
         subscriptions = subscriptions,
         serversBySubscription = serversBySubscription,
         isRefreshing = isRefreshing,
@@ -787,11 +794,13 @@ private fun buildConnectionUiState(
 
 private data class HomeUiState(
     val connectionState: ConnectionState,
+    val connectionProgress: ConnectionProgress?,
     val alwaysOnVpn: Boolean,
     val selectedServer: ServerConfig?,
     val activeBalancerServer: ActiveBalancerServerState?,
     val selectedServerId: Long,
     val useRootService: Boolean,
+    val showAdvancedOptions: Boolean,
     /** `null` until the home data snapshot has loaded; distinct from a loaded empty list. */
     val subscriptions: List<SubscriptionEntity>?,
     val serversBySubscription: Map<Long, List<ServerListItem>>,
@@ -818,6 +827,8 @@ private data class ConnectionUiState(
 @Composable
 private fun ConnectionPanel(
     connectionState: ConnectionState,
+    connectionProgress: ConnectionProgress?,
+    showProgressDetails: Boolean,
     selectedServerName: String,
     activeBalancerServer: ActiveBalancerServerState?,
     buttonColor: Color,
@@ -886,8 +897,16 @@ private fun ConnectionPanel(
             modifier = Modifier.height(with(LocalDensity.current) { MaterialTheme.typography.bodySmall.lineHeight.toDp() }),
             contentAlignment = Alignment.Center,
         ) {
-            (connectionState as? ConnectionState.Connected)?.let { connectedState ->
-                CoreUptime(startTime = connectedState.startTime)
+            when {
+                connectionState is ConnectionState.Connected -> CoreUptime(startTime = connectionState.startTime)
+                showProgressDetails && isTransitioning && connectionProgress != null -> Text(
+                    text = connectionProgressText(connectionProgress),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
         }
 
@@ -957,6 +976,20 @@ private fun ConnectionPanel(
 
         Spacer(modifier = Modifier.height(10.dp))
     }
+}
+
+@Composable
+private fun connectionProgressText(progress: ConnectionProgress): String = when (progress) {
+    ConnectionProgress.PreparingRuntime -> stringResource(R.string.home_connection_progress_preparing_runtime)
+    ConnectionProgress.PreparingCore -> stringResource(R.string.home_connection_progress_preparing_core)
+    ConnectionProgress.UpdatingRoutingData -> stringResource(R.string.home_connection_progress_updating_routing_data)
+    ConnectionProgress.DetectingNetworkRoute -> stringResource(R.string.home_connection_progress_detecting_network_route)
+    ConnectionProgress.ResolvingEntryServer -> stringResource(R.string.home_connection_progress_resolving_entry_server)
+    ConnectionProgress.GeneratingConfiguration -> stringResource(R.string.home_connection_progress_generating_configuration)
+    ConnectionProgress.StartingCore -> stringResource(R.string.home_connection_progress_starting_core)
+    ConnectionProgress.ConfiguringTunnel -> stringResource(R.string.home_connection_progress_configuring_tunnel)
+    ConnectionProgress.ConfiguringRouting -> stringResource(R.string.home_connection_progress_configuring_routing)
+    ConnectionProgress.WaitingForCore -> stringResource(R.string.home_connection_progress_waiting_for_core)
 }
 
 @Composable

@@ -349,7 +349,8 @@ class ConnectionManagerTest {
 
         assertEquals(1, harness.cleanup.cleanCalls)
         assertEquals(1, harness.apiClients.statsCloseCalls)
-        assertFalse(harness.stateCoordinator.state.value is ConnectionState.Error)
+        assertEquals(ConnectionState.Disconnected, harness.stateCoordinator.state.value)
+        assertNull(harness.stateCoordinator.connectionProgress.value)
     }
 
     @Test

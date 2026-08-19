@@ -16,6 +16,11 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateBounds
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -86,6 +91,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -103,6 +110,7 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1786,7 +1794,7 @@ private fun LatencyBadgeContent(
     val tcpingLatencyMs = latency.tcpingLatencyMs
     val httpingLatencyMs = latency.httpingLatencyMs
     if (latency.latencyMs == LATENCY_TESTING) {
-        Text(
+        ShimmeringText(
             text = stringResource(R.string.home_latency_testing),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             color = color,
@@ -1818,6 +1826,39 @@ private fun LatencyBadgeContent(
             style = MaterialTheme.typography.labelMedium,
         )
     }
+}
+
+@Composable
+private fun ShimmeringText(
+    text: String,
+    color: Color,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "latency-shimmer")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = LATENCY_SHIMMER_DURATION_MS, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "latency-shimmer-progress",
+    )
+    val shimmerWidth = with(LocalDensity.current) { 32.dp.toPx() }
+    val travelDistance = with(LocalDensity.current) { 120.dp.toPx() }
+    val startX = -shimmerWidth + progress * (travelDistance + shimmerWidth)
+    val brush = Brush.linearGradient(
+        colors = listOf(color.copy(alpha = 0.45f), color, color.copy(alpha = 0.45f)),
+        start = Offset(startX, 0f),
+        end = Offset(startX + shimmerWidth, 0f),
+    )
+
+    Text(
+        text = text,
+        modifier = modifier,
+        style = style.copy(brush = brush),
+    )
 }
 
 @Composable
@@ -1862,6 +1903,8 @@ internal fun latencyShowsError(latency: ServerLatencyState): Boolean {
 private object ServerRowDefaults {
     val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
 }
+
+private const val LATENCY_SHIMMER_DURATION_MS = 850
 
 @Composable
 private fun CompactSelectionDot(isSelected: Boolean) {

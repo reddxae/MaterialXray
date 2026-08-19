@@ -133,6 +133,7 @@ class XrayService : VpnService() {
     private var notificationMetricsJob: Job? = null
     private var notificationMetricsIntervalMs = 0
     private var lastNotificationContent: NotificationContent? = null
+    private var terminalFailureNotificationShown = false
     private var screenInteractive = true
     private var screenStateReceiverRegistered = false
     private val screenStateReceiver = object : BroadcastReceiver() {
@@ -474,6 +475,7 @@ class XrayService : VpnService() {
         preparation: ConnectionPreparation = ConnectionPreparation.Full,
     ) {
         startupDiagnosticsLogger.logIfMissing()
+        terminalFailureNotificationShown = false
         getSystemService(NotificationManager::class.java).cancel(FAILURE_NOTIFICATION_ID)
         connectionLifecycle.connect(
             ConnectionRequest(
@@ -1573,6 +1575,12 @@ class XrayService : VpnService() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             return
         }
+        if (state is ConnectionState.Error && terminalFailureNotificationShown) {
+            lastNotificationContent = null
+            getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            return
+        }
 
         val title = when (state) {
             is ConnectionState.Connected -> state.serverName
@@ -1605,6 +1613,11 @@ class XrayService : VpnService() {
     }
 
     private fun showConnectionFailureNotification(message: String) {
+        terminalFailureNotificationShown = true
+        lastNotificationContent = null
+        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+
         val openAppIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent()
         val openIntent = PendingIntent.getActivity(
             this,
@@ -1750,6 +1763,7 @@ class XrayService : VpnService() {
     private fun formatInteger(value: Long): String = NumberFormat.getIntegerInstance(forAppLanguage().resources.configuration.locales[0]).format(value)
 
     private fun startAsForeground(title: String, text: String, showDisconnectAction: Boolean) {
+        terminalFailureNotificationShown = false
         lastNotificationContent = NotificationContent(title, text, showDisconnectAction)
         startForeground(NOTIFICATION_ID, buildNotification(title, text, showDisconnectAction))
     }

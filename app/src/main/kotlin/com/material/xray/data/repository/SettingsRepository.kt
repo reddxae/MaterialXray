@@ -56,6 +56,7 @@ data class SettingsSnapshot(
     val geositeUrl: String,
     val latencyCheckUrl: String,
     val sortOutboundsByLatency: Boolean,
+    val showBothLatencyResults: Boolean,
     val appUpdateChecksEnabled: Boolean,
 )
 
@@ -91,6 +92,7 @@ class SettingsRepository @Inject constructor(
         val LATENCY_CHECK_URL = stringPreferencesKey("latency_check_url")
         val DEFAULT_PING_METHOD = stringPreferencesKey("default_ping_method")
         val SORT_OUTBOUNDS_BY_LATENCY = booleanPreferencesKey("sort_outbounds_by_latency")
+        val SHOW_BOTH_LATENCY_RESULTS = booleanPreferencesKey("show_both_latency_results")
         val XRAY_LOG_LEVEL = stringPreferencesKey("xray_log_level")
         val LAST_XRAY_LOG_LEVEL = stringPreferencesKey("last_xray_log_level")
         val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
@@ -201,6 +203,9 @@ class SettingsRepository @Inject constructor(
     val sortOutboundsByLatency: Flow<Boolean> = store.data.map { prefs ->
         prefs[SORT_OUTBOUNDS_BY_LATENCY] ?: false
     }
+    val showBothLatencyResults: Flow<Boolean> = store.data.map { prefs ->
+        prefs[SHOW_BOTH_LATENCY_RESULTS] ?: false
+    }
     val routingRules: Flow<List<RoutingRule>> = store.data.map { prefs ->
         decodeRoutingRules(
             rulesEncoded = prefs[ROUTING_RULES],
@@ -288,6 +293,7 @@ class SettingsRepository @Inject constructor(
                 ?: DEFAULT_GEOSITE_URL,
             latencyCheckUrl = prefs[LATENCY_CHECK_URL] ?: DEFAULT_LATENCY_CHECK_URL,
             sortOutboundsByLatency = prefs[SORT_OUTBOUNDS_BY_LATENCY] ?: false,
+            showBothLatencyResults = prefs[SHOW_BOTH_LATENCY_RESULTS] ?: false,
             appUpdateChecksEnabled = prefs[APP_UPDATE_CHECKS_ENABLED] ?: true,
         )
     }
@@ -439,6 +445,9 @@ class SettingsRepository @Inject constructor(
     suspend fun setSortOutboundsByLatency(enabled: Boolean) = store.edit { prefs ->
         prefs[SORT_OUTBOUNDS_BY_LATENCY] = enabled
     }
+    suspend fun setShowBothLatencyResults(enabled: Boolean) = store.edit { prefs ->
+        prefs[SHOW_BOTH_LATENCY_RESULTS] = enabled
+    }
     suspend fun setRoutingRule(rule: RoutingRule) = store.edit { prefs ->
         val updatedRules = decodeRoutingRules(
             rulesEncoded = prefs[ROUTING_RULES],
@@ -555,6 +564,9 @@ class SettingsRepository @Inject constructor(
             map["latency_check_url"]?.takeIf { it.isNotBlank() }?.let { prefs[LATENCY_CHECK_URL] = it }
             map["default_ping_method"]?.let { prefs[DEFAULT_PING_METHOD] = PingMethod.fromValue(it).value }
             map["sort_outbounds_by_latency"]?.toBooleanStrictOrNull()?.let { prefs[SORT_OUTBOUNDS_BY_LATENCY] = it }
+            map["show_both_latency_results"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[SHOW_BOTH_LATENCY_RESULTS] = it }
             map["routing_rules"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULES] = it }
             map["routing_rules_version"]?.toIntOrNull()?.let { prefs[ROUTING_RULES_VERSION] = it }
             map["routing_rule_states"]?.takeIf { it.isNotBlank() }?.let { prefs[ROUTING_RULE_STATES] = it }

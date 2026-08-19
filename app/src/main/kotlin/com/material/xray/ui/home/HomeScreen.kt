@@ -49,6 +49,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.NetworkPing
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -85,6 +87,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.LookaheadScope
 import androidx.compose.ui.platform.LocalContext
@@ -1720,21 +1723,10 @@ private fun ServerRow(
     contentPadding: PaddingValues = ServerRowDefaults.contentPadding,
 ) {
     val latency = server.latency
-    val latencyMs = latency?.latencyMs
-    val latencyText = latency?.let {
-        when {
-            it.latencyMs == LATENCY_TESTING -> stringResource(R.string.home_latency_testing)
-            it.latencyMs < 0 -> stringResource(R.string.home_latency_not_available)
-            else -> stringResource(R.string.home_latency_milliseconds, it.latencyMs)
-        }
-    }
-    val latencyColor = when {
-        latencyMs == null -> MaterialTheme.colorScheme.onSurfaceVariant
-        latencyMs == LATENCY_TESTING -> MaterialTheme.colorScheme.onSurfaceVariant
-        latencyMs < 0 -> MaterialTheme.colorScheme.error
-        latencyMs < 200 -> MaterialTheme.colorScheme.primary
-        latencyMs < 500 -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.error
+    val latencyColor = if (latency?.let(::latencyShowsError) == true) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Surface(
@@ -1770,21 +1762,100 @@ private fun ServerRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (latencyText != null) {
+            if (latency != null) {
                 Surface(
                     shape = MaterialTheme.shapes.small,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     color = MaterialTheme.colorScheme.surface,
                 ) {
-                    Text(
-                        text = latencyText,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    LatencyBadgeContent(
+                        latency = latency,
                         color = latencyColor,
-                        style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LatencyBadgeContent(
+    latency: ServerLatencyState,
+    color: Color,
+) {
+    val tcpingLatencyMs = latency.tcpingLatencyMs
+    val httpingLatencyMs = latency.httpingLatencyMs
+    if (latency.latencyMs == LATENCY_TESTING) {
+        Text(
+            text = stringResource(R.string.home_latency_testing),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = color,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    } else if (tcpingLatencyMs != null && httpingLatencyMs != null) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(1.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LatencyValue(tcpingLatencyMs, PingMethod.Tcping, Icons.Outlined.NetworkPing, color)
+            Text(
+                text = ",",
+                color = color,
+                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = (-0.25).sp),
+            )
+            LatencyValue(httpingLatencyMs, PingMethod.Httping, Icons.Outlined.Dns, color)
+        }
+    } else {
+        Text(
+            text = if (latency.latencyMs < 0) {
+                stringResource(R.string.home_latency_not_available)
+            } else {
+                stringResource(R.string.home_latency_milliseconds, latency.latencyMs)
+            },
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = color,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
+
+@Composable
+private fun LatencyValue(
+    latencyMs: Int,
+    method: PingMethod?,
+    icon: ImageVector,
+    color: Color,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (latencyMs < 0) {
+                stringResource(R.string.home_latency_not_available)
+            } else {
+                stringResource(R.string.home_latency_milliseconds_compact, latencyMs)
+            },
+            color = color,
+            style = MaterialTheme.typography.labelMedium.copy(letterSpacing = (-0.25).sp),
+        )
+        Icon(
+            imageVector = icon,
+            contentDescription = method?.let { stringResource(it.labelResource) },
+            modifier = Modifier.size(13.dp),
+            tint = color,
+        )
+    }
+}
+
+internal fun latencyShowsError(latency: ServerLatencyState): Boolean {
+    val httpingLatencyMs = latency.httpingLatencyMs
+    if (latency.latencyMs == LATENCY_TESTING) return false
+    return if (latency.tcpingLatencyMs != null && httpingLatencyMs != null) {
+        httpingLatencyMs < 0
+    } else {
+        latency.latencyMs < 0
     }
 }
 

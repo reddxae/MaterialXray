@@ -111,6 +111,7 @@
     <string name="home_latency_testing">Testing&#8230;</string>
     <string name="home_latency_not_available">N/A</string>
     <string name="home_latency_milliseconds">%1$d ms</string>
+    <string name="home_latency_milliseconds_compact">%1$dms</string>
     <string name="home_zero_gigabytes">0 GB</string>
 
     <string name="home_edit_subscription_title">Edit subscription</string>

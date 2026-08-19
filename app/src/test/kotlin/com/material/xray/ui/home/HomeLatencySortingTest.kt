@@ -1,5 +1,6 @@
 package com.material.xray.ui.home
 
+import com.material.xray.model.PingMethod
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -19,6 +20,53 @@ class HomeLatencySortingTest {
         assertEquals(
             listOf(3L, 4L, 1L, 2L, 5L, 6L),
             sortedServerIdsByLatency(serverIds, latencies),
+        )
+    }
+
+    @Test
+    fun `uses only the selected latency method when dual results are disabled`() {
+        assertEquals(
+            listOf(PingMethod.Httping),
+            latencyMethods(primaryMethod = PingMethod.Httping, showBoth = false),
+        )
+    }
+
+    @Test
+    fun `uses tcping then httping when dual results are enabled`() {
+        assertEquals(
+            listOf(PingMethod.Tcping, PingMethod.Httping),
+            latencyMethods(primaryMethod = PingMethod.Httping, showBoth = true),
+        )
+    }
+
+    @Test
+    fun `shows an error when the only latency result is unavailable`() {
+        assertEquals(true, latencyShowsError(ServerLatencyState(latencyMs = -1)))
+        assertEquals(false, latencyShowsError(ServerLatencyState(latencyMs = 34)))
+        assertEquals(false, latencyShowsError(ServerLatencyState(latencyMs = LATENCY_TESTING)))
+    }
+
+    @Test
+    fun `uses only httping availability for the dual result error`() {
+        assertEquals(
+            false,
+            latencyShowsError(
+                ServerLatencyState(
+                    latencyMs = 132,
+                    tcpingLatencyMs = -1,
+                    httpingLatencyMs = 132,
+                ),
+            ),
+        )
+        assertEquals(
+            true,
+            latencyShowsError(
+                ServerLatencyState(
+                    latencyMs = -1,
+                    tcpingLatencyMs = 34,
+                    httpingLatencyMs = -1,
+                ),
+            ),
         )
     }
 }

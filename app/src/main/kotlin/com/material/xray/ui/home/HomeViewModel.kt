@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.R
 import com.material.xray.core.locale.localizedString
-import com.material.xray.core.network.LatencyProbeResult
 import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
@@ -82,6 +81,8 @@ data class ServerListItem(
 data class ServerLatencyState(
     val latencyMs: Int,
     val method: PingMethod? = null,
+    val tcpingLatencyMs: Int? = null,
+    val httpingLatencyMs: Int? = null,
 )
 
 data class ActiveBalancerServerState(
@@ -186,6 +187,8 @@ class HomeViewModel @Inject constructor(
 
     val defaultPingMethod: StateFlow<PingMethod> = settingsRepo.defaultPingMethod
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PingMethod.default)
+    private val showBothLatencyResults: StateFlow<Boolean> = settingsRepo.showBothLatencyResults
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepo.routingPolicyControl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
@@ -510,6 +513,7 @@ class HomeViewModel @Inject constructor(
         val previouslyActiveServerIds = activeLatencyServerIds
         latencyJob?.cancel()
         val pingMethod = defaultPingMethod.value
+        val pingMethods = latencyMethods(pingMethod, showBothLatencyResults.value)
         val targetServers = servers.distinctBy { it.id }
         val targetServerIds = targetServers.map { it.id }.toSet()
         val canceledOnlyServerIds = previouslyActiveServerIds - targetServerIds
@@ -517,7 +521,10 @@ class HomeViewModel @Inject constructor(
 
         latencyByServerId.update { current ->
             (current - canceledOnlyServerIds) + targetServers.associate { server ->
-                server.id to ServerLatencyState(LATENCY_TESTING, method = pingMethod)
+                server.id to latencyState(
+                    primaryMethod = pingMethod,
+                    latencyByMethod = pingMethods.associateWith { LATENCY_TESTING },
+                )
             }
         }
 
@@ -530,7 +537,8 @@ class HomeViewModel @Inject constructor(
             runLatencyProbes(
                 runId = runId,
                 servers = targetServers,
-                method = pingMethod,
+                primaryMethod = pingMethod,
+                methods = pingMethods,
                 sortDuringTest = sortDuringTest && settingsRepo.sortOutboundsByLatency.first(),
             )
         }
@@ -539,11 +547,12 @@ class HomeViewModel @Inject constructor(
     private suspend fun runLatencyProbes(
         runId: Long,
         servers: List<ServerEntity>,
-        method: PingMethod,
+        primaryMethod: PingMethod,
+        methods: List<PingMethod>,
         sortDuringTest: Boolean,
     ) = supervisorScope {
         val probeJobs = servers.map { server ->
-            launch { runLatencyProbe(runId, server, method) }
+            launch { runLatencyProbe(runId, server, primaryMethod, methods) }
         }
 
         probeJobs.joinAll()
@@ -557,14 +566,19 @@ class HomeViewModel @Inject constructor(
         )
     }
 
-    private suspend fun runLatencyProbe(runId: Long, server: ServerEntity, method: PingMethod) {
+    private suspend fun runLatencyProbe(
+        runId: Long,
+        server: ServerEntity,
+        primaryMethod: PingMethod,
+        methods: List<PingMethod>,
+    ) {
         try {
             val latency = try {
-                latencySemaphore.withPermit { measureLatency(server, method) }
+                latencySemaphore.withPermit { measureLatency(server, primaryMethod, methods) }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                ServerLatencyState(latencyMs = -1, method = method)
+                latencyState(primaryMethod, methods.associateWith { -1 })
             }
 
             if (latencyRunId == runId) {
@@ -577,23 +591,34 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private suspend fun measureLatency(server: ServerEntity, method: PingMethod): ServerLatencyState {
+    private suspend fun measureLatency(
+        server: ServerEntity,
+        primaryMethod: PingMethod,
+        methods: List<PingMethod>,
+    ): ServerLatencyState {
         val config = runCatching { serverRepo.parseConfig(server) }.getOrNull()
-            ?: return ServerLatencyState(latencyMs = -1, method = method)
-        return serverLatencyTester.measure(
-            server = config,
-            method = method,
-            probeUrl = settingsRepo.latencyCheckUrl.first(),
-            dnsServers = settingsRepo.dnsServers.first(),
-            domesticDnsServers = settingsRepo.domesticDnsServers.first(),
-            allowIpv6 = settingsRepo.allowIpv6.first(),
-        ).toUiState()
+            ?: return latencyState(primaryMethod, methods.associateWith { -1 })
+        val probeUrl = settingsRepo.latencyCheckUrl.first()
+        val dnsServers = settingsRepo.dnsServers.first()
+        val domesticDnsServers = settingsRepo.domesticDnsServers.first()
+        val allowIpv6 = settingsRepo.allowIpv6.first()
+        val latencyByMethod = buildMap {
+            methods.forEach { method ->
+                put(
+                    method,
+                    serverLatencyTester.measure(
+                        server = config,
+                        method = method,
+                        probeUrl = probeUrl,
+                        dnsServers = dnsServers,
+                        domesticDnsServers = domesticDnsServers,
+                        allowIpv6 = allowIpv6,
+                    ).latencyMs,
+                )
+            }
+        }
+        return latencyState(primaryMethod, latencyByMethod)
     }
-
-    private fun LatencyProbeResult.toUiState(): ServerLatencyState = ServerLatencyState(
-        latencyMs = latencyMs,
-        method = method,
-    )
 
     private suspend fun withRefreshTracking(block: suspend () -> Unit) {
         refreshOperations.update { it + 1 }
@@ -676,4 +701,20 @@ internal fun sortedServerIdsByLatency(
         { serverId -> latencyByServerId[serverId]?.latencyMs?.let { it < 0 } ?: true },
         { serverId -> latencyByServerId[serverId]?.latencyMs?.takeIf { it >= 0 } ?: 0 },
     ),
+)
+
+internal fun latencyMethods(primaryMethod: PingMethod, showBoth: Boolean): List<PingMethod> = if (showBoth) {
+    listOf(PingMethod.Tcping, PingMethod.Httping)
+} else {
+    listOf(primaryMethod)
+}
+
+private fun latencyState(
+    primaryMethod: PingMethod,
+    latencyByMethod: Map<PingMethod, Int>,
+): ServerLatencyState = ServerLatencyState(
+    latencyMs = latencyByMethod[primaryMethod] ?: -1,
+    method = primaryMethod,
+    tcpingLatencyMs = latencyByMethod[PingMethod.Tcping],
+    httpingLatencyMs = latencyByMethod[PingMethod.Httping],
 )

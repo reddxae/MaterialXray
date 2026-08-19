@@ -16,6 +16,8 @@
     <string name="settings_domestic_dns_supporting_text">Comma-separated IP addresses or DNS endpoint URLs for direct domestic domains</string>
     <string name="settings_sort_outbounds_by_latency_title">Sort subscription servers by latency</string>
     <string name="settings_sort_outbounds_by_latency_description">List reachable servers from fastest to slowest and unavailable servers last</string>
+    <string name="settings_show_both_latency_results_title">Show both latency types</string>
+    <string name="settings_show_both_latency_results_description">Show the direct connection latency and real end-to-end latency</string>
     <string name="settings_xray_log_level_label">Xray Log Level</string>
     <string name="settings_xray_buffer_size_label">Xray buffer size</string>
     <string name="settings_xray_buffer_size_supporting_text">Per-request userspace buffer. Range: %1$d-%2$d KiB. Default: %3$d KiB.</string>

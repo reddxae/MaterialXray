@@ -3,6 +3,7 @@ package com.material.xray.service
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayState
+import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -142,7 +143,16 @@ internal class ActiveRoutingUpdater(
     private val processProbe: XrayProcessProbe,
     private val log: LogBuffer,
     private val elapsedRealtime: () -> Long,
+    onProgressStarted: (ConnectionProgress) -> Long = { 0L },
+    onProgressFinished: (Long) -> Unit = {},
 ) : ActiveRoutingController {
+    private val stepExecutor = ConnectionStepExecutor(
+        elapsedRealtime = elapsedRealtime,
+        log = { message -> log.append(LogSource.APP, message) },
+        onProgressStarted = onProgressStarted,
+        onProgressFinished = onProgressFinished,
+    )
+
     override suspend fun applyAppRoutingChanges(
         connectedState: ConnectionState.Connected,
         tunName: String,
@@ -180,34 +190,54 @@ internal class ActiveRoutingUpdater(
             return false
         }
 
-        val physicalRoute = timedStep("Physical route detection") {
-            tunGateway.detectPhysicalRoute(tunName)
-        }
+        val physicalRoute = stepExecutor.execute(
+            ConnectionStep(
+                "Fast physical route detection",
+                progress = null,
+                isSuccessful = { it != null },
+                reported = false,
+                action = { tunGateway.detectPhysicalRoute(tunName) },
+            ),
+        )
         if (physicalRoute == null) {
             log.append(LogSource.APP, "Fast app routing update skipped: could not detect physical network route")
             return false
         }
 
-        val mainTunSetup = timedStep("Main TUN check") {
-            tunGateway.configureTun(
-                tunName = tunName,
-                addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
-                ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR.takeIf { allowIpv6 },
-            ) { processProbe.isAlive(connectedState.corePid) }
-        }
+        val mainTunSetup = stepExecutor.execute(
+            ConnectionStep(
+                "Main TUN check",
+                ConnectionProgress.ConfiguringTunnel,
+                isSuccessful = { it.success },
+                action = {
+                    tunGateway.configureTun(
+                        tunName = tunName,
+                        addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
+                        ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR.takeIf { allowIpv6 },
+                    ) { processProbe.isAlive(connectedState.corePid) }
+                },
+            ),
+        )
         if (!mainTunSetup.success) {
             log.append(LogSource.APP, "Fast app routing update skipped: ${mainTunSetup.error ?: "main TUN $tunName is unavailable"}")
             return false
         }
 
         appRoutingPlan.tunRoutes.forEachIndexed { index, route ->
-            val appTunSetup = timedStep("App TUN check ${index + 1}") {
-                tunGateway.configureTun(
-                    tunName = route.tunName,
-                    addressCidr = TunManager.appTunAddressCidr(index + 1),
-                    ipv6AddressCidr = TunManager.appTunIpv6AddressCidr(index + 1).takeIf { allowIpv6 },
-                ) { processProbe.isAlive(connectedState.corePid) }
-            }
+            val appTunSetup = stepExecutor.execute(
+                ConnectionStep(
+                    "App TUN check ${index + 1}",
+                    ConnectionProgress.ConfiguringTunnel,
+                    isSuccessful = { it.success },
+                    action = {
+                        tunGateway.configureTun(
+                            tunName = route.tunName,
+                            addressCidr = TunManager.appTunAddressCidr(index + 1),
+                            ipv6AddressCidr = TunManager.appTunIpv6AddressCidr(index + 1).takeIf { allowIpv6 },
+                        ) { processProbe.isAlive(connectedState.corePid) }
+                    },
+                ),
+            )
             if (!appTunSetup.success) {
                 log.append(LogSource.APP, "Fast app routing update skipped: ${appTunSetup.error ?: "app TUN ${route.tunName} is unavailable"}")
                 return false
@@ -215,20 +245,27 @@ internal class ActiveRoutingUpdater(
         }
 
         val bypassTable = routeTable + 1
-        val routingResult = timedStep("IP routing update") {
-            tunGateway.applyRouting(
-                tunName = tunName,
-                fwmark = fwmark,
-                routeTable = routeTable,
-                bypassTable = bypassTable,
-                physicalRoute = physicalRoute,
-                allowIpv6 = allowIpv6,
-                bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
-                appTunRoutes = appRoutingPlan.tunRoutes,
-                managedAppRouteCount = persistedState.appProxyServerIds.size,
-                routeProfileIds = appRoutingPlan.routeProfileIds,
-            )
-        }
+        val routingResult = stepExecutor.execute(
+            ConnectionStep(
+                "IP routing update",
+                ConnectionProgress.UpdatingAppRouting,
+                isSuccessful = { it.success },
+                action = {
+                    tunGateway.applyRouting(
+                        tunName = tunName,
+                        fwmark = fwmark,
+                        routeTable = routeTable,
+                        bypassTable = bypassTable,
+                        physicalRoute = physicalRoute,
+                        allowIpv6 = allowIpv6,
+                        bypassUids = runtimeBypassUids(appRoutingPlan.directUids),
+                        appTunRoutes = appRoutingPlan.tunRoutes,
+                        managedAppRouteCount = persistedState.appProxyServerIds.size,
+                        routeProfileIds = appRoutingPlan.routeProfileIds,
+                    )
+                },
+            ),
+        )
         if (!routingResult.success) {
             log.append(LogSource.APP, "Fast app routing update skipped: ${routingResult.error ?: "unknown routing error"}")
             return false
@@ -269,9 +306,18 @@ internal class ActiveRoutingUpdater(
             return PhysicalRouteUpdateResult.RequiresReconnect
         }
 
-        val routingResult = tunGateway.replacePhysicalBypassRoute(
-            bypassTable = routeTable + 1,
-            physicalRoute = physicalRoute,
+        val routingResult = stepExecutor.execute(
+            ConnectionStep(
+                "Physical bypass route update",
+                ConnectionProgress.UpdatingNetworkRoute,
+                isSuccessful = { it.success },
+                action = {
+                    tunGateway.replacePhysicalBypassRoute(
+                        bypassTable = routeTable + 1,
+                        physicalRoute = physicalRoute,
+                    )
+                },
+            ),
         )
         if (!routingResult.success) {
             log.append(
@@ -316,14 +362,5 @@ internal class ActiveRoutingUpdater(
 
     private fun logRoutingPlanFailure(prefix: String, error: Throwable) {
         log.append(LogSource.APP, "$prefix: ${error.message ?: "could not build app routing plan"}")
-    }
-
-    private suspend fun <T> timedStep(label: String, block: suspend () -> T): T {
-        val startedAt = elapsedRealtime()
-        return try {
-            block()
-        } finally {
-            log.append(LogSource.APP, "$label took ${elapsedRealtime() - startedAt} ms")
-        }
     }
 }

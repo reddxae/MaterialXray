@@ -18,6 +18,8 @@ class ConnectionStateCoordinator @Inject constructor() {
     val state: StateFlow<ConnectionState> = _state
     private val _connectionProgress = MutableStateFlow<ConnectionProgress?>(null)
     internal val connectionProgress: StateFlow<ConnectionProgress?> = _connectionProgress.asStateFlow()
+    private val activeProgress = linkedMapOf<Long, ConnectionProgress>()
+    private var nextProgressToken = 0L
 
     /**
      * One-shot events for the single UI consumer. A conflated channel keeps the latest event
@@ -53,8 +55,17 @@ class ConnectionStateCoordinator @Inject constructor() {
     fun markError(message: String, retryable: Boolean = true) = commit(ConnectionState.Error(message, retryable))
 
     @Synchronized
-    internal fun updateConnectionProgress(progress: ConnectionProgress) {
-        if (_state.value.keepsConnectionProgress()) _connectionProgress.value = progress
+    internal fun beginConnectionProgress(progress: ConnectionProgress): Long {
+        val token = ++nextProgressToken
+        activeProgress[token] = progress
+        _connectionProgress.value = progress
+        return token
+    }
+
+    @Synchronized
+    internal fun endConnectionProgress(token: Long) {
+        if (activeProgress.remove(token) == null) return
+        _connectionProgress.value = activeProgress.values.lastOrNull()
     }
 
     fun restoreConnected(state: ConnectionState.Connected) = commit(state)
@@ -105,7 +116,10 @@ class ConnectionStateCoordinator @Inject constructor() {
     @Synchronized
     private fun commit(newState: ConnectionState) {
         _state.value = newState
-        if (!newState.keepsConnectionProgress()) _connectionProgress.value = null
+        if (!newState.keepsConnectionProgress()) {
+            activeProgress.clear()
+            _connectionProgress.value = null
+        }
         if (newState !is ConnectionState.Connected) {
             _activeBalancerSelection.value = null
         }
@@ -123,7 +137,8 @@ class ConnectionStateCoordinator @Inject constructor() {
 
 private fun ConnectionState.keepsConnectionProgress(): Boolean = this == ConnectionState.Connecting ||
     this == ConnectionState.ApplyingRoutingChanges ||
-    this == ConnectionState.UpdatingRoutingData
+    this == ConnectionState.UpdatingRoutingData ||
+    this == ConnectionState.Disconnecting
 
 /**
  * Reports whether this state claims a runtime that is either established or being brought up, and

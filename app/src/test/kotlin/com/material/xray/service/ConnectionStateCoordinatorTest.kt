@@ -117,16 +117,25 @@ class ConnectionStateCoordinatorTest {
     }
 
     @Test
-    fun `connection progress is visible only during a transition`() {
+    fun `connection progress remains visible until its step finishes`() {
         val coordinator = ConnectionStateCoordinator()
-        coordinator.updateConnectionProgress(ConnectionProgress.PreparingRuntime)
-        assertNull(coordinator.connectionProgress.value)
-
-        coordinator.startConnection(ConnectionState.Connecting)
-        coordinator.updateConnectionProgress(ConnectionProgress.ResolvingEntryServer)
+        val token = coordinator.beginConnectionProgress(ConnectionProgress.ResolvingEntryServer)
         assertEquals(ConnectionProgress.ResolvingEntryServer, coordinator.connectionProgress.value)
 
-        coordinator.markError("boom")
+        coordinator.endConnectionProgress(token)
+        assertNull(coordinator.connectionProgress.value)
+    }
+
+    @Test
+    fun `finishing a nested step restores its parent progress`() {
+        val coordinator = ConnectionStateCoordinator()
+        val older = coordinator.beginConnectionProgress(ConnectionProgress.PreparingRuntime)
+        val newer = coordinator.beginConnectionProgress(ConnectionProgress.StoppingCore)
+
+        coordinator.endConnectionProgress(newer)
+        assertEquals(ConnectionProgress.PreparingRuntime, coordinator.connectionProgress.value)
+
+        coordinator.endConnectionProgress(older)
         assertNull(coordinator.connectionProgress.value)
     }
 

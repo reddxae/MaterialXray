@@ -405,6 +405,8 @@ class ConnectionManagerFactory @Inject constructor(
                 processProbe = rootProcess,
                 log = log,
                 elapsedRealtime = environment::elapsedRealtime,
+                onProgressStarted = stateCoordinator::beginConnectionProgress,
+                onProgressFinished = stateCoordinator::endConnectionProgress,
             ),
             apiClientFactory = AndroidConnectionApiClientFactory(),
         )

@@ -97,6 +97,12 @@ class ConnectionManagerTest {
         assertEquals(1, harness.cleanup.cleanCalls)
         assertEquals(0, harness.userProcess.stopCalls)
         assertEquals(ConnectionState.Disconnected, harness.stateCoordinator.state.value)
+        val messages = harness.log.entries.value.map { it.message }
+        assertTrue(messages.any { it == "Release Xray runtime..." })
+        assertTrue(messages.any { it.startsWith("Release Xray runtime took ") })
+        assertTrue(messages.any { it == "Close Xray control API..." })
+        assertTrue(messages.any { it.startsWith("Close Xray control API took ") })
+        assertNull(harness.stateCoordinator.connectionProgress.value)
     }
 
     @Test
@@ -125,6 +131,7 @@ class ConnectionManagerTest {
             harness.stateCoordinator.state.value,
         )
         assertEquals(42, harness.stateStore.state?.xrayPid)
+        assertTrue(harness.log.entries.value.any { it.message.startsWith("Release Xray runtime failed after ") })
     }
 
     @Test
@@ -579,13 +586,14 @@ class ConnectionManagerTest {
         val diagnostics = FakeDiagnostics()
         val activeRouting = FakeActiveRoutingController()
         val stateCoordinator = ConnectionStateCoordinator()
+        val log = LogBuffer()
         val apiClients = FakeApiClients()
         val serverResolver = FakeServerResolver()
         val createdApiEndpoints = mutableListOf<XrayApiEndpoint>()
         val manager = ConnectionManager(
             configGenerator = ConfigGenerator(),
             stateCoordinator = stateCoordinator,
-            log = LogBuffer(),
+            log = log,
             dependencies = ConnectionManagerDependencies(
                 environment = environment,
                 rootRuntime = rootRuntime,

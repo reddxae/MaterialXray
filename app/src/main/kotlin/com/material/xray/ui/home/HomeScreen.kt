@@ -898,8 +898,7 @@ private fun ConnectionPanel(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                connectionState is ConnectionState.Connected -> CoreUptime(startTime = connectionState.startTime)
-                showProgressDetails && isTransitioning && connectionProgress != null -> Text(
+                showProgressDetails && connectionProgress != null -> Text(
                     text = connectionProgressText(connectionProgress),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -907,6 +906,7 @@ private fun ConnectionPanel(
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
                 )
+                connectionState is ConnectionState.Connected -> CoreUptime(startTime = connectionState.startTime)
             }
         }
 
@@ -983,13 +983,20 @@ private fun connectionProgressText(progress: ConnectionProgress): String = when 
     ConnectionProgress.PreparingRuntime -> stringResource(R.string.home_connection_progress_preparing_runtime)
     ConnectionProgress.PreparingCore -> stringResource(R.string.home_connection_progress_preparing_core)
     ConnectionProgress.UpdatingRoutingData -> stringResource(R.string.home_connection_progress_updating_routing_data)
-    ConnectionProgress.DetectingNetworkRoute -> stringResource(R.string.home_connection_progress_detecting_network_route)
     ConnectionProgress.ResolvingEntryServer -> stringResource(R.string.home_connection_progress_resolving_entry_server)
     ConnectionProgress.GeneratingConfiguration -> stringResource(R.string.home_connection_progress_generating_configuration)
     ConnectionProgress.StartingCore -> stringResource(R.string.home_connection_progress_starting_core)
     ConnectionProgress.ConfiguringTunnel -> stringResource(R.string.home_connection_progress_configuring_tunnel)
     ConnectionProgress.ConfiguringRouting -> stringResource(R.string.home_connection_progress_configuring_routing)
     ConnectionProgress.WaitingForCore -> stringResource(R.string.home_connection_progress_waiting_for_core)
+    ConnectionProgress.StoppingCore -> stringResource(R.string.home_connection_progress_stopping_core)
+    ConnectionProgress.CleaningRuntime -> stringResource(R.string.home_connection_progress_cleaning_runtime)
+    ConnectionProgress.InspectingSavedRuntime -> stringResource(R.string.home_connection_progress_inspecting_saved_runtime)
+    ConnectionProgress.VerifyingRuntime -> stringResource(R.string.home_connection_progress_verifying_runtime)
+    ConnectionProgress.RestoringControlApi -> stringResource(R.string.home_connection_progress_restoring_control_api)
+    ConnectionProgress.WaitingForNetwork -> stringResource(R.string.home_connection_progress_waiting_for_network)
+    ConnectionProgress.UpdatingNetworkRoute -> stringResource(R.string.home_connection_progress_updating_network_route)
+    ConnectionProgress.UpdatingAppRouting -> stringResource(R.string.home_connection_progress_updating_app_routing)
 }
 
 @Composable

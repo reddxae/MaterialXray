@@ -1,12 +1,14 @@
 package com.material.xray.service
 
 import android.content.Context
+import android.os.SystemClock
 import com.material.xray.R
 import com.material.xray.core.locale.localizedString
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.RootConnectionBackend
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,11 +24,24 @@ class ConnectionRuntimeManager @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val serverRepository: ServerRepository,
     private val stateCoordinator: ConnectionStateCoordinator,
+    private val log: LogBuffer,
 ) {
     private val stateFile = StateFile(context)
     private val activeConfigFile = context.filesDir.resolve("config.json")
+    private val stepExecutor = ConnectionStepExecutor(
+        elapsedRealtime = SystemClock::elapsedRealtime,
+        log = { message -> log.append(LogSource.APP, message) },
+        onProgressStarted = stateCoordinator::beginConnectionProgress,
+        onProgressFinished = stateCoordinator::endConnectionProgress,
+    )
 
-    suspend fun reconcileState() {
+    suspend fun reconcileState() = stepExecutor.execute(
+        ConnectionStep("Reconcile Xray runtime state", ConnectionProgress.InspectingSavedRuntime) {
+            reconcileStateOnce()
+        },
+    )
+
+    private suspend fun reconcileStateOnce() {
         when (val detection = detectRuntime()) {
             is RuntimeDetection.Observed -> {
                 val reconciledState = stateCoordinator.reconcileDetectedState(detection.state)

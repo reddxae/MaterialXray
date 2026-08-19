@@ -1273,6 +1273,7 @@ class XrayService : VpnService() {
                 label = "Stabilize physical network route",
                 progress = ConnectionProgress.WaitingForNetwork,
                 isSuccessful = { it != NetworkRetargetRetryOutcome.Exhausted },
+                slowSuccessLogThresholdMs = SLOW_NETWORK_STABILIZATION_LOG_THRESHOLD_MS,
                 action = { retargetNetworkUntilStableOnce(reason) },
             ),
         )
@@ -1969,6 +1970,7 @@ class XrayService : VpnService() {
         const val ACTION_RESTORE_STATUS = "com.material.xray.RESTORE_STATUS"
         const val EXTRA_SERVER_CONFIG = "server_config"
         private const val NETWORK_RETARGET_SETTLE_DELAY_MS = 250L
+        private const val SLOW_NETWORK_STABILIZATION_LOG_THRESHOLD_MS = 500L
         private const val NETWORK_RETARGET_WAKE_LOCK_TIMEOUT_MS = 30_000L
         private const val CONNECTION_COMMAND_WAKE_LOCK_TIMEOUT_MS = 10 * 60_000L
         private const val NETWORK_SAFETY_CHECK_INTERVAL_MS = 60_000L

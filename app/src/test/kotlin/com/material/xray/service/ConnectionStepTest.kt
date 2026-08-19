@@ -205,4 +205,48 @@ class ConnectionStepTest {
         assertTrue(logs.isEmpty())
         assertTrue(progress.isEmpty())
     }
+
+    @Test
+    fun `slow success threshold logs only success above threshold`() = runTest {
+        var now = 0L
+        val logs = mutableListOf<String>()
+        val progress = mutableListOf<String>()
+        val executor = ConnectionStepExecutor(
+            elapsedRealtime = { now },
+            log = logs::add,
+            onProgressStarted = {
+                progress += "start:$it"
+                1L
+            },
+            onProgressFinished = { progress += "finish:$it" },
+        )
+
+        executor.execute(
+            ConnectionStep(
+                label = "Stabilize physical network route",
+                progress = ConnectionProgress.WaitingForNetwork,
+                slowSuccessLogThresholdMs = 500,
+                action = { now = 500 },
+            ),
+        )
+        executor.execute(
+            ConnectionStep(
+                label = "Stabilize physical network route",
+                progress = ConnectionProgress.WaitingForNetwork,
+                slowSuccessLogThresholdMs = 500,
+                action = { now = 1_001 },
+            ),
+        )
+
+        assertEquals(listOf("Stabilize physical network route took 501 ms"), logs)
+        assertEquals(
+            listOf(
+                "start:WaitingForNetwork",
+                "finish:1",
+                "start:WaitingForNetwork",
+                "finish:1",
+            ),
+            progress,
+        )
+    }
 }

@@ -15,12 +15,14 @@ internal data class ConnectionStep<T>(
     val revertAction: ConnectionStep<Unit>? = null,
     val isSuccessful: (T) -> Boolean = { true },
     val reported: Boolean = true,
+    val slowSuccessLogThresholdMs: Long? = null,
     val action: suspend () -> T,
 ) {
     init {
         require(maxRetries >= 0)
         require(retryDelayMs >= 0)
         require(retryable == (maxRetries > 0))
+        require(slowSuccessLogThresholdMs == null || slowSuccessLogThresholdMs >= 0)
     }
 }
 
@@ -65,7 +67,7 @@ internal class ConnectionStepExecutor(
         maxAttempts: Int,
     ): ConnectionStepOutcome<T> {
         val startedAt = elapsedRealtime()
-        if (step.reported) {
+        if (step.reported && step.slowSuccessLogThresholdMs == null) {
             val attemptSuffix = if (maxAttempts > 1) " (attempt $attempt/$maxAttempts)" else ""
             log("${step.label}$attemptSuffix...")
         }
@@ -73,7 +75,12 @@ internal class ConnectionStepExecutor(
             val value = step.action()
             val elapsedMs = elapsedRealtime() - startedAt
             if (step.isSuccessful(value)) {
-                if (step.reported) log("${step.label} took $elapsedMs ms")
+                if (
+                    step.reported &&
+                    (step.slowSuccessLogThresholdMs == null || elapsedMs > step.slowSuccessLogThresholdMs)
+                ) {
+                    log("${step.label} took $elapsedMs ms")
+                }
                 ConnectionStepOutcome.Success(value)
             } else {
                 if (step.reported) log("${step.label} failed after $elapsedMs ms")

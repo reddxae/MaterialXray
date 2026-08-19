@@ -158,6 +158,8 @@ internal class XrayBinaryConnectionAdapter(
 internal interface ConnectionCleanup {
     suspend fun ensureCleanState(fallbackTunName: String = "xray0", preserveTproxyGuard: Boolean = false): Boolean
     suspend fun ensureKnownStateStopped(fallbackTunName: String = "xray0", preserveTproxyGuard: Boolean = false): Boolean
+    fun recordKnownCleanState(): Boolean
+    fun consumeKnownCleanState(): Boolean
 }
 
 internal class CleanupManagerConnectionAdapter(
@@ -166,6 +168,10 @@ internal class CleanupManagerConnectionAdapter(
     override suspend fun ensureCleanState(fallbackTunName: String, preserveTproxyGuard: Boolean): Boolean = cleanupManager.ensureCleanState(fallbackTunName, preserveTproxyGuard)
 
     override suspend fun ensureKnownStateStopped(fallbackTunName: String, preserveTproxyGuard: Boolean): Boolean = cleanupManager.ensureKnownStateStopped(fallbackTunName, preserveTproxyGuard)
+
+    override fun recordKnownCleanState(): Boolean = cleanupManager.recordKnownCleanState()
+
+    override fun consumeKnownCleanState(): Boolean = cleanupManager.consumeKnownCleanState()
 }
 
 internal data class ServerResolution(

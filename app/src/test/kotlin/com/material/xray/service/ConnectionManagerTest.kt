@@ -116,6 +116,42 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `full connect skips duplicate cleanup after successful root disconnect`() = runTest {
+        val harness = Harness()
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+        assertTrue(harness.manager.disconnect(updateState = true, fastCleanup = true))
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.Full)
+
+        assertEquals(1, harness.cleanup.knownStateStopCalls)
+        assertEquals(0, harness.cleanup.cleanCalls)
+        assertTrue(harness.log.entries.value.any { it.message == "Previous root runtime is already clean" })
+    }
+
+    @Test
+    fun `full connect consumes persisted clean proof after service recreation`() = runTest {
+        val harness = Harness().apply { cleanup.knownCleanState = true }
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.Full)
+
+        assertEquals(0, harness.cleanup.cleanCalls)
+        assertFalse(harness.cleanup.knownCleanState)
+        assertTrue(harness.log.entries.value.any { it.message == "Previous root runtime is already clean" })
+    }
+
+    @Test
+    fun `reuse reconnect consumes clean proof before a later full connect`() = runTest {
+        val harness = Harness()
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+        assertTrue(harness.manager.disconnect(updateState = true, fastCleanup = true))
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.Full)
+
+        assertEquals(1, harness.cleanup.cleanCalls)
+    }
+
+    @Test
     fun `failed cleanup prevents disconnect from being published`() = runTest {
         val harness = Harness().apply {
             stateStore.state = XrayState(xrayPid = 42)
@@ -805,6 +841,7 @@ class ConnectionManagerTest {
         var cleanStarted: CompletableDeferred<Unit>? = null
         var releaseClean: CompletableDeferred<Unit>? = null
         var lastPreserveTproxyGuard = false
+        var knownCleanState = false
 
         override suspend fun ensureCleanState(fallbackTunName: String, preserveTproxyGuard: Boolean): Boolean {
             cleanCalls += 1
@@ -819,6 +856,13 @@ class ConnectionManagerTest {
             lastPreserveTproxyGuard = preserveTproxyGuard
             return knownStateStopped
         }
+
+        override fun recordKnownCleanState(): Boolean {
+            knownCleanState = true
+            return true
+        }
+
+        override fun consumeKnownCleanState(): Boolean = knownCleanState.also { knownCleanState = false }
     }
 
     private class FakeStateStore : ConnectionStateStore {

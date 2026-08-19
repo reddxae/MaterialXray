@@ -81,6 +81,8 @@ internal class ConnectionManager(
 
     @Volatile private var preserveGuardOnFailure = false
 
+    @Volatile private var rootRuntimeKnownClean = false
+
     // Root is the only runtime that installs routing outside the process; the rootless runtime
     // gets it from Android's VpnService.
     val isUsingRootRuntime: Boolean
@@ -265,24 +267,31 @@ internal class ConnectionManager(
         rootBackend: RootConnectionBackend,
     ): String? {
         val customTunName = configuredTunName.trim()
+        val persistedKnownCleanState = strategy.managesSystemRouting && cleanup.consumeKnownCleanState()
+        val canReuseKnownCleanState = rootRuntimeKnownClean || persistedKnownCleanState
+        if (strategy.managesSystemRouting) rootRuntimeKnownClean = false
         if (preparation.cleansPreviousState && strategy.managesSystemRouting) {
-            log.append(LogSource.APP, "Cleaning up previous state...")
-            val cleaned = executeStep(
-                ConnectionStep(
-                    "Cleanup",
-                    ConnectionProgress.PreparingRuntime,
-                    isSuccessful = { it },
-                    action = {
-                        cleanup.ensureCleanState(
-                            fallbackTunName = customTunName.ifEmpty { LEGACY_DEFAULT_TUN_NAME },
-                            preserveTproxyGuard = transitionGuardInstalled && preserveGuardOnFailure,
-                        )
-                    },
-                ),
-            )
-            if (!cleaned) {
-                fail(environment.localizedString(R.string.connection_error_cleanup_failed), cleanState = false)
-                return null
+            if (canReuseKnownCleanState && !transitionGuardInstalled) {
+                log.append(LogSource.APP, "Previous root runtime is already clean")
+            } else {
+                log.append(LogSource.APP, "Cleaning up previous state...")
+                val cleaned = executeStep(
+                    ConnectionStep(
+                        "Cleanup",
+                        ConnectionProgress.PreparingRuntime,
+                        isSuccessful = { it },
+                        action = {
+                            cleanup.ensureCleanState(
+                                fallbackTunName = customTunName.ifEmpty { LEGACY_DEFAULT_TUN_NAME },
+                                preserveTproxyGuard = transitionGuardInstalled && preserveGuardOnFailure,
+                            )
+                        },
+                    ),
+                )
+                if (!cleaned) {
+                    fail(environment.localizedString(R.string.connection_error_cleanup_failed), cleanState = false)
+                    return null
+                }
             }
         }
 
@@ -1177,18 +1186,21 @@ internal class ConnectionManager(
         }
         // With no runtime of our own and nothing recorded by an earlier one, there is nothing
         // installed to take back.
+        val strategy = runtimeState.strategy ?: persistedRuntimeStrategy()
         val cleaned = executeStep(
             ConnectionStep(
                 label = "Release Xray runtime",
                 progress = ConnectionProgress.StoppingCore,
                 isSuccessful = { it },
                 action = {
-                    (runtimeState.strategy ?: persistedRuntimeStrategy())
+                    strategy
                         ?.release(fastCleanup = fastCleanup, preserveTproxyGuard = preserveTproxyGuard)
                         ?: true
                 },
             ),
         )
+        rootRuntimeKnownClean = cleaned && strategy?.managesSystemRouting == true && !preserveTproxyGuard
+        if (rootRuntimeKnownClean) cleanup.recordKnownCleanState()
         runtimeState = XrayRuntimeState.Inactive
         executeStep(
             ConnectionStep("Close Xray control API", ConnectionProgress.CleaningRuntime) {
@@ -1278,6 +1290,8 @@ internal class ConnectionManager(
                 action = { cleanup.ensureCleanState(preserveTproxyGuard = preserveTproxyGuard) },
             ),
         )
+        rootRuntimeKnownClean = cleaned && !preserveTproxyGuard
+        if (rootRuntimeKnownClean) cleanup.recordKnownCleanState()
         runtimeState = XrayRuntimeState.Inactive
         if (!cleaned) stateCoordinator.markError(environment.localizedString(R.string.connection_error_cleanup_failed))
         return cleaned
@@ -1474,8 +1488,13 @@ internal class ConnectionManager(
      * failure is itself cancelled part-way through; root cleanup is the safe choice there because
      * it is the only runtime that can leave routing behind.
      */
-    private suspend fun releaseStartedRuntime(preserveTproxyGuard: Boolean = false): Boolean = (runtimeState.strategy ?: rootStrategy)
-        .release(fastCleanup = false, preserveTproxyGuard = preserveTproxyGuard)
+    private suspend fun releaseStartedRuntime(preserveTproxyGuard: Boolean = false): Boolean {
+        val strategy = runtimeState.strategy ?: rootStrategy
+        val cleaned = strategy.release(fastCleanup = false, preserveTproxyGuard = preserveTproxyGuard)
+        rootRuntimeKnownClean = cleaned && strategy.managesSystemRouting && !preserveTproxyGuard
+        if (rootRuntimeKnownClean) cleanup.recordKnownCleanState()
+        return cleaned
+    }
 
     private fun selectPersistedPhysicalRoute(state: XrayState): TunManager.PhysicalRoute? = state.physicalInterface
         ?.takeIf { it.isNotBlank() && it != VPN_SERVICE_INTERFACE_LABEL }
@@ -1522,4 +1541,4 @@ internal const val TPROXY_INTERFACE_LABEL = "TPROXY"
 private const val CONNECTION_STEP_MAX_RETRIES = 2
 private const val CONNECTION_STEP_RETRY_DELAY_MS = 1_500L
 private const val XRAY_API_READY_TIMEOUT_MS = 10_000L
-private const val XRAY_API_READY_RETRY_DELAY_MS = 250L
+private const val XRAY_API_READY_RETRY_DELAY_MS = 100L

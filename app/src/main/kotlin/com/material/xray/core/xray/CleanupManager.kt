@@ -4,6 +4,7 @@ import android.content.Context
 import com.material.xray.core.nftables.NftablesManager
 import com.material.xray.core.root.RootShell
 import com.material.xray.model.RootConnectionBackend
+import java.io.File
 
 class CleanupManager(
     context: Context,
@@ -16,6 +17,14 @@ class CleanupManager(
     private val apiFirewall = XrayApiFirewall(shell)
     private val appUid = context.applicationInfo.uid
     private val configPath = context.filesDir.resolve("config.json").absolutePath
+    private val cleanMarker = File(context.filesDir, CLEAN_MARKER_FILE_NAME)
+
+    fun recordKnownCleanState(): Boolean = runCatching {
+        cleanMarker.writeText("")
+        true
+    }.getOrDefault(false)
+
+    fun consumeKnownCleanState(): Boolean = cleanMarker.exists() && cleanMarker.delete()
 
     suspend fun ensureCleanState(fallbackTunName: String = "xray0", preserveTproxyGuard: Boolean = false): Boolean {
         val state = stateFile.read()
@@ -57,6 +66,10 @@ class CleanupManager(
     private suspend fun stopOwnedProcesses(persistedPid: Int?): Boolean = shell.execute(
         ownedProcessStopCommand(configPath, persistedPid),
     ).isSuccess
+
+    private companion object {
+        const val CLEAN_MARKER_FILE_NAME = "root-runtime-clean"
+    }
 }
 
 internal fun ownedProcessStopCommand(configPath: String, persistedPid: Int?): String = buildString {

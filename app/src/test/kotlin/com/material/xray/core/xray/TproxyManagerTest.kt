@@ -101,6 +101,18 @@ class TproxyManagerTest {
     }
 
     @Test
+    fun `output rules route resolver DNS through the base inbound`() {
+        val command = TproxyManager.activationCommand(plan(), APP_UID)
+        val bypass = command.indexOf("--uid-owner 10020 -j RETURN")
+        val udpDns = command.indexOf("-p udp --dport 53 -j MARK --set-xmark 0xa000001/0xffffffff")
+        val appRoute = command.indexOf("--uid-owner 10030 -p tcp -j MARK")
+
+        assertTrue(bypass in 0..<udpDns)
+        assertTrue(udpDns < appRoute)
+        assertTrue(command.contains("-p tcp --dport 53 -j MARK --set-xmark 0xa000001/0xffffffff"))
+    }
+
+    @Test
     fun `disabled IPv6 rejects managed apps instead of blackholing them`() {
         val command = TproxyManager.activationCommand(plan(), APP_UID)
 
@@ -190,6 +202,7 @@ class TproxyManagerTest {
         assertTrue(command.contains("--on-ip 0.0.0.0"))
         assertTrue(command.contains("--on-ip ::"))
         assertTrue(command.contains("-m addrtype --dst-type LOCAL"))
+        assertEquals(2, command.split("-p udp --dport 53 -j MARK --set-xmark 0xa000001/0xffffffff").size - 1)
         assertFalse(command.contains("ip6tables -t filter"))
         assertFalse(command.contains("icmp6-no-route"))
     }
@@ -201,6 +214,12 @@ class TproxyManagerTest {
         assertTrue(command.contains("--set-xmark 0xa000001/0xffffffff"))
         assertTrue(command.contains("-p udp -m mark --mark 0xa000001/0xffffffff"))
         assertTrue(command.contains("-d 127.0.0.0/8 -p udp --dport 48321 -j DROP"))
+        assertTrue(
+            command.contains(
+                "iptables -t mangle -C MXOA278b -p udp --dport 53 " +
+                    "-j MARK --set-xmark 0xa000001/0xffffffff",
+            ),
+        )
         assertTrue(command.contains("ss -lnu"))
         assertEquals(1, command.split("ss -lnt").size - 1)
         assertEquals(1, command.split("ss -lnu").size - 1)

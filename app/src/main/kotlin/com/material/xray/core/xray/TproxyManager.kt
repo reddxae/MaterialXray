@@ -239,6 +239,7 @@ class TproxyManager internal constructor(
             val names = chainNames(appUid)
             val prefix = hex(state.markPrefix)
             val mask = hex(state.markMask)
+            val baseMark = hex(state.groups.first().mark)
             val commands = mutableListOf(
                 "v4_slot_rules=\$(iptables -t mangle -S ${names.slot(state.outputChainSlot)})",
                 "tcp_listeners=\$(ss -lnt)",
@@ -249,6 +250,10 @@ class TproxyManager internal constructor(
                 "ip rule show | grep -q 'fwmark $prefix/$mask.*lookup ${state.routeTable}'",
                 "ip route show table ${state.routeTable} | grep -q '^local .* dev lo'",
             )
+            for (protocol in listOf("tcp", "udp")) {
+                commands += "iptables -t mangle -C ${names.slot(state.outputChainSlot)} -p $protocol --dport 53 " +
+                    "-j MARK --set-xmark $baseMark/0xffffffff"
+            }
             state.groups.forEach { group ->
                 val mark = hex(group.mark)
                 commands += "printf '%s\\n' \"\$v4_slot_rules\" | " +
@@ -271,6 +276,10 @@ class TproxyManager internal constructor(
                 commands += "ip6tables -t mangle -C PREROUTING -j ${names.prerouting}"
                 commands += "ip -6 rule show | grep -q 'fwmark $prefix/$mask.*lookup ${state.routeTable}'"
                 commands += "ip -6 route show table ${state.routeTable} | grep -q '^local .* dev lo'"
+                for (protocol in listOf("tcp", "udp")) {
+                    commands += "ip6tables -t mangle -C ${names.slot(state.outputChainSlot)} -p $protocol --dport 53 " +
+                        "-j MARK --set-xmark $baseMark/0xffffffff"
+                }
                 state.groups.forEach { group ->
                     val mark = hex(group.mark)
                     commands += "printf '%s\\n' \"\$v6_slot_rules\" | " +
@@ -517,6 +526,8 @@ class TproxyManager internal constructor(
             val state = plan.runtimeState
             val prefix = hex(state.markPrefix)
             val mask = hex(state.markMask)
+            val base = plan.groups.single { it.isBase }
+            val baseMark = hex(base.state.mark)
             add("$tool -t mangle -A $chain -m mark --mark ${plan.outboundMark}/0xffffffff -j RETURN")
             add("$tool -t mangle -A $chain -m owner --uid-owner $appUid -j RETURN")
             state.groups.forEach { group ->
@@ -535,13 +546,16 @@ class TproxyManager internal constructor(
             uidRanges(plan.bypassUids - appUid).forEach { range ->
                 add("$tool -t mangle -A $chain -m owner --uid-owner ${range.asArgument()} -j RETURN")
             }
+            // Android sends application DNS through a system resolver UID outside the managed app ranges.
+            for (protocol in listOf("tcp", "udp")) {
+                add("$tool -t mangle -A $chain -p $protocol --dport 53 -j MARK --set-xmark $baseMark/0xffffffff")
+            }
             plan.groups.filterNot { it.isBase }.forEach { group ->
                 uidRanges(group.uids).forEach { range ->
                     addMarkRules(tool, chain, range, group.state.mark)
                 }
             }
             add("$tool -t mangle -A $chain -m mark --mark $prefix/$mask -j RETURN")
-            val base = plan.groups.single { it.isBase }
             plan.routeProfileIds.toSortedSet().forEach { profileId ->
                 addMarkRules(tool, chain, appUidRangeForProfile(profileId), base.state.mark)
             }

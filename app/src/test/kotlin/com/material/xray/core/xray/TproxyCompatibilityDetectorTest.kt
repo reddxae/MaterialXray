@@ -12,15 +12,15 @@ class TproxyCompatibilityDetectorTest {
 
         assertTrue(command.contains("-p tcp -m mark --mark 0xb000001/0xffffffff -j TPROXY"))
         assertTrue(command.contains("-p udp -m mark --mark 0xb000001/0xffffffff -j TPROXY"))
-        assertTrue(command.contains("iptables -t mangle -I PREROUTING 1 -j MXPabc1234P"))
-        assertTrue(command.contains("iptables -t mangle -I OUTPUT 1 -j MXPabc1234O"))
-        assertTrue(command.contains("ip6tables -t mangle -I PREROUTING 1 -j MXPabc1236P"))
-        assertTrue(command.contains("ip6tables -t mangle -I OUTPUT 1 -j MXPabc1236O"))
-        assertTrue(command.contains("iptables -t mangle -A MXPabc1234O -m addrtype --dst-type LOCAL"))
-        assertTrue(command.contains("ip6tables -t mangle -A MXPabc1236O -m addrtype --dst-type LOCAL"))
+        assertTrue(command.contains("iptables -w -t mangle -I PREROUTING 1 -j MXPabc1234P"))
+        assertTrue(command.contains("iptables -w -t mangle -I OUTPUT 1 -j MXPabc1234O"))
+        assertTrue(command.contains("ip6tables -w -t mangle -I PREROUTING 1 -j MXPabc1236P"))
+        assertTrue(command.contains("ip6tables -w -t mangle -I OUTPUT 1 -j MXPabc1236O"))
+        assertTrue(command.contains("iptables -w -t mangle -A MXPabc1234O -m addrtype --dst-type LOCAL"))
+        assertTrue(command.contains("ip6tables -w -t mangle -A MXPabc1236O -m addrtype --dst-type LOCAL"))
         assertTrue(command.contains("ip route get 192.0.2.1 mark"))
         assertTrue(command.contains("ip -6 route get 2001:db8::1 mark"))
-        assertTrue(command.contains("ip6tables -t mangle -X MXPabc1236P"))
+        assertTrue(command.contains("ip6tables -w -t mangle -X MXPabc1236P"))
         assertTrue(command.contains("fail cleanup"))
         assertFalse(command.contains("curl"))
         assertFalse(command.contains("ping"))
@@ -32,13 +32,26 @@ class TproxyCompatibilityDetectorTest {
 
         assertTrue(command.contains("--on-ip 127.0.0.1"))
         assertTrue(command.contains("-d 127.0.0.0/8 -p tcp --dport 9 -j DROP"))
-        assertTrue(command.contains("ip6tables -t mangle -I OUTPUT 1 -j MXPabc1236O"))
-        assertTrue(command.contains("ip6tables -t filter -I OUTPUT 1 -j MXPabc1236F"))
+        assertTrue(command.contains("ip6tables -w -t mangle -I OUTPUT 1 -j MXPabc1236O"))
+        assertTrue(command.contains("ip6tables -w -t filter -I OUTPUT 1 -j MXPabc1236F"))
         assertTrue(command.contains("-j REJECT --reject-with icmp6-no-route"))
         assertTrue(command.contains("--uid-owner 0-1"))
         assertTrue(command.contains("ss -lnt >/dev/null && ss -lnu >/dev/null"))
         assertFalse(command.contains("addrtype"))
         assertFalse(command.contains("-m socket"))
+    }
+
+    @Test
+    fun `probe waits for the xtables lock on every firewall command`() {
+        val commands = listOf(
+            TproxyCompatibilityDetector.probeCommand("abc123", allowIpv6 = false),
+            TproxyCompatibilityDetector.probeCommand("abc123", allowIpv6 = true),
+            TproxyCompatibilityDetector.markCollisionCommand(10_123),
+        )
+
+        commands.forEach { command ->
+            assertFalse(Regex("(?<![\\w-])ip6?tables -t").containsMatchIn(command))
+        }
     }
 
     @Test
@@ -67,7 +80,7 @@ class TproxyCompatibilityDetectorTest {
         val command = TproxyCompatibilityDetector.markCollisionCommand(10_123)
 
         assertTrue(command.contains("fwmark 0xa000000/0xf000000"))
-        assertTrue(command.contains("-C OUTPUT -j MXO278b"))
+        assertTrue(command.contains("iptables -w -t mangle -C OUTPUT -j MXO278b"))
         assertTrue(command.contains("exit 42"))
     }
 

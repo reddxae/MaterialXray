@@ -219,6 +219,8 @@ class TproxyCompatibilityDetector @Inject constructor(
         private const val CACHE_PREFERENCES_NAME = "tproxy-compatibility"
         private const val CACHE_FINGERPRINT_KEY = "build-fingerprint"
         private const val CACHE_RESULT_KEY = "result"
+        private const val IPTABLES = "iptables -w"
+        private const val IP6TABLES = "ip6tables -w"
 
         fun markCollisionCommand(appUid: Int): String {
             require(appUid > 0)
@@ -227,7 +229,7 @@ class TproxyCompatibilityDetector @Inject constructor(
             val mask = "0x${MARK_MASK.toString(16)}"
             return "rules=\$(ip rule show 2>/dev/null) || exit 1; " +
                 "case \"\$rules\" in *'fwmark $prefix/$mask'*) " +
-                "iptables -t mangle -C OUTPUT -j $outputChain 2>/dev/null || exit $MARK_CONFLICT_EXIT_CODE;; esac; true"
+                "$IPTABLES -t mangle -C OUTPUT -j $outputChain 2>/dev/null || exit $MARK_CONFLICT_EXIT_CODE;; esac; true"
         }
 
         fun probeCommand(suffix: String, allowIpv6: Boolean): String {
@@ -275,14 +277,14 @@ class TproxyCompatibilityDetector @Inject constructor(
         }
 
         private fun probeFirewallResources(chains: ProbeChains, allowIpv6: Boolean): List<ProbeFirewallResource> = buildList {
-            add(ProbeFirewallResource("iptables -t mangle", "PREROUTING", chains.ipv4Prerouting))
-            add(ProbeFirewallResource("iptables -t mangle", "OUTPUT", chains.ipv4Output))
+            add(ProbeFirewallResource("$IPTABLES -t mangle", "PREROUTING", chains.ipv4Prerouting))
+            add(ProbeFirewallResource("$IPTABLES -t mangle", "OUTPUT", chains.ipv4Output))
             if (allowIpv6) {
-                add(ProbeFirewallResource("ip6tables -t mangle", "PREROUTING", chains.ipv6Prerouting))
+                add(ProbeFirewallResource("$IP6TABLES -t mangle", "PREROUTING", chains.ipv6Prerouting))
             }
-            add(ProbeFirewallResource("ip6tables -t mangle", "OUTPUT", chains.ipv6Output))
+            add(ProbeFirewallResource("$IP6TABLES -t mangle", "OUTPUT", chains.ipv6Output))
             if (!allowIpv6) {
-                add(ProbeFirewallResource("ip6tables -t filter", "OUTPUT", chains.ipv6Filter))
+                add(ProbeFirewallResource("$IP6TABLES -t filter", "OUTPUT", chains.ipv6Filter))
             }
         }
 
@@ -336,31 +338,31 @@ class TproxyCompatibilityDetector @Inject constructor(
             val localMatch = if (allowIpv6) "-m addrtype --dst-type LOCAL" else "-d 127.0.0.0/8"
             val onIp = if (allowIpv6) "0.0.0.0" else "127.0.0.1"
             return listOf(
-                "iptables -t mangle -N ${chains.ipv4Prerouting} || fail iptables",
-                "iptables -t mangle -A ${chains.ipv4Prerouting} -j RETURN || fail iptables",
-                "iptables -t mangle -A ${chains.ipv4Prerouting} -p tcp -m mark --mark $groupHex/0xffffffff " +
+                "$IPTABLES -t mangle -N ${chains.ipv4Prerouting} || fail iptables",
+                "$IPTABLES -t mangle -A ${chains.ipv4Prerouting} -j RETURN || fail iptables",
+                "$IPTABLES -t mangle -A ${chains.ipv4Prerouting} -p tcp -m mark --mark $groupHex/0xffffffff " +
                     "-j TPROXY --on-ip $onIp --on-port 9 --tproxy-mark $groupHex/0xffffffff || fail tproxy4",
-                "iptables -t mangle -A ${chains.ipv4Prerouting} -p udp -m mark --mark $groupHex/0xffffffff " +
+                "$IPTABLES -t mangle -A ${chains.ipv4Prerouting} -p udp -m mark --mark $groupHex/0xffffffff " +
                     "-j TPROXY --on-ip $onIp --on-port 9 --tproxy-mark $groupHex/0xffffffff || fail tproxy4",
-                "iptables -t mangle -N ${chains.ipv4Output} || fail iptables",
-                "iptables -t mangle -A ${chains.ipv4Output} -j RETURN || fail iptables",
-                "iptables -t mangle -A ${chains.ipv4Output} -m mark --mark 255/0xffffffff -j RETURN || fail mark",
-                "iptables -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -j RETURN || fail owner",
-                "iptables -t mangle -A ${chains.ipv4Output} $localMatch -p tcp --dport 9 -j DROP || fail iptables",
-                "iptables -t mangle -A ${chains.ipv4Output} $localMatch -p udp --dport 9 -j DROP || fail iptables",
-                "iptables -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -p tcp " +
+                "$IPTABLES -t mangle -N ${chains.ipv4Output} || fail iptables",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} -j RETURN || fail iptables",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} -m mark --mark 255/0xffffffff -j RETURN || fail mark",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -j RETURN || fail owner",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} $localMatch -p tcp --dport 9 -j DROP || fail iptables",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} $localMatch -p udp --dport 9 -j DROP || fail iptables",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -p tcp " +
                     "-j MARK --set-xmark $groupHex/0xffffffff || fail mark",
-                "iptables -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -p udp " +
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -p udp " +
                     "-j MARK --set-xmark $groupHex/0xffffffff || fail mark",
-                "iptables -t mangle -A ${chains.ipv4Output} -m mark --mark $prefixHex/$maskHex -j RETURN || fail mark",
-                "iptables -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -j DROP || fail owner",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} -m mark --mark $prefixHex/$maskHex -j RETURN || fail mark",
+                "$IPTABLES -t mangle -A ${chains.ipv4Output} -m owner --uid-owner 0-1 -j DROP || fail owner",
                 "ip route replace local 0.0.0.0/0 dev lo table $table || fail route4",
                 "ip rule add fwmark $prefixHex/$maskHex table $table pref $priority || fail route4",
-                "iptables -t mangle -I PREROUTING 1 -j ${chains.ipv4Prerouting} || fail iptables",
-                "iptables -t mangle -I OUTPUT 1 -j ${chains.ipv4Output} || fail iptables",
-                "iptables -t mangle -C PREROUTING -j ${chains.ipv4Prerouting} || fail iptables",
-                "iptables -t mangle -C OUTPUT -j ${chains.ipv4Output} || fail iptables",
-                "iptables -t mangle -R ${chains.ipv4Output} 1 -j RETURN || fail iptables",
+                "$IPTABLES -t mangle -I PREROUTING 1 -j ${chains.ipv4Prerouting} || fail iptables",
+                "$IPTABLES -t mangle -I OUTPUT 1 -j ${chains.ipv4Output} || fail iptables",
+                "$IPTABLES -t mangle -C PREROUTING -j ${chains.ipv4Prerouting} || fail iptables",
+                "$IPTABLES -t mangle -C OUTPUT -j ${chains.ipv4Output} || fail iptables",
+                "$IPTABLES -t mangle -R ${chains.ipv4Output} 1 -j RETURN || fail iptables",
                 "ip route get 192.0.2.1 mark $groupHex | grep -q 'dev lo' || fail route4",
                 "ss -lnt >/dev/null && ss -lnu >/dev/null || fail tools",
             )
@@ -374,50 +376,50 @@ class TproxyCompatibilityDetector @Inject constructor(
             groupHex: String,
             maskHex: String,
         ): List<String> = listOf(
-            "ip6tables -t mangle -N ${chains.ipv6Prerouting} || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Prerouting} -j RETURN || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Prerouting} -p tcp -m mark --mark $groupHex/0xffffffff " +
+            "$IP6TABLES -t mangle -N ${chains.ipv6Prerouting} || fail tproxy6",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Prerouting} -j RETURN || fail tproxy6",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Prerouting} -p tcp -m mark --mark $groupHex/0xffffffff " +
                 "-j TPROXY --on-ip :: --on-port 9 --tproxy-mark $groupHex/0xffffffff || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Prerouting} -p udp -m mark --mark $groupHex/0xffffffff " +
+            "$IP6TABLES -t mangle -A ${chains.ipv6Prerouting} -p udp -m mark --mark $groupHex/0xffffffff " +
                 "-j TPROXY --on-ip :: --on-port 9 --tproxy-mark $groupHex/0xffffffff || fail tproxy6",
-            "ip6tables -t mangle -N ${chains.ipv6Output} || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -j RETURN || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -j RETURN || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m addrtype --dst-type LOCAL " +
+            "$IP6TABLES -t mangle -N ${chains.ipv6Output} || fail tproxy6",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -j RETURN || fail tproxy6",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -j RETURN || fail tproxy6",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m addrtype --dst-type LOCAL " +
                 "-p tcp --dport 9 -j DROP || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m addrtype --dst-type LOCAL " +
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m addrtype --dst-type LOCAL " +
                 "-p udp --dport 9 -j DROP || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -p tcp " +
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -p tcp " +
                 "-j MARK --set-xmark $groupHex/0xffffffff || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -p udp " +
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -p udp " +
                 "-j MARK --set-xmark $groupHex/0xffffffff || fail tproxy6",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m mark --mark $prefixHex/$maskHex -j RETURN || fail tproxy6",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m mark --mark $prefixHex/$maskHex -j RETURN || fail tproxy6",
             "ip -6 route replace local ::/0 dev lo table $table || fail route6",
             "ip -6 rule add fwmark $prefixHex/$maskHex table $table pref $priority || fail route6",
-            "ip6tables -t mangle -I PREROUTING 1 -j ${chains.ipv6Prerouting} || fail tproxy6",
-            "ip6tables -t mangle -I OUTPUT 1 -j ${chains.ipv6Output} || fail tproxy6",
-            "ip6tables -t mangle -C PREROUTING -j ${chains.ipv6Prerouting} || fail tproxy6",
-            "ip6tables -t mangle -C OUTPUT -j ${chains.ipv6Output} || fail tproxy6",
-            "ip6tables -t mangle -R ${chains.ipv6Output} 1 -j RETURN || fail tproxy6",
+            "$IP6TABLES -t mangle -I PREROUTING 1 -j ${chains.ipv6Prerouting} || fail tproxy6",
+            "$IP6TABLES -t mangle -I OUTPUT 1 -j ${chains.ipv6Output} || fail tproxy6",
+            "$IP6TABLES -t mangle -C PREROUTING -j ${chains.ipv6Prerouting} || fail tproxy6",
+            "$IP6TABLES -t mangle -C OUTPUT -j ${chains.ipv6Output} || fail tproxy6",
+            "$IP6TABLES -t mangle -R ${chains.ipv6Output} 1 -j RETURN || fail tproxy6",
             "ip -6 route get 2001:db8::1 mark $groupHex | grep -q 'dev lo' || fail route6",
         )
 
         private fun ipv6BlockingProbeCommands(chains: ProbeChains): List<String> = listOf(
-            "ip6tables -t mangle -N ${chains.ipv6Output} || fail ipv6block",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -j RETURN || fail ipv6block",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -j RETURN || fail ipv6block",
-            "ip6tables -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -j DROP || fail ipv6block",
-            "ip6tables -t mangle -I OUTPUT 1 -j ${chains.ipv6Output} || fail ipv6block",
-            "ip6tables -t mangle -C OUTPUT -j ${chains.ipv6Output} || fail ipv6block",
-            "ip6tables -t mangle -R ${chains.ipv6Output} 1 -j RETURN || fail ipv6block",
-            "ip6tables -t filter -N ${chains.ipv6Filter} || fail ipv6block",
-            "ip6tables -t filter -A ${chains.ipv6Filter} -j RETURN || fail ipv6block",
-            "ip6tables -t filter -A ${chains.ipv6Filter} -m owner --uid-owner 0-1 -j RETURN || fail ipv6block",
-            "ip6tables -t filter -A ${chains.ipv6Filter} -m owner --uid-owner 0-1 " +
+            "$IP6TABLES -t mangle -N ${chains.ipv6Output} || fail ipv6block",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -j RETURN || fail ipv6block",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -j RETURN || fail ipv6block",
+            "$IP6TABLES -t mangle -A ${chains.ipv6Output} -m owner --uid-owner 0-1 -j DROP || fail ipv6block",
+            "$IP6TABLES -t mangle -I OUTPUT 1 -j ${chains.ipv6Output} || fail ipv6block",
+            "$IP6TABLES -t mangle -C OUTPUT -j ${chains.ipv6Output} || fail ipv6block",
+            "$IP6TABLES -t mangle -R ${chains.ipv6Output} 1 -j RETURN || fail ipv6block",
+            "$IP6TABLES -t filter -N ${chains.ipv6Filter} || fail ipv6block",
+            "$IP6TABLES -t filter -A ${chains.ipv6Filter} -j RETURN || fail ipv6block",
+            "$IP6TABLES -t filter -A ${chains.ipv6Filter} -m owner --uid-owner 0-1 -j RETURN || fail ipv6block",
+            "$IP6TABLES -t filter -A ${chains.ipv6Filter} -m owner --uid-owner 0-1 " +
                 "-j REJECT --reject-with icmp6-no-route || fail ipv6block",
-            "ip6tables -t filter -I OUTPUT 1 -j ${chains.ipv6Filter} || fail ipv6block",
-            "ip6tables -t filter -C OUTPUT -j ${chains.ipv6Filter} || fail ipv6block",
-            "ip6tables -t filter -R ${chains.ipv6Filter} 1 -j RETURN || fail ipv6block",
+            "$IP6TABLES -t filter -I OUTPUT 1 -j ${chains.ipv6Filter} || fail ipv6block",
+            "$IP6TABLES -t filter -C OUTPUT -j ${chains.ipv6Filter} || fail ipv6block",
+            "$IP6TABLES -t filter -R ${chains.ipv6Filter} 1 -j RETURN || fail ipv6block",
         )
 
         private data class ProbeChains(

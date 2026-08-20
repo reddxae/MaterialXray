@@ -16,7 +16,7 @@ enum class Screen(
     @param:DrawableRes val iconRes: Int? = null,
 ) {
     Home("home", R.string.navigation_home, icon = Icons.Default.Home),
-    Routing("routing", R.string.navigation_routing, iconRes = R.drawable.ic_sync_alt_24),
+    Routing("routing", R.string.navigation_routing, iconRes = R.drawable.ic_arrow_split_24),
     Logs("logs", R.string.navigation_logs, icon = Icons.AutoMirrored.Filled.Article),
     Settings("settings", R.string.navigation_settings, icon = Icons.Default.Settings),
 }

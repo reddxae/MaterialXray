@@ -390,6 +390,14 @@ class XrayService : VpnService() {
                     connectWithCurrentSettings(config)
                 }
             }
+            ACTION_AUTO_CONNECT -> {
+                startAsForeground(
+                    localizedString(R.string.app_name),
+                    localizedString(R.string.notification_status_starting),
+                    showDisconnectAction = false,
+                )
+                launchConnectionCommand { autoConnect() }
+            }
             ACTION_SWITCH_SERVER -> {
                 startAsForeground(
                     localizedString(R.string.app_name),
@@ -702,6 +710,28 @@ class XrayService : VpnService() {
             return
         }
 
+        connectionLifecycle.updateActiveConfig(config)
+        connectWithCurrentSettings(config)
+    }
+
+    private suspend fun autoConnect() {
+        if (isRunningAlwaysOnVpn()) {
+            connectAlwaysOnVpn()
+            return
+        }
+
+        val config = loadLastServerConfig()
+        if (config == null) {
+            val persistedStateResult = withContext(Dispatchers.IO) { stateFile.readResult() }
+            val mayHaveRootRuntime = settingsRepo.useRootService.first() ||
+                persistedStateResult is XrayStateReadResult.Unreadable ||
+                persistedStateResult is XrayStateReadResult.Present &&
+                persistedStateResult.state.physicalInterface != VPN_SERVICE_INTERFACE_LABEL
+            if (mayHaveRootRuntime && !connectionManager.ensureCleanRootRuntime()) return
+            connectionStateCoordinator.markDisconnected()
+            stopSelf()
+            return
+        }
         connectionLifecycle.updateActiveConfig(config)
         connectWithCurrentSettings(config)
     }
@@ -2007,7 +2037,7 @@ class XrayService : VpnService() {
             .setWhen(0)
             .setUsesChronometer(false)
             .setOnlyAlertOnce(true)
-            .setOngoing(showDisconnectAction)
+            .setOngoing(true)
 
         if (showDisconnectAction) {
             builder.addAction(
@@ -2121,6 +2151,7 @@ class XrayService : VpnService() {
         const val NOTIFICATION_ID = 1
         const val FAILURE_NOTIFICATION_ID = 2
         const val ACTION_CONNECT = "com.material.xray.CONNECT"
+        private const val ACTION_AUTO_CONNECT = "com.material.xray.AUTO_CONNECT"
         const val ACTION_SWITCH_SERVER = "com.material.xray.SWITCH_SERVER"
         const val ACTION_DISCONNECT = "com.material.xray.DISCONNECT"
         private const val ACTION_FORCE_DISCONNECT = "com.material.xray.FORCE_DISCONNECT"
@@ -2158,6 +2189,12 @@ class XrayService : VpnService() {
                 putExtra(EXTRA_SERVER_CONFIG, Json.encodeToString(ServerConfig.serializer(), serverConfig))
             }
             context.startForegroundService(intent)
+        }
+
+        fun autoConnect(context: Context) {
+            context.startForegroundService(
+                Intent(context, XrayService::class.java).setAction(ACTION_AUTO_CONNECT),
+            )
         }
 
         fun switchServer(context: Context, serverConfig: ServerConfig) {

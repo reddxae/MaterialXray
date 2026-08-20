@@ -50,6 +50,7 @@ class AppUpdateInstaller @Inject constructor(
     private val releaseFetcher: GitHubReleaseFetcher,
     private val settingsRepository: SettingsRepository,
     private val rootShell: RootShell,
+    private val oemAutostartManager: OemAutostartManager,
 ) {
     private val installMutex = Mutex()
     private val _installProgress = MutableStateFlow<AppUpdateInstallProgress?>(null)
@@ -242,6 +243,9 @@ class AppUpdateInstaller @Inject constructor(
             stage = AppUpdateInstallStage.InstallingWithRoot,
             fraction = null,
         )
+        if (settingsRepository.autoConnect.first() && !oemAutostartManager.prepareForRootUpdate()) {
+            throw IOException("Unable to allow automatic startup before updating")
+        }
         val result = rootShell.execute(
             command = rootInstallCommand(apk.path),
             namespace = RootShell.NetworkNamespace.CURRENT,

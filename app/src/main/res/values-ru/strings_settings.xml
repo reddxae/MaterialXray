@@ -116,6 +116,10 @@
     <string name="settings_retry_compatibility_check">Повторить проверку совместимости</string>
     <string name="settings_unavailable">Недоступно</string>
     <string name="settings_auto_connect_on_boot">Подключаться при запуске устройства</string>
+    <string name="settings_oem_autostart_required">Устройство может блокировать автоматическое подключение после перезапуска или обновления приложения. Разрешите автозапуск Material Xray в настройках устройства.</string>
+    <string name="settings_oem_autostart_external_required">Возможно, на устройстве нужно отдельно разрешить автозапуск. Проверьте настройки батареи и фонового запуска приложения.</string>
+    <string name="settings_open_autostart_settings">Открыть настройки автозапуска</string>
+    <string name="settings_open_app_settings">Открыть настройки приложения</string>
     <string name="settings_root_access_denied">Не удалось получить root-доступ на устройстве</string>
     <string name="settings_ok">ОК</string>
     <string name="settings_xray_core_version_detecting">Определение версии xray-core&#8230;</string>

@@ -107,6 +107,7 @@ import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.isInProgress
+import com.material.xray.service.OemAutostartGuidance
 import com.material.xray.ui.components.DropdownOption
 import com.material.xray.ui.components.ReadOnlyDropdownField
 import com.material.xray.ui.components.ScrolledTopAppBar
@@ -147,6 +148,7 @@ private fun SettingsScreenContent(
     val backupBusy by viewModel.backupBusy.collectAsStateWithLifecycle()
     val backupImportSummary by viewModel.backupImportSummary.collectAsStateWithLifecycle()
     val appUpdateCheckStatus by viewModel.appUpdateCheckStatus.collectAsStateWithLifecycle()
+    val oemAutostartGuidance by viewModel.oemAutostartGuidance.collectAsStateWithLifecycle()
     val tunName = settings.tunName
     val dnsServers = settings.dnsServers
     val domesticDnsServers = settings.domesticDnsServers
@@ -176,6 +178,7 @@ private fun SettingsScreenContent(
     val context = LocalContext.current
     val resources = LocalResources.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    rememberSystemState { viewModel.refreshOemAutostartGuidance() }
     val scrollState = rememberLazyListState()
     var showRootAccessDeniedDialog by rememberSaveable { mutableStateOf(false) }
     var showNotificationFieldsDialog by rememberSaveable { mutableStateOf(false) }
@@ -322,10 +325,12 @@ private fun SettingsScreenContent(
                         rootConnectionBackend = rootConnectionBackend,
                         tproxyCompatibility = tproxyCompatibility,
                         autoConnect = autoConnect,
+                        oemAutostartGuidance = oemAutostartGuidance,
                         onUseRootServiceChange = viewModel::setUseRootService,
                         onRootConnectionBackendChange = viewModel::setRootConnectionBackend,
                         onRetryTproxyCompatibility = viewModel::retryTproxyCompatibilityCheck,
                         onAutoConnectChange = viewModel::setAutoConnect,
+                        onOpenOemAutostartSettings = viewModel::openOemAutostartSettings,
                     )
                 }
             }
@@ -939,10 +944,12 @@ private fun SettingsServiceSection(
     rootConnectionBackend: RootConnectionBackend,
     tproxyCompatibility: TproxyCompatibility,
     autoConnect: Boolean,
+    oemAutostartGuidance: OemAutostartGuidance,
     onUseRootServiceChange: (Boolean) -> Unit,
     onRootConnectionBackendChange: (RootConnectionBackend) -> Unit,
     onRetryTproxyCompatibility: () -> Unit,
     onAutoConnectChange: (Boolean) -> Unit,
+    onOpenOemAutostartSettings: () -> Unit,
 ) {
     Text(
         text = stringResource(R.string.settings_section_service),
@@ -1032,6 +1039,50 @@ private fun SettingsServiceSection(
             onCheckedChange = onAutoConnectChange,
             enabled = !useRootService || rootServiceActive,
         )
+        if (autoConnect && oemAutostartGuidance.required && !oemAutostartGuidance.granted) {
+            OemAutostartBanner(
+                directSettingsAvailable = oemAutostartGuidance.directSettingsAvailable,
+                onOpenSettings = onOpenOemAutostartSettings,
+            )
+        }
+    }
+}
+
+@Composable
+private fun OemAutostartBanner(directSettingsAvailable: Boolean, onOpenSettings: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = stringResource(
+                if (directSettingsAvailable) {
+                    R.string.settings_oem_autostart_required
+                } else {
+                    R.string.settings_oem_autostart_external_required
+                },
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        TextButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.align(Alignment.End),
+        ) {
+            Text(
+                stringResource(
+                    if (directSettingsAvailable) {
+                        R.string.settings_open_autostart_settings
+                    } else {
+                        R.string.settings_open_app_settings
+                    },
+                ),
+            )
+        }
     }
 }
 

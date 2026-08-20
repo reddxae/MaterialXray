@@ -8,6 +8,7 @@ import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.di.ApplicationScope
 import com.material.xray.service.AppUpdateScheduler
+import com.material.xray.service.OemAutostartManager
 import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.service.StartupDiagnosticsLogger
 import com.material.xray.service.SubscriptionUpdateScheduler
@@ -36,6 +37,8 @@ class MaterialXrayApp : Application() {
 
     @Inject lateinit var settingsRuntimeManager: SettingsRuntimeManager
 
+    @Inject lateinit var oemAutostartManager: OemAutostartManager
+
     /**
      * Injected for its construction side effect: building the holder eagerly starts loading the
      * home screen data (Room and DataStore) during application startup, before the first
@@ -59,6 +62,13 @@ class MaterialXrayApp : Application() {
         appScope.launch {
             runCatching { settingsRuntimeManager.warmUpSettings() }
                 .onFailure { error -> Log.e(LOG_TAG, "Unable to warm up Settings", error) }
+            if (settingsRepository.autoConnect.first()) {
+                if (settingsRepository.useRootService.first()) {
+                    oemAutostartManager.grantWithRoot(force = true)
+                } else {
+                    oemAutostartManager.restoreRootGrant()
+                }
+            }
         }
         appScope.launch {
             runCatching { backupManager.recoverInterruptedRestore() }

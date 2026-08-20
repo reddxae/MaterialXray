@@ -114,6 +114,10 @@
     <string name="settings_retry_compatibility_check">Retry compatibility check</string>
     <string name="settings_unavailable">Unavailable</string>
     <string name="settings_auto_connect_on_boot">Auto-connect on boot</string>
+    <string name="settings_oem_autostart_required">Your device may block automatic connection after reboot or app updates. Allow Material Xray in the device autostart settings.</string>
+    <string name="settings_oem_autostart_external_required">Your device may require autostart to be allowed externally. Check the app battery and background-start settings.</string>
+    <string name="settings_open_autostart_settings">Open autostart settings</string>
+    <string name="settings_open_app_settings">Open app settings</string>
     <string name="settings_root_access_denied">Unable to access root on device</string>
     <string name="settings_ok">OK</string>
     <string name="settings_xray_core_version_detecting">xray-core version detecting&#8230;</string>

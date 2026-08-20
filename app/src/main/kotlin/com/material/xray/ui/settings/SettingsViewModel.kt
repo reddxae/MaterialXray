@@ -29,6 +29,7 @@ import com.material.xray.model.normalizeDnsServersForIpv6
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.ConnectionStateCoordinator
 import com.material.xray.service.DatabaseResetManager
+import com.material.xray.service.OemAutostartManager
 import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.service.XrayService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -69,6 +70,7 @@ class SettingsViewModel @Inject constructor(
     private val connectionStateCoordinator: ConnectionStateCoordinator,
     private val providerRoutingCoordinator: ProviderRoutingCoordinator,
     private val settingsRuntimeManager: SettingsRuntimeManager,
+    private val oemAutostartManager: OemAutostartManager,
     settingsDataState: SettingsDataState,
 ) : ViewModel() {
     private val _geoipUpdating = MutableStateFlow(false)
@@ -98,6 +100,7 @@ class SettingsViewModel @Inject constructor(
     val xrayCoreVersion: StateFlow<String?> = settingsRuntimeManager.xrayCoreVersion
     val startupReady: StateFlow<Boolean> = settingsRuntimeManager.startupReady
     val appUpdateCheckStatus: StateFlow<AppUpdateCheckStatus?> = _appUpdateCheckStatus.asStateFlow()
+    val oemAutostartGuidance = oemAutostartManager.guidance
 
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, currentSettings().tunName, settingsRepo::setTunName)
     fun normalizeDnsServers(servers: String): String = normalizeDnsServersForIpv6(servers, currentSettings().allowIpv6)
@@ -112,7 +115,24 @@ class SettingsViewModel @Inject constructor(
         currentSettings().domesticDnsServers,
         settingsRepo::setDomesticDnsServers,
     )
-    fun setAutoConnect(enabled: Boolean) = viewModelScope.launch { settingsRepo.setAutoConnect(enabled) }
+    fun setAutoConnect(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setAutoConnect(enabled)
+        if (enabled) {
+            oemAutostartManager.grantWithRoot(force = true)
+        } else {
+            oemAutostartManager.clearRootGrantAttempt()
+        }
+    }
+
+    fun refreshOemAutostartGuidance() = viewModelScope.launch {
+        if (currentSettings().useRootService && rootAvailable.value == true) {
+            oemAutostartManager.refreshWithRoot()
+        } else {
+            oemAutostartManager.refresh()
+        }
+    }
+
+    fun openOemAutostartSettings() = oemAutostartManager.openSettings()
     fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
         if (enabled == currentSettings().useRootService) return@launch
         if (!enabled) {
@@ -130,6 +150,8 @@ class SettingsViewModel @Inject constructor(
             _rootAccessDeniedEvents.send(Unit)
             return@launch
         }
+
+        if (currentSettings().autoConnect) oemAutostartManager.grantWithRoot(force = true)
 
         checkTproxyCompatibility()
     }

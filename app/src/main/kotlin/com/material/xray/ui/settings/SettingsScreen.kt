@@ -330,6 +330,74 @@ private fun SettingsScreenContent(
                 }
             }
 
+            item(key = "appearance_header") {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item(key = "appearance") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppLanguageSetting()
+
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_show_title_bar_logo),
+                        checked = showTitleBarLogo,
+                        onCheckedChange = viewModel::setShowTitleBarLogo,
+                    )
+
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_sort_outbounds_by_latency_title),
+                        description = stringResource(R.string.settings_sort_outbounds_by_latency_description),
+                        checked = sortOutboundsByLatency,
+                        onCheckedChange = viewModel::setSortOutboundsByLatency,
+                    )
+
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_show_both_latency_results_title),
+                        description = stringResource(R.string.settings_show_both_latency_results_description),
+                        checked = showBothLatencyResults,
+                        onCheckedChange = viewModel::setShowBothLatencyResults,
+                    )
+
+                    NotificationSettingsSection(
+                        settings = notificationSettings,
+                        onEnabledChange = viewModel::setNotificationEnabled,
+                        onConfigureFields = { showNotificationFieldsDialog = true },
+                        onConfigureStyle = { showFieldStyleDialog = true },
+                        onConfigureFrequency = { showUpdateFrequencyDialog = true },
+                    )
+
+                    SettingsNestedSection(title = stringResource(R.string.settings_app_icon_title)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LauncherIcon.entries.forEach { icon ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .selectable(
+                                            selected = icon == launcherIcon,
+                                            role = Role.RadioButton,
+                                            onClick = { viewModel.setLauncherIcon(icon) },
+                                        )
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(stringResource(icon.labelResource), style = MaterialTheme.typography.bodyLarge)
+                                    }
+                                    RadioButton(selected = icon == launcherIcon, onClick = null)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item(key = "routing_header") {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -393,13 +461,13 @@ private fun SettingsScreenContent(
                 }
             }
 
-            item(key = "network_header") {
+            item(key = "core_header") {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     HorizontalDivider()
-                    Text(stringResource(R.string.settings_section_network), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.settings_section_core), style = MaterialTheme.typography.titleMedium)
                 }
             }
 
@@ -660,99 +728,6 @@ private fun SettingsScreenContent(
                 }
             }
 
-            item(key = "appearance_header") {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    HorizontalDivider()
-                    Text(stringResource(R.string.settings_section_appearance), style = MaterialTheme.typography.titleMedium)
-                }
-            }
-            item(key = "appearance") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AppLanguageSetting()
-
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_show_title_bar_logo),
-                        checked = showTitleBarLogo,
-                        onCheckedChange = viewModel::setShowTitleBarLogo,
-                    )
-
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_sort_outbounds_by_latency_title),
-                        description = stringResource(R.string.settings_sort_outbounds_by_latency_description),
-                        checked = sortOutboundsByLatency,
-                        onCheckedChange = viewModel::setSortOutboundsByLatency,
-                    )
-
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_show_both_latency_results_title),
-                        description = stringResource(R.string.settings_show_both_latency_results_description),
-                        checked = showBothLatencyResults,
-                        onCheckedChange = viewModel::setShowBothLatencyResults,
-                    )
-
-                    NotificationSettingsSection(
-                        settings = notificationSettings,
-                        onEnabledChange = viewModel::setNotificationEnabled,
-                        onConfigureFields = { showNotificationFieldsDialog = true },
-                        onConfigureStyle = { showFieldStyleDialog = true },
-                        onConfigureFrequency = { showUpdateFrequencyDialog = true },
-                    )
-
-                    SettingsNestedSection(title = stringResource(R.string.settings_app_icon_title)) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            LauncherIcon.entries.forEach { icon ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp)
-                                        .selectable(
-                                            selected = icon == launcherIcon,
-                                            role = Role.RadioButton,
-                                            onClick = { viewModel.setLauncherIcon(icon) },
-                                        )
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(stringResource(icon.labelResource), style = MaterialTheme.typography.bodyLarge)
-                                    }
-                                    RadioButton(selected = icon == launcherIcon, onClick = null)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            item(key = "settings_header") {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    HorizontalDivider()
-                    Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
-                }
-            }
-            item(key = "app_settings") {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_send_hardware_id_title),
-                        description = stringResource(R.string.settings_send_hardware_id_description),
-                        checked = subscriptionSendHardwareId,
-                        onCheckedChange = viewModel::setSubscriptionSendHardwareId,
-                    )
-                    SettingsSwitchRow(
-                        title = stringResource(R.string.settings_show_advanced_options),
-                        checked = showAdvancedOptions,
-                        onCheckedChange = viewModel::setShowAdvancedOptions,
-                    )
-                }
-            }
-
             item(key = "data_header") {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -794,6 +769,31 @@ private fun SettingsScreenContent(
                         ),
                         enabled = !databaseResetting,
                         onClick = { showResetDatabaseDialog = true },
+                    )
+                }
+            }
+
+            item(key = "settings_header") {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    HorizontalDivider()
+                    Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            item(key = "app_settings") {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_send_hardware_id_title),
+                        description = stringResource(R.string.settings_send_hardware_id_description),
+                        checked = subscriptionSendHardwareId,
+                        onCheckedChange = viewModel::setSubscriptionSendHardwareId,
+                    )
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_show_advanced_options),
+                        checked = showAdvancedOptions,
+                        onCheckedChange = viewModel::setShowAdvancedOptions,
                     )
                 }
             }

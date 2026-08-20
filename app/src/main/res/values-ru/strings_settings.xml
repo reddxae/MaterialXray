@@ -7,7 +7,7 @@
     <string name="settings_bypass_lan_description">Направлять трафик к частным IP-адресам и доменам напрямую</string>
     <string name="settings_allow_ipv6_connections">Разрешить подключения IPv6</string>
     <string name="settings_routing_policy_title">Политика маршрутизации</string>
-    <string name="settings_section_network">Сеть</string>
+    <string name="settings_section_core">Ядро</string>
     <string name="settings_default_outbound_label">Исходящее соединение по умолчанию</string>
     <string name="settings_dns_servers_label">DNS-серверы</string>
     <string name="settings_dns_servers_placeholder">Оставьте пустым, чтобы использовать системный DNS</string>

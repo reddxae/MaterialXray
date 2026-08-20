@@ -7,7 +7,7 @@
     <string name="settings_bypass_lan_description">Route private IPs and LAN domains directly</string>
     <string name="settings_allow_ipv6_connections">Allow IPv6 connections</string>
     <string name="settings_routing_policy_title">Routing policy</string>
-    <string name="settings_section_network">Network</string>
+    <string name="settings_section_core">Core</string>
     <string name="settings_default_outbound_label">Default Outbound</string>
     <string name="settings_dns_servers_label">DNS Servers</string>
     <string name="settings_dns_servers_placeholder">Leave empty to use system DNS</string>

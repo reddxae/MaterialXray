@@ -92,6 +92,7 @@ import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.XrayOutbound
 import com.material.xray.ui.apps.AppBypassContent
 import com.material.xray.ui.apps.AppRoutingMenuActions
+import com.material.xray.ui.components.AppBarTitle
 import com.material.xray.ui.components.DropdownOption
 import com.material.xray.ui.components.ReadOnlyDropdownField
 import com.material.xray.ui.components.ScrollFadeEdges
@@ -161,7 +162,7 @@ private val matchModeOptions = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
+fun RoutingScreen(showTitleBarLogo: Boolean, viewModel: RoutingViewModel = hiltViewModel()) {
     val rules by viewModel.rules.collectAsStateWithLifecycle()
     val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
     val automaticRoutingProviderName by viewModel.automaticRoutingProviderName.collectAsStateWithLifecycle()
@@ -233,7 +234,7 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
+                    AppBarTitle(
                         when {
                             pagerState.currentPage == RoutingTab.Rules.ordinal && selectionMode ->
                                 pluralStringResource(
@@ -243,8 +244,10 @@ fun RoutingScreen(viewModel: RoutingViewModel = hiltViewModel()) {
                                 )
                             else -> stringResource(R.string.routing_title)
                         },
+                        showTitleBarLogo,
                     )
                 },
+                expandedHeight = 52.dp,
                 windowInsets = TopAppBarDefaults.windowInsets,
                 actions = {
                     when (pagerState.currentPage) {

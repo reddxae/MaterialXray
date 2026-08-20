@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.material.xray.R
 import com.material.xray.service.LogEntry
 import com.material.xray.service.LogSource
+import com.material.xray.ui.components.AppBarTitle
 import com.material.xray.ui.components.ScrollFadeEdges
 import com.material.xray.ui.components.SegmentedTabRow
 import java.io.IOException
@@ -76,7 +77,7 @@ private enum class LogFilter(@param:StringRes val labelRes: Int) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
+fun LogsScreen(showTitleBarLogo: Boolean, viewModel: LogsViewModel = hiltViewModel()) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val allEntries by viewModel.entries.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(pageCount = { LogFilter.entries.size })
@@ -126,7 +127,8 @@ fun LogsScreen(viewModel: LogsViewModel = hiltViewModel()) {
         contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.navigation_logs)) },
+                title = { AppBarTitle(stringResource(R.string.navigation_logs), showTitleBarLogo) },
+                expandedHeight = 52.dp,
                 windowInsets = TopAppBarDefaults.windowInsets,
                 actions = {
                     Box {

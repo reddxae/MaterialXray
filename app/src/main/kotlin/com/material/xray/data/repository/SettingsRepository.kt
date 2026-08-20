@@ -48,6 +48,7 @@ data class SettingsSnapshot(
     val xrayLogLevel: XrayLogLevel,
     val defaultOutbound: XrayOutbound,
     val launcherIcon: LauncherIcon,
+    val showTitleBarLogo: Boolean,
     val showAdvancedOptions: Boolean,
     val notificationSettings: NotificationSettings,
     val subscriptionSendHardwareId: Boolean,
@@ -97,6 +98,7 @@ class SettingsRepository @Inject constructor(
         val LAST_XRAY_LOG_LEVEL = stringPreferencesKey("last_xray_log_level")
         val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
         val LAUNCHER_ICON = stringPreferencesKey("launcher_icon")
+        val SHOW_TITLE_BAR_LOGO = booleanPreferencesKey("show_title_bar_logo")
         val SHOW_ADVANCED_OPTIONS = booleanPreferencesKey("show_advanced_options")
         val APP_SPECIFIC_SERVER_NOTE_SHOWN = booleanPreferencesKey("app_specific_server_note_shown")
         val ROUTING_POLICY_CONTROL = stringPreferencesKey("routing_policy_control")
@@ -168,6 +170,9 @@ class SettingsRepository @Inject constructor(
     }
     val launcherIcon: Flow<LauncherIcon> = store.data.map { prefs ->
         LauncherIcon.fromValue(prefs[LAUNCHER_ICON])
+    }
+    val showTitleBarLogo: Flow<Boolean> = store.data.map { prefs ->
+        prefs[SHOW_TITLE_BAR_LOGO] ?: true
     }
     val showAdvancedOptions: Flow<Boolean> = store.data.map { prefs ->
         prefs[SHOW_ADVANCED_OPTIONS] ?: false
@@ -271,6 +276,7 @@ class SettingsRepository @Inject constructor(
             },
             defaultOutbound = XrayOutbound.fromTag(prefs[DEFAULT_OUTBOUND]),
             launcherIcon = LauncherIcon.fromValue(prefs[LAUNCHER_ICON]),
+            showTitleBarLogo = prefs[SHOW_TITLE_BAR_LOGO] ?: true,
             showAdvancedOptions = showAdvancedOptions,
             notificationSettings = NotificationSettings(
                 enabled = prefs[NOTIFICATION_ENABLED] ?: true,
@@ -370,6 +376,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setLauncherIcon(icon: LauncherIcon) = store.edit { prefs ->
         prefs[LAUNCHER_ICON] = icon.value
+    }
+    suspend fun setShowTitleBarLogo(enabled: Boolean) = store.edit { prefs ->
+        prefs[SHOW_TITLE_BAR_LOGO] = enabled
     }
     suspend fun setShowAdvancedOptions(enabled: Boolean) = store.edit { prefs ->
         val wasEnabled = prefs[SHOW_ADVANCED_OPTIONS] ?: false
@@ -528,6 +537,7 @@ class SettingsRepository @Inject constructor(
             }
             map["default_outbound"]?.let { prefs[DEFAULT_OUTBOUND] = XrayOutbound.fromTag(it).tag }
             map["launcher_icon"]?.let { prefs[LAUNCHER_ICON] = LauncherIcon.fromValue(it).value }
+            map["show_title_bar_logo"]?.toBooleanStrictOrNull()?.let { prefs[SHOW_TITLE_BAR_LOGO] = it }
             showAdvancedOptions?.let { prefs[SHOW_ADVANCED_OPTIONS] = it }
             map["app_specific_server_note_shown"]
                 ?.toBooleanStrictOrNull()

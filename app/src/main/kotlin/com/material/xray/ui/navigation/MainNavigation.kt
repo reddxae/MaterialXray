@@ -46,6 +46,7 @@ fun MainNavigation() {
     val viewModel: MainNavigationViewModel = hiltViewModel()
     val navController = rememberNavController()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val showTitleBarLogo by viewModel.showTitleBarLogo.collectAsStateWithLifecycle()
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -134,10 +135,10 @@ fun MainNavigation() {
             startDestination = Screen.Home.route,
             modifier = Modifier.padding(innerPadding),
         ) {
-            composable(Screen.Home.route) { HomeScreen() }
-            composable(Screen.Logs.route) { LogsScreen() }
-            composable(Screen.Routing.route) { RoutingScreen() }
-            composable(Screen.Settings.route) { SettingsScreen() }
+            composable(Screen.Home.route) { HomeScreen(showTitleBarLogo) }
+            composable(Screen.Logs.route) { LogsScreen(showTitleBarLogo) }
+            composable(Screen.Routing.route) { RoutingScreen(showTitleBarLogo) }
+            composable(Screen.Settings.route) { SettingsScreen(showTitleBarLogo) }
         }
     }
 }

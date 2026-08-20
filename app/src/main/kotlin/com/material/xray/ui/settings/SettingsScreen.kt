@@ -120,12 +120,12 @@ import org.xmlpull.v1.XmlPullParser
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(showTitleBarLogo: Boolean, viewModel: SettingsViewModel = hiltViewModel()) {
     val persistedSettings by viewModel.settings.collectAsStateWithLifecycle()
     val startupReady by viewModel.startupReady.collectAsStateWithLifecycle()
     val settings = persistedSettings
     if (settings == null || !startupReady) {
-        SettingsLoadingScreen()
+        SettingsLoadingScreen(showTitleBarLogo)
     } else {
         SettingsScreenContent(viewModel, settings)
     }
@@ -162,6 +162,7 @@ private fun SettingsScreenContent(
     val xrayLogLevel = settings.xrayLogLevel
     val defaultOutbound = settings.defaultOutbound
     val launcherIcon = settings.launcherIcon
+    val showTitleBarLogo = settings.showTitleBarLogo
     val showAdvancedOptions = settings.showAdvancedOptions
     val notificationSettings = settings.notificationSettings
     val subscriptionSendHardwareId = settings.subscriptionSendHardwareId
@@ -299,6 +300,7 @@ private fun SettingsScreenContent(
             ScrolledTopAppBar(
                 title = stringResource(R.string.settings_title),
                 scrollBehavior = topAppBarScrollBehavior,
+                showLogo = showTitleBarLogo,
             )
         },
     ) { padding ->
@@ -672,6 +674,12 @@ private fun SettingsScreenContent(
                     AppLanguageSetting()
 
                     SettingsSwitchRow(
+                        title = stringResource(R.string.settings_show_title_bar_logo),
+                        checked = showTitleBarLogo,
+                        onCheckedChange = viewModel::setShowTitleBarLogo,
+                    )
+
+                    SettingsSwitchRow(
                         title = stringResource(R.string.settings_sort_outbounds_by_latency_title),
                         description = stringResource(R.string.settings_sort_outbounds_by_latency_description),
                         checked = sortOutboundsByLatency,
@@ -883,7 +891,7 @@ private fun SettingsScreenContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsLoadingScreen() {
+private fun SettingsLoadingScreen(showTitleBarLogo: Boolean) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
@@ -891,6 +899,7 @@ private fun SettingsLoadingScreen() {
             ScrolledTopAppBar(
                 title = stringResource(R.string.settings_title),
                 scrollBehavior = scrollBehavior,
+                showLogo = showTitleBarLogo,
             )
         },
     ) { padding ->

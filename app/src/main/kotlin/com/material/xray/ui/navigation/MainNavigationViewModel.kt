@@ -15,6 +15,8 @@ class MainNavigationViewModel @Inject constructor(
     private val routingChangeManager: RoutingChangeManager,
     settingsRepository: SettingsRepository,
 ) : ViewModel() {
+    val showTitleBarLogo: StateFlow<Boolean> = settingsRepository.showTitleBarLogo
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val showAdvancedOptions: StateFlow<Boolean> = settingsRepository.showAdvancedOptions
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 

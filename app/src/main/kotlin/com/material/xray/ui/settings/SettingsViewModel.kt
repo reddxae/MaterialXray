@@ -198,6 +198,10 @@ class SettingsViewModel @Inject constructor(
         if (icon == currentSettings().launcherIcon) return@launch
         settingsRuntimeManager.setLauncherIcon(icon)
     }
+    fun setShowTitleBarLogo(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == currentSettings().showTitleBarLogo) return@launch
+        settingsRepo.setShowTitleBarLogo(enabled)
+    }
     fun setShowAdvancedOptions(enabled: Boolean) = viewModelScope.launch {
         if (enabled == currentSettings().showAdvancedOptions) return@launch
         settingsRepo.setShowAdvancedOptions(enabled)

@@ -157,7 +157,7 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
+fun HomeScreen(showTitleBarLogo: Boolean, viewModel: HomeViewModel = hiltViewModel()) {
     val uiState = collectHomeUiState(viewModel)
     val connectionUiState = buildConnectionUiState(
         connectionState = uiState.connectionState,
@@ -274,6 +274,7 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
             ScrolledTopAppBar(
                 title = stringResource(R.string.app_name),
                 scrollBehavior = topAppBarScrollBehavior,
+                showLogo = showTitleBarLogo,
             )
         },
     ) { padding ->

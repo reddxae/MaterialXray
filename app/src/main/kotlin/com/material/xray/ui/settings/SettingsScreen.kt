@@ -123,9 +123,8 @@ import org.xmlpull.v1.XmlPullParser
 @Composable
 fun SettingsScreen(showTitleBarLogo: Boolean, viewModel: SettingsViewModel = hiltViewModel()) {
     val persistedSettings by viewModel.settings.collectAsStateWithLifecycle()
-    val startupReady by viewModel.startupReady.collectAsStateWithLifecycle()
     val settings = persistedSettings
-    if (settings == null || !startupReady) {
+    if (settings == null) {
         SettingsLoadingScreen(showTitleBarLogo)
     } else {
         SettingsScreenContent(viewModel, settings)

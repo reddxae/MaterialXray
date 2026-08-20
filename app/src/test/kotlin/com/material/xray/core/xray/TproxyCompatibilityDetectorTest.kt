@@ -132,6 +132,32 @@ class TproxyCompatibilityDetectorTest {
         assertFalse(TproxyCompatibility.Unknown.isConclusive())
     }
 
+    @Test
+    fun `cache round trips conclusive compatibility verdicts`() {
+        val verdicts = listOf(
+            TproxyCompatibility.Supported(ipv6 = true),
+            TproxyCompatibility.Supported(ipv6 = false),
+            TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.TproxyIpv4Unavailable),
+        )
+
+        verdicts.forEach { verdict ->
+            assertEquals(verdict, decodeCachedTproxyCompatibility(encodeCachedTproxyCompatibility(verdict)))
+        }
+    }
+
+    @Test
+    fun `cache rejects transient and malformed compatibility verdicts`() {
+        assertEquals(
+            null,
+            encodeCachedTproxyCompatibility(
+                TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.CommandTimedOut),
+            ),
+        )
+        assertEquals(null, decodeCachedTproxyCompatibility("0|supported|1"))
+        assertEquals(null, decodeCachedTproxyCompatibility("1|supported|maybe"))
+        assertEquals(null, decodeCachedTproxyCompatibility("1|unsupported|CommandTimedOut"))
+    }
+
     private companion object {
         const val ANDROID_INTERFACE_RULE_PRIORITY = 14_999
     }

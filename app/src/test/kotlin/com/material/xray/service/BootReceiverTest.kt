@@ -24,4 +24,29 @@ class BootReceiverTest {
         assertFalse(shouldStartAutomaticConnection(enabled = false, vpnPermissionGranted = true))
         assertFalse(shouldStartAutomaticConnection(enabled = true, vpnPermissionGranted = false))
     }
+
+    @Test
+    fun `package replacement restores a surviving runtime before reconnecting`() {
+        assertTrue(
+            shouldRecoverAfterPackageReplacement(
+                Intent.ACTION_MY_PACKAGE_REPLACED,
+                autoConnect = false,
+                hasRecordedRuntime = true,
+            ),
+        )
+        assertTrue(
+            shouldRecoverAfterPackageReplacement(
+                Intent.ACTION_MY_PACKAGE_REPLACED,
+                autoConnect = true,
+                hasRecordedRuntime = false,
+            ),
+        )
+        assertFalse(
+            shouldRecoverAfterPackageReplacement(
+                Intent.ACTION_BOOT_COMPLETED,
+                autoConnect = true,
+                hasRecordedRuntime = true,
+            ),
+        )
+    }
 }

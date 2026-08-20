@@ -9,7 +9,6 @@ import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.di.ApplicationScope
 import com.material.xray.service.AppUpdateScheduler
 import com.material.xray.service.OemAutostartManager
-import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.service.StartupDiagnosticsLogger
 import com.material.xray.service.SubscriptionUpdateScheduler
 import com.material.xray.ui.home.HomeDataState
@@ -17,6 +16,7 @@ import com.material.xray.ui.settings.SettingsDataState
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -34,8 +34,6 @@ class MaterialXrayApp : Application() {
     @Inject lateinit var backupManager: BackupManager
 
     @Inject lateinit var startupDiagnosticsLogger: StartupDiagnosticsLogger
-
-    @Inject lateinit var settingsRuntimeManager: SettingsRuntimeManager
 
     @Inject lateinit var oemAutostartManager: OemAutostartManager
 
@@ -60,14 +58,9 @@ class MaterialXrayApp : Application() {
         initializeAppLocales(this)
         super.onCreate()
         appScope.launch {
-            runCatching { settingsRuntimeManager.warmUpSettings() }
-                .onFailure { error -> Log.e(LOG_TAG, "Unable to warm up Settings", error) }
             if (settingsRepository.autoConnect.first()) {
-                if (settingsRepository.useRootService.first()) {
-                    oemAutostartManager.grantWithRoot(force = true)
-                } else {
-                    oemAutostartManager.restoreRootGrant()
-                }
+                delay(STARTUP_BACKGROUND_WORK_DELAY_SECONDS * 1_000)
+                oemAutostartManager.restoreRootGrant()
             }
         }
         appScope.launch {
@@ -79,10 +72,11 @@ class MaterialXrayApp : Application() {
             appUpdateScheduler.setEnabled(settingsRepository.appUpdateChecksEnabled.first())
         }
         subscriptionUpdateScheduler.schedulePeriodicUpdates()
-        subscriptionUpdateScheduler.enqueueDueCheckNow()
+        subscriptionUpdateScheduler.enqueueDueCheckNow(STARTUP_BACKGROUND_WORK_DELAY_SECONDS)
     }
 
     private companion object {
         const val LOG_TAG = "MaterialXrayApp"
+        const val STARTUP_BACKGROUND_WORK_DELAY_SECONDS = 30L
     }
 }

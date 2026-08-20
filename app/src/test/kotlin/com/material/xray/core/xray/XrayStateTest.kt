@@ -15,5 +15,6 @@ class XrayStateTest {
 
         assertEquals(RootConnectionBackend.Tun, state.rootConnectionBackend)
         assertNull(state.tproxy)
+        assertNull(state.appVersionCode)
     }
 }

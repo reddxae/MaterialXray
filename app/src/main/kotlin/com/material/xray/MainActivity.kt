@@ -10,7 +10,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.material.xray.core.locale.notifyAppLocaleChanged
-import com.material.xray.service.SettingsRuntimeManager
 import com.material.xray.ui.home.HomeDataState
 import com.material.xray.ui.navigation.MainNavigation
 import com.material.xray.ui.settings.SettingsDataState
@@ -24,8 +23,6 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var homeDataState: HomeDataState
 
     @Inject lateinit var settingsDataState: SettingsDataState
-
-    @Inject lateinit var settingsRuntimeManager: SettingsRuntimeManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -47,8 +44,7 @@ class MainActivity : AppCompatActivity() {
         splashScreen.setKeepOnScreenCondition {
             keepSplashOnScreen(
                 initialDataLoaded = homeDataState.data.value != null &&
-                    settingsDataState.data.value != null &&
-                    settingsRuntimeManager.startupReady.value,
+                    settingsDataState.data.value != null,
                 elapsedMillis = SystemClock.uptimeMillis() - splashShownAtMillis,
             )
         }

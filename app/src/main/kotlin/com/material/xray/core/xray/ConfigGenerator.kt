@@ -13,7 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 class ConfigGenerator {
-    private val json = Json { prettyPrint = true }
+    private val json = Json
 
     fun generate(
         server: ServerConfig,

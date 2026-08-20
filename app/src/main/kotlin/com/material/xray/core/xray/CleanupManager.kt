@@ -50,15 +50,16 @@ class CleanupManager(
         val firewallRemoved = apiFirewall.remove(appUid)
         val nftablesRemoved = nftables.remove()
 
-        val tunName = state
-            ?.takeIf { it.rootConnectionBackend == RootConnectionBackend.Tun }
-            ?.tunName
-            ?: fallbackTunName
-        val fwmark = state?.fwmark ?: 255
-        val routeMark = state?.routeMark ?: 100
-        val routeTable = state?.routeTable ?: 100
-        val appRouteCount = state?.appProxyServerIds?.size?.takeIf { it > 0 } ?: 0
-        val routingRemoved = tunManager.removeRouting(fwmark, routeMark, routeTable, tunName, appRouteCount)
+        val routingRemoved = if (!shouldRemoveTunRouting(state?.rootConnectionBackend)) {
+            true
+        } else {
+            val tunName = state?.tunName ?: fallbackTunName
+            val fwmark = state?.fwmark ?: 255
+            val routeMark = state?.routeMark ?: 100
+            val routeTable = state?.routeTable ?: 100
+            val appRouteCount = state?.appProxyServerIds?.size?.takeIf { it > 0 } ?: 0
+            tunManager.removeRouting(fwmark, routeMark, routeTable, tunName, appRouteCount)
+        }
         val tproxyRemoved = tproxyManager.remove(state?.tproxy ?: state?.transitionGuard, preserveTproxyGuard)
         return firewallRemoved && nftablesRemoved && routingRemoved && tproxyRemoved
     }
@@ -95,3 +96,5 @@ internal fun ownedProcessStopCommand(configPath: String, persistedPid: Int?): St
 }
 
 private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
+
+internal fun shouldRemoveTunRouting(backend: RootConnectionBackend?): Boolean = backend != RootConnectionBackend.Tproxy

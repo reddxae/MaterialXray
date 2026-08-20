@@ -1,5 +1,6 @@
 package com.material.xray.core.xray
 
+import com.material.xray.model.RootConnectionBackend
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,5 +35,12 @@ class CleanupManagerTest {
 
         assertFalse(command.contains("kill 42"))
         assertFalse(command.contains("kill -9 42"))
+    }
+
+    @Test
+    fun `cleanup skips TUN teardown for a recorded TPROXY runtime`() {
+        assertFalse(shouldRemoveTunRouting(RootConnectionBackend.Tproxy))
+        assertTrue(shouldRemoveTunRouting(RootConnectionBackend.Tun))
+        assertTrue(shouldRemoveTunRouting(null))
     }
 }

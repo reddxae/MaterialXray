@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 @Singleton
@@ -37,11 +39,11 @@ class SettingsRuntimeManager @Inject constructor(
 ) {
     private val _rootAvailable = MutableStateFlow<Boolean?>(null)
     private val _xrayCoreVersion = MutableStateFlow<String?>(null)
-    private val _startupReady = MutableStateFlow(false)
+    private val diagnosticsMutex = Mutex()
+    private var diagnosticsLoaded = false
 
     val rootAvailable: StateFlow<Boolean?> = _rootAvailable.asStateFlow()
     val xrayCoreVersion: StateFlow<String?> = _xrayCoreVersion.asStateFlow()
-    val startupReady: StateFlow<Boolean> = _startupReady.asStateFlow()
 
     suspend fun setLauncherIcon(icon: LauncherIcon) {
         settingsRepository.setLauncherIcon(icon)
@@ -80,15 +82,13 @@ class SettingsRuntimeManager @Inject constructor(
      * Only root-mode users are probed, because the probe needs a root shell. Enabling root mode later
      * performs the one check at that point instead.
      */
-    suspend fun warmUpSettings() {
-        try {
-            if (settingsRepository.useRootService.first() && checkRootAvailability()) {
-                detectTproxyCompatibility()
-            }
-            _xrayCoreVersion.value = readXrayCoreVersion()
-        } finally {
-            _startupReady.value = true
+    suspend fun loadRuntimeDiagnostics() = diagnosticsMutex.withLock {
+        if (diagnosticsLoaded) return@withLock
+        if (settingsRepository.useRootService.first() && checkRootAvailability()) {
+            detectTproxyCompatibility()
         }
+        _xrayCoreVersion.value = readXrayCoreVersion()
+        diagnosticsLoaded = true
     }
 
     val tproxyCompatibility: StateFlow<TproxyCompatibility> get() = tproxyCompatibilityDetector.state

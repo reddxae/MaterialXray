@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.util.Log
+import com.material.xray.core.xray.StateFile
+import com.material.xray.core.xray.XrayStateReadResult
 import com.material.xray.data.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -25,21 +27,32 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             // A detached coroutine has no other handler; an escaped exception here would crash
             // the whole app process in the middle of automatic connection handling.
-            runCatching { autoConnectIfConfigured(context) }
+            runCatching { autoConnectIfConfigured(context, intent?.action) }
                 .onFailure { error -> Log.e(TAG, "Automatic connection failed", error) }
             pendingResult.finish()
         }
     }
 
-    private suspend fun autoConnectIfConfigured(context: Context) {
+    private suspend fun autoConnectIfConfigured(context: Context, action: String?) {
         val autoConnect = settingsRepo.autoConnect.first()
-        if (!autoConnect) return
+        val hasRecordedRuntime = action == Intent.ACTION_MY_PACKAGE_REPLACED &&
+            StateFile(context).readResult() !is XrayStateReadResult.Absent
+        val recoverAfterReplacement = shouldRecoverAfterPackageReplacement(
+            action = action,
+            autoConnect = autoConnect,
+            hasRecordedRuntime = hasRecordedRuntime,
+        )
+        if (!autoConnect && !recoverAfterReplacement) return
 
         val useRootService = settingsRepo.useRootService.first()
         val vpnPermissionGranted = useRootService || VpnService.prepare(context) == null
-        if (!shouldStartAutomaticConnection(autoConnect, vpnPermissionGranted)) return
+        if (!shouldStartAutomaticConnection(autoConnect || recoverAfterReplacement, vpnPermissionGranted)) return
 
-        XrayService.autoConnect(context)
+        if (recoverAfterReplacement) {
+            XrayService.recoverAfterPackageReplacement(context)
+        } else {
+            XrayService.autoConnect(context)
+        }
     }
 
     private companion object {
@@ -54,3 +67,9 @@ internal fun shouldStartAutomaticConnection(
     enabled: Boolean,
     vpnPermissionGranted: Boolean,
 ): Boolean = enabled && vpnPermissionGranted
+
+internal fun shouldRecoverAfterPackageReplacement(
+    action: String?,
+    autoConnect: Boolean,
+    hasRecordedRuntime: Boolean,
+): Boolean = action == Intent.ACTION_MY_PACKAGE_REPLACED && (autoConnect || hasRecordedRuntime)

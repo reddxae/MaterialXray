@@ -234,27 +234,40 @@ class TunManager internal constructor(
         routeTable: Int,
         tunName: String,
         managedAppRouteCount: Int = MAX_APP_TUN_ROUTES,
-    ): Boolean {
+    ): Boolean = executeCommand(
+        routingRemovalCommand(fwmark, routeMark, routeTable, tunName, managedAppRouteCount),
+    ).isSuccess
+
+    private fun routingRemovalCommand(
+        fwmark: Int,
+        routeMark: Int,
+        routeTable: Int,
+        tunName: String,
+        managedAppRouteCount: Int,
+    ): String {
         val bypassTable = routeTable + 1
         val updateGuardTable = routeTable + UPDATE_GUARD_ROUTE_TABLE_OFFSET
-        var success = executeCommand(
-            listOf(
-                "ip rule del fwmark $fwmark table main prio 10 2>/dev/null || true",
-                "ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null || true",
-                "ip rule del fwmark $routeMark table $routeTable prio 20 2>/dev/null || true",
-            ).joinToString("; "),
-        ).isSuccess
         val appTables = appRouteTables(routeTable, managedAppRouteCount)
-        success = removeManagedRoutingTables(routeTable, listOf(bypassTable, updateGuardTable) + appTables) && success
-        success = flushRouteTables(listOf(bypassTable, routeTable, updateGuardTable) + appTables) && success
+        val routeTables = listOf(bypassTable, routeTable, updateGuardTable) + appTables
         val interfaceNames = buildList {
             add(tunName)
             for (index in 1..managedAppRouteCount.coerceIn(0, MAX_APP_TUN_ROUTES)) {
                 add(appTunName(tunName, index))
             }
         }
-        val linkResult = executeCommand(managedLinkRemovalCommand(interfaceNames))
-        return linkResult.isSuccess && success
+        val commands = listOf(
+            "ip rule del fwmark $fwmark table main prio 10 2>/dev/null || true",
+            "ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null || true",
+            "ip rule del fwmark $routeMark table $routeTable prio 20 2>/dev/null || true",
+            removeManagedRoutingTablesCommand(routeTables, "ip rule"),
+            removeManagedRoutingTablesCommand(routeTables, "ip -6 rule"),
+            flushRouteTablesCommand(routeTables, "ip route"),
+            flushRouteTablesCommand(routeTables, "ip -6 route"),
+            managedLinkRemovalCommand(interfaceNames),
+        )
+        return "status=0; " +
+            commands.joinToString("; ") { command -> "( $command ) || status=1" } +
+            "; exit \$status"
     }
 
     private fun defaultUidRoutingRuleCommands(
@@ -373,50 +386,10 @@ class TunManager internal constructor(
         return firstFailure ?: RoutingResult(success = true)
     }
 
-    private suspend fun flushRouteTables(routeTables: List<Int>): Boolean {
-        if (routeTables.isEmpty()) return true
-        return executeCommand(
-            listOf(
-                flushRouteTablesCommand(routeTables, "ip route"),
-                optionalIpv6FlushRouteTablesCommand(routeTables),
-            ).joinToString(" && "),
-        ).isSuccess
-    }
-
-    private suspend fun removeManagedRoutingTables(routeTable: Int, appRouteTables: List<Int>): Boolean {
-        val managedTables = (listOf(routeTable) + appRouteTables).toSet()
-        var success = true
-        listOf("ip rule", "ip -6 rule").forEach { ruleCommand ->
-            val result = executeCommand("$ruleCommand show")
-            if (!result.isSuccess) {
-                success = false
-                return@forEach
-            }
-            val commands = result.output
-                .lineSequence()
-                .filter { line -> line.referencesAnyLookupTable(managedTables) }
-                .mapNotNull { line ->
-                    line.substringAfter(':', missingDelimiterValue = "")
-                        .trim()
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { rule -> "$ruleCommand del $rule" }
-                }
-                .toList()
-            if (commands.isEmpty()) return@forEach
-
-            commands.chunked(IP_RULE_BATCH_SIZE).forEach { chunk ->
-                if (!executeCommand(ipRuleBatchCommand(chunk, force = true)).isSuccess) success = false
-            }
-        }
-        return success
-    }
-
     private fun flushRouteTablesCommand(routeTables: List<Int>, routeCommand: String): String = routeTables.distinct().joinToString(" && ") { table ->
         "if $routeCommand show table $table >/dev/null 2>&1; then " +
             "$routeCommand flush table $table 2>/dev/null; fi"
     }
-
-    private fun optionalIpv6FlushRouteTablesCommand(routeTables: List<Int>): String = flushRouteTablesCommand(routeTables, "ip -6 route")
 
     private fun removeManagedRoutingTablesCommand(routeTables: List<Int>, ruleCommand: String): String {
         val tables = routeTables.distinct().joinToString(" ")

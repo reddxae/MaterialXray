@@ -479,15 +479,19 @@ class TunManagerTest {
             managedAppRouteCount = 1,
         )
 
-        assertTrue(commands.contains("ip -6 rule show"))
-        assertTrue(commands.any { it.contains("ip -6 route flush table 100") })
-        assertTrue(commands.any { it.contains("ip -6 route flush table 102") })
+        assertEquals(1, commands.size)
+        assertTrue(commands.single().contains("ip -6 rule show"))
+        assertTrue(commands.single().contains("ip -6 route flush table 100"))
+        assertTrue(commands.single().contains("ip -6 route flush table 102"))
+        assertTrue(commands.single().contains("status=0"))
+        assertTrue(commands.single().endsWith("exit \$status"))
+        assertEquals(0, ProcessBuilder("sh", "-n", "-c", commands.single()).start().waitFor())
     }
 
     @Test
     fun `routing cleanup reports an inspection failure`() = runTest {
         val manager = TunManager { command ->
-            if (command == "ip rule show") RootShell.Result(1, "", "unavailable") else successfulCommand()
+            if (command.contains("ip rule show")) RootShell.Result(1, "", "unavailable") else successfulCommand()
         }
 
         val cleaned = manager.removeRouting(

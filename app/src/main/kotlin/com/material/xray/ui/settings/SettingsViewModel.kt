@@ -98,9 +98,12 @@ class SettingsViewModel @Inject constructor(
     val rootAvailable: StateFlow<Boolean?> = settingsRuntimeManager.rootAvailable
     val tproxyCompatibility: StateFlow<TproxyCompatibility> = settingsRuntimeManager.tproxyCompatibility
     val xrayCoreVersion: StateFlow<String?> = settingsRuntimeManager.xrayCoreVersion
-    val startupReady: StateFlow<Boolean> = settingsRuntimeManager.startupReady
     val appUpdateCheckStatus: StateFlow<AppUpdateCheckStatus?> = _appUpdateCheckStatus.asStateFlow()
     val oemAutostartGuidance = oemAutostartManager.guidance
+
+    init {
+        viewModelScope.launch { settingsRuntimeManager.loadRuntimeDiagnostics() }
+    }
 
     fun setTunName(name: String) = updateXrayConfigStringSetting(name, currentSettings().tunName, settingsRepo::setTunName)
     fun normalizeDnsServers(servers: String): String = normalizeDnsServersForIpv6(servers, currentSettings().allowIpv6)

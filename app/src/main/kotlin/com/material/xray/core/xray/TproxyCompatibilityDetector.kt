@@ -1,6 +1,7 @@
 package com.material.xray.core.xray
 
 import android.content.Context
+import android.os.Build
 import com.material.xray.core.root.RootShell
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -77,6 +78,7 @@ class TproxyCompatibilityDetector @Inject constructor(
     @ApplicationContext context: Context,
 ) {
     private val appUid = context.applicationInfo.uid
+    private val preferences = context.getSharedPreferences(CACHE_PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val mutex = Mutex()
     private var probed = false
     private val _state = MutableStateFlow<TproxyCompatibility>(TproxyCompatibility.Unknown)
@@ -99,8 +101,30 @@ class TproxyCompatibilityDetector @Inject constructor(
     private suspend fun detect(forceRefresh: Boolean): TproxyCompatibility = mutex.withLock {
         if (probed && !forceRefresh) return@withLock _state.value
         probed = true
+        if (!forceRefresh) {
+            readCachedCompatibility()?.let { cached ->
+                _state.value = cached
+                return@withLock cached
+            }
+        }
         _state.value = TproxyCompatibility.Checking
-        runDetection().also { _state.value = it }
+        runDetection().also { result ->
+            _state.value = result
+            cacheCompatibility(result)
+        }
+    }
+
+    private fun readCachedCompatibility(): TproxyCompatibility? {
+        if (preferences.getString(CACHE_FINGERPRINT_KEY, null) != Build.FINGERPRINT) return null
+        return decodeCachedTproxyCompatibility(preferences.getString(CACHE_RESULT_KEY, null))
+    }
+
+    private fun cacheCompatibility(result: TproxyCompatibility) {
+        val encoded = encodeCachedTproxyCompatibility(result) ?: return
+        preferences.edit()
+            .putString(CACHE_FINGERPRINT_KEY, Build.FINGERPRINT)
+            .putString(CACHE_RESULT_KEY, encoded)
+            .apply()
     }
 
     private suspend fun runDetection(): TproxyCompatibility {
@@ -192,6 +216,9 @@ class TproxyCompatibilityDetector @Inject constructor(
         private const val PROBE_PRIORITY_SLOTS = 8
         private const val PROBE_TIMEOUT_MS = 15_000L
         private const val MARK_CONFLICT_EXIT_CODE = 42
+        private const val CACHE_PREFERENCES_NAME = "tproxy-compatibility"
+        private const val CACHE_FINGERPRINT_KEY = "build-fingerprint"
+        private const val CACHE_RESULT_KEY = "result"
 
         fun markCollisionCommand(appUid: Int): String {
             require(appUid > 0)
@@ -406,6 +433,34 @@ class TproxyCompatibilityDetector @Inject constructor(
             val hook: String,
             val chain: String,
         )
+    }
+}
+
+private const val TPROXY_CACHE_VERSION = "1"
+
+internal fun encodeCachedTproxyCompatibility(result: TproxyCompatibility): String? = when {
+    result is TproxyCompatibility.Supported ->
+        "$TPROXY_CACHE_VERSION|supported|${if (result.ipv6) 1 else 0}"
+    result is TproxyCompatibility.Unsupported && result.isConclusive() ->
+        "$TPROXY_CACHE_VERSION|unsupported|${result.reason.name}"
+    else -> null
+}
+
+internal fun decodeCachedTproxyCompatibility(encoded: String?): TproxyCompatibility? {
+    val fields = encoded?.split('|') ?: return null
+    if (fields.size != 3 || fields[0] != TPROXY_CACHE_VERSION) return null
+    return when (fields[1]) {
+        "supported" -> when (fields[2]) {
+            "0" -> TproxyCompatibility.Supported(ipv6 = false)
+            "1" -> TproxyCompatibility.Supported(ipv6 = true)
+            else -> null
+        }
+        "unsupported" ->
+            TproxyCompatibility.Reason.entries
+                .firstOrNull { reason -> reason.name == fields[2] }
+                ?.let { reason -> TproxyCompatibility.Unsupported(reason) }
+                ?.takeIf { result -> result.isConclusive() }
+        else -> null
     }
 }
 

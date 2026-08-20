@@ -30,6 +30,7 @@ data class TproxyGroupState(
 
 @Serializable
 data class XrayState(
+    val appVersionCode: Long? = null,
     val xrayPid: Int = -1,
     val xrayApiPort: Int? = null,
     val tunName: String = "xray0",

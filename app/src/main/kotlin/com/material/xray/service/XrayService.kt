@@ -24,6 +24,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.PackageInfoCompat
 import com.material.xray.R
 import com.material.xray.core.format.rateUnit
 import com.material.xray.core.format.scaleBytes
@@ -397,6 +398,20 @@ class XrayService : VpnService() {
                     showDisconnectAction = false,
                 )
                 launchConnectionCommand { autoConnect() }
+            }
+            ACTION_RECOVER_AFTER_PACKAGE_REPLACEMENT -> {
+                startAsForeground(
+                    localizedString(R.string.app_name),
+                    localizedString(R.string.notification_status_starting),
+                    showDisconnectAction = false,
+                )
+                launchConnectionCommand {
+                    if (isRunningAlwaysOnVpn()) {
+                        connectAlwaysOnVpn()
+                    } else {
+                        restoreRunningConnectionStatus(connectIfMissing = true)
+                    }
+                }
             }
             ACTION_SWITCH_SERVER -> {
                 startAsForeground(
@@ -810,16 +825,16 @@ class XrayService : VpnService() {
         return restartRuntime(config, ConnectionState.ApplyingRoutingChanges)
     }
 
-    private suspend fun restoreRunningConnectionStatus(): Boolean = executeStep(
+    private suspend fun restoreRunningConnectionStatus(connectIfMissing: Boolean = false): Boolean = executeStep(
         ConnectionStep(
             label = "Restore running connection status",
             progress = ConnectionProgress.InspectingSavedRuntime,
             isSuccessful = { it },
-            action = { restoreRunningConnectionStatusOnce() },
+            action = { restoreRunningConnectionStatusOnce(connectIfMissing) },
         ),
     )
 
-    private suspend fun restoreRunningConnectionStatusOnce(): Boolean {
+    private suspend fun restoreRunningConnectionStatusOnce(connectIfMissing: Boolean): Boolean {
         val alreadyConnected = connectionStateCoordinator.state.value as? ConnectionState.Connected
         if (alreadyConnected != null && activeConfig != null) {
             activePhysicalNetwork = currentPhysicalNetworkSnapshot()
@@ -832,32 +847,7 @@ class XrayService : VpnService() {
         val restoredState = detectRestorableRunningConnection()
         if (restoredState == null) {
             val staleState = withContext(Dispatchers.IO) { stateFile.read() }
-            if (
-                staleState?.rootConnectionBackend == RootConnectionBackend.Tproxy ||
-                staleState?.transitionGuard != null
-            ) {
-                logBuffer.append(LogSource.APP, "Cleaning incomplete TPROXY runtime before reconnecting")
-                var preserveGuard = connectionManager.adoptPersistedTransitionGuard()
-                if (!preserveGuard && (staleState.tproxy != null || staleState.transitionGuard != null)) {
-                    if (!connectionManager.prepareSeamlessReconnect()) {
-                        // The caller is waiting on a verdict, so a bailout must still reach a terminal
-                        // state rather than leaving the UI asserting a connection attempt forever.
-                        failRuntimeRestore("Could not take over the recorded TPROXY runtime")
-                        return false
-                    }
-                    preserveGuard = connectionManager.hasTransitionGuard
-                }
-                if (!connectionManager.ensureCleanRootRuntime(preserveTproxyGuard = preserveGuard)) {
-                    failRuntimeRestore("Could not clean the recorded TPROXY runtime")
-                    return false
-                }
-                val config = loadLastServerConfig()
-                if (config != null) {
-                    connectionLifecycle.updateActiveConfig(config)
-                    return connectWithCurrentSettings(config)
-                }
-                connectionManager.clearFailedTransitionGuard()
-            }
+            recoverMissingRuntime(staleState, connectIfMissing)?.let { return it }
             logBuffer.append(LogSource.APP, "No restorable running Xray state was found")
             connectionStateCoordinator.markDisconnected()
             updateNotification()
@@ -902,6 +892,42 @@ class XrayService : VpnService() {
         return true
     }
 
+    private suspend fun recoverMissingRuntime(staleState: XrayState?, connectIfMissing: Boolean): Boolean? {
+        if (
+            staleState?.rootConnectionBackend == RootConnectionBackend.Tproxy ||
+            staleState?.transitionGuard != null
+        ) {
+            logBuffer.append(LogSource.APP, "Cleaning incomplete TPROXY runtime before reconnecting")
+            var preserveGuard = connectionManager.adoptPersistedTransitionGuard()
+            if (!preserveGuard && (staleState.tproxy != null || staleState.transitionGuard != null)) {
+                if (!connectionManager.prepareSeamlessReconnect()) {
+                    failRuntimeRestore("Could not take over the recorded TPROXY runtime")
+                    return false
+                }
+                preserveGuard = connectionManager.hasTransitionGuard
+            }
+            if (!connectionManager.ensureCleanRootRuntime(preserveTproxyGuard = preserveGuard)) {
+                failRuntimeRestore("Could not clean the recorded TPROXY runtime")
+                return false
+            }
+            reconnectMissingRuntime()?.let { return it }
+            connectionManager.clearFailedTransitionGuard()
+        } else if (shouldCleanRecordedRootRuntime(staleState, connectIfMissing)) {
+            logBuffer.append(LogSource.APP, "Cleaning incompatible recorded root runtime before reconnecting")
+            if (!connectionManager.ensureCleanRootRuntime()) {
+                failRuntimeRestore("Could not clean the recorded root runtime")
+                return false
+            }
+        }
+        return if (connectIfMissing) reconnectMissingRuntime() else null
+    }
+
+    private suspend fun reconnectMissingRuntime(): Boolean? {
+        val config = loadLastServerConfig() ?: return null
+        connectionLifecycle.updateActiveConfig(config)
+        return connectWithCurrentSettings(config)
+    }
+
     private fun failRuntimeRestore(message: String) {
         logBuffer.append(LogSource.APP, message)
         connectionStateCoordinator.markError(message)
@@ -913,6 +939,7 @@ class XrayService : VpnService() {
         if (!runtimeSettings.useRootService) return@withContext null
 
         val state = stateFile.read() ?: return@withContext null
+        if (!isRuntimeVersionCompatible(state.appVersionCode, currentAppVersionCode())) return@withContext null
         if (state.rootConnectionBackend != runtimeSettings.rootConnectionBackend) return@withContext null
         if (state.xrayPid <= 0) return@withContext null
         if (!connectionManager.isRestorableRootProcessAlive(state.xrayPid)) return@withContext null
@@ -948,6 +975,10 @@ class XrayService : VpnService() {
         val lastServerId = settingsRepo.lastServerId.first()
         return loadServerConfig(lastServerId)
     }
+
+    private fun currentAppVersionCode(): Long = PackageInfoCompat.getLongVersionCode(
+        packageManager.getPackageInfo(packageName, 0),
+    )
 
     private suspend fun loadServerConfig(serverId: Long): ServerConfig? {
         if (serverId < 0) return null
@@ -2152,6 +2183,8 @@ class XrayService : VpnService() {
         const val FAILURE_NOTIFICATION_ID = 2
         const val ACTION_CONNECT = "com.material.xray.CONNECT"
         private const val ACTION_AUTO_CONNECT = "com.material.xray.AUTO_CONNECT"
+        private const val ACTION_RECOVER_AFTER_PACKAGE_REPLACEMENT =
+            "com.material.xray.RECOVER_AFTER_PACKAGE_REPLACEMENT"
         const val ACTION_SWITCH_SERVER = "com.material.xray.SWITCH_SERVER"
         const val ACTION_DISCONNECT = "com.material.xray.DISCONNECT"
         private const val ACTION_FORCE_DISCONNECT = "com.material.xray.FORCE_DISCONNECT"
@@ -2197,6 +2230,12 @@ class XrayService : VpnService() {
             )
         }
 
+        fun recoverAfterPackageReplacement(context: Context) {
+            context.startForegroundService(
+                Intent(context, XrayService::class.java).setAction(ACTION_RECOVER_AFTER_PACKAGE_REPLACEMENT),
+            )
+        }
+
         fun switchServer(context: Context, serverConfig: ServerConfig) {
             val intent = Intent(context, XrayService::class.java).apply {
                 action = ACTION_SWITCH_SERVER
@@ -2238,6 +2277,10 @@ internal fun shouldUseRootService(
     available: Boolean,
     alwaysOnVpn: Boolean,
 ): Boolean = requested && available && !alwaysOnVpn
+
+internal fun isRuntimeVersionCompatible(recordedVersionCode: Long?, currentVersionCode: Long): Boolean = recordedVersionCode == currentVersionCode
+
+internal fun shouldCleanRecordedRootRuntime(state: XrayState?, connectIfMissing: Boolean): Boolean = connectIfMissing && state != null && state.physicalInterface != VPN_SERVICE_INTERFACE_LABEL
 
 internal fun shouldVerifyRootRoute(
     passiveHealthMonitoringEnabled: Boolean,

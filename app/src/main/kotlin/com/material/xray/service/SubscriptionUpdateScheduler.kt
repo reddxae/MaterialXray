@@ -34,10 +34,11 @@ class SubscriptionUpdateScheduler @Inject constructor(
         )
     }
 
-    fun enqueueDueCheckNow() {
+    fun enqueueDueCheckNow(initialDelaySeconds: Long = 0) {
         val request = OneTimeWorkRequestBuilder<SubscriptionUpdateWorker>()
             .setConstraints(networkConstraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_DELAY_MINUTES, TimeUnit.MINUTES)
+            .setInitialDelay(initialDelaySeconds, TimeUnit.SECONDS)
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(

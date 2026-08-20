@@ -1,5 +1,6 @@
 package com.material.xray.service
 
+import com.material.xray.core.xray.XrayState
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -66,5 +67,29 @@ class XrayServiceModeTest {
                 networkCallbacksAvailable = true,
             ),
         )
+    }
+
+    @Test
+    fun `runtime restoration requires the same app version`() {
+        assertTrue(isRuntimeVersionCompatible(recordedVersionCode = 600, currentVersionCode = 600))
+        assertFalse(isRuntimeVersionCompatible(recordedVersionCode = 599, currentVersionCode = 600))
+        assertFalse(isRuntimeVersionCompatible(recordedVersionCode = null, currentVersionCode = 600))
+    }
+
+    @Test
+    fun `package recovery only runs root cleanup for root runtimes`() {
+        assertTrue(
+            shouldCleanRecordedRootRuntime(
+                XrayState(physicalInterface = "wlan0"),
+                connectIfMissing = true,
+            ),
+        )
+        assertFalse(
+            shouldCleanRecordedRootRuntime(
+                XrayState(physicalInterface = VPN_SERVICE_INTERFACE_LABEL),
+                connectIfMissing = true,
+            ),
+        )
+        assertFalse(shouldCleanRecordedRootRuntime(null, connectIfMissing = true))
     }
 }

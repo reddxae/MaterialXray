@@ -657,6 +657,7 @@ class ConnectionManagerTest {
         override val binDir = "/tmp/xray/bin"
         override val appUid = 10_123
         override val processId = 123
+        override val appVersionCode = 600L
         override fun allocateLoopbackApiPort(): Int = 48_123
         private var clock = 0L
 

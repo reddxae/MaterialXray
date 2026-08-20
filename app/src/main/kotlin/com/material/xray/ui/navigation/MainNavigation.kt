@@ -46,8 +46,10 @@ fun MainNavigation() {
     val viewModel: MainNavigationViewModel = hiltViewModel()
     val navController = rememberNavController()
     val lifecycleOwner = LocalLifecycleOwner.current
-    val showTitleBarLogo by viewModel.showTitleBarLogo.collectAsStateWithLifecycle()
-    val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val loadedSettings = settings ?: return
+    val showTitleBarLogo = loadedSettings.showTitleBarLogo
+    val showAdvancedOptions = loadedSettings.showAdvancedOptions
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val currentRoute = currentDestination?.route

@@ -1,24 +1,17 @@
 package com.material.xray.ui.navigation
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.service.RoutingChangeManager
+import com.material.xray.ui.settings.SettingsDataState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 
 @HiltViewModel
 class MainNavigationViewModel @Inject constructor(
     private val routingChangeManager: RoutingChangeManager,
-    settingsRepository: SettingsRepository,
+    settingsDataState: SettingsDataState,
 ) : ViewModel() {
-    val showTitleBarLogo: StateFlow<Boolean> = settingsRepository.showTitleBarLogo
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-    val showAdvancedOptions: StateFlow<Boolean> = settingsRepository.showAdvancedOptions
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val settings = settingsDataState.data
 
     fun onLeavingRoutingTab() {
         routingChangeManager.maybeReloadActiveConnection()

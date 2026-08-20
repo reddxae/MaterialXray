@@ -12,13 +12,11 @@
     <string name="home_subscription_fetch_failed_connection">Не удалось загрузить подписку: не удалось подключиться к серверу.</string>
     <string name="home_subscription_fetch_failed_network">Не удалось загрузить подписку из-за сетевой ошибки.</string>
     <string name="home_subscription_refresh_batch_failed">Не удалось обновить подписки: %1$d. Первая ошибка: %2$s</string>
-    <string name="home_clipboard_xray_config_label">Конфигурация Xray</string>
 
     <string name="home_root_fallback_message">Не удалось получить root-доступ на этом устройстве. Material Xray продолжит работу в режиме без root-доступа.</string>
     <string name="home_action_continue">Продолжить</string>
     <string name="home_action_cancel">Отмена</string>
     <string name="home_action_close">Закрыть</string>
-    <string name="home_action_copy">Копировать</string>
     <string name="home_action_start">Старт</string>
     <string name="home_action_stop">Стоп</string>
     <string name="home_action_always_on">Всегда включено</string>

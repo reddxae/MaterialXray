@@ -1,7 +1,6 @@
 package com.material.xray.ui.home
 
 import android.Manifest
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -32,14 +31,15 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,6 +50,7 @@ import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
@@ -159,7 +160,12 @@ import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(showTitleBarLogo: Boolean, viewModel: HomeViewModel = hiltViewModel()) {
+fun HomeScreen(
+    showTitleBarLogo: Boolean,
+    onOpenServerConfig: (Long, String) -> Unit,
+    onViewRunningConfig: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel(),
+) {
     val uiState = collectHomeUiState(viewModel)
     val connectionUiState = buildConnectionUiState(
         connectionState = uiState.connectionState,
@@ -186,7 +192,6 @@ fun HomeScreen(showTitleBarLogo: Boolean, viewModel: HomeViewModel = hiltViewMod
     var showRootFallbackDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val unableToFetchLinkText = stringResource(R.string.home_unable_to_fetch_link)
-    val clipboardConfigLabel = stringResource(R.string.home_clipboard_xray_config_label)
     val lifecycleOwner = LocalLifecycleOwner.current
     val topAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
@@ -313,7 +318,7 @@ fun HomeScreen(showTitleBarLogo: Boolean, viewModel: HomeViewModel = hiltViewMod
                             connectVpn = startRootlessConnection,
                         )
                     },
-                    onViewConfig = { viewModel.showRunningConfig() },
+                    onViewConfig = onViewRunningConfig,
                 )
             }
 
@@ -383,6 +388,7 @@ fun HomeScreen(showTitleBarLogo: Boolean, viewModel: HomeViewModel = hiltViewMod
                             },
                             onServerSelected = { viewModel.selectServer(it) },
                             onTestLatency = { viewModel.testLatency(it) },
+                            onOpenServerConfig = onOpenServerConfig,
                         )
                     }
                     item(contentType = "addSubscription") {
@@ -455,14 +461,6 @@ fun HomeScreen(showTitleBarLogo: Boolean, viewModel: HomeViewModel = hiltViewMod
                 customHeaders,
             )
             editingSubscriptionId = null
-        },
-    )
-    RawConfigDialogHost(
-        config = uiState.runningConfig,
-        onDismiss = viewModel::dismissRunningConfig,
-        onCopy = {
-            val clipboard = context.getSystemService(ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(ClipData.newPlainText(clipboardConfigLabel, uiState.runningConfig.orEmpty()))
         },
     )
     InstallPermissionRationaleDialogHost(
@@ -696,21 +694,6 @@ private fun EditSubscriptionDialogHost(
 }
 
 @Composable
-private fun RawConfigDialogHost(
-    config: String?,
-    onDismiss: () -> Unit,
-    onCopy: () -> Unit,
-) {
-    if (config == null) return
-
-    RawConfigDialog(
-        config = config,
-        onDismiss = onDismiss,
-        onCopy = onCopy,
-    )
-}
-
-@Composable
 private fun InstallPermissionRationaleDialogHost(
     visible: Boolean,
     onDismiss: () -> Unit,
@@ -748,7 +731,6 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
-    val runningConfig by viewModel.runningConfig.collectAsStateWithLifecycle()
     val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
     val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
     val pendingSubscriptionRouting by viewModel.pendingSubscriptionRouting.collectAsStateWithLifecycle()
@@ -768,7 +750,6 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         subscriptions = subscriptions,
         serversBySubscription = serversBySubscription,
         isRefreshing = isRefreshing,
-        runningConfig = runningConfig,
         defaultPingMethod = defaultPingMethod,
         routingPolicyControl = routingPolicyControl,
         pendingSubscriptionRouting = pendingSubscriptionRouting,
@@ -821,7 +802,6 @@ private data class HomeUiState(
     val subscriptions: List<SubscriptionEntity>?,
     val serversBySubscription: Map<Long, List<ServerListItem>>,
     val isRefreshing: Boolean,
-    val runningConfig: String?,
     val defaultPingMethod: PingMethod,
     val routingPolicyControl: RoutingPolicyControl,
     val pendingSubscriptionRouting: SubscriptionRoutingData?,
@@ -1075,48 +1055,6 @@ private fun connectionActionLabel(
 }
 
 @Composable
-private fun RawConfigDialog(
-    config: String,
-    onDismiss: () -> Unit,
-    onCopy: () -> Unit,
-) {
-    val scrollState = rememberScrollState()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onCopy) {
-                Text(stringResource(R.string.home_action_copy))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.home_action_close))
-            }
-        },
-        title = { Text(stringResource(R.string.home_active_xray_config_title)) },
-        text = {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = MaterialTheme.shapes.small,
-            ) {
-                SelectionContainer {
-                    Text(
-                        text = config,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 160.dp, max = 420.dp)
-                            .verticalScroll(scrollState)
-                            .padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        },
-    )
-}
-
-@Composable
 private fun ErrorCard(message: String) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -1304,6 +1242,7 @@ private fun SubscriptionCard(
     onDescriptionHiddenChange: (Boolean) -> Unit,
     onServerSelected: (Long) -> Unit,
     onTestLatency: (ServerEntity) -> Unit,
+    onOpenServerConfig: (Long, String) -> Unit,
 ) {
     val resources = LocalResources.current
     val locale = resources.configuration.locales[0]
@@ -1368,6 +1307,9 @@ private fun SubscriptionCard(
                                         isSelected = server.entity.id == selectedServerId,
                                         onClick = { onServerSelected(server.entity.id) },
                                         onTestLatency = { onTestLatency(server.entity) },
+                                        onOpenConfig = {
+                                            onOpenServerConfig(server.entity.id, server.entity.name)
+                                        },
                                         contentPadding = ServerRowDefaults.contentPadding,
                                     )
                                 }
@@ -1723,6 +1665,7 @@ private fun ServerRow(
     isSelected: Boolean,
     onClick: () -> Unit,
     onTestLatency: () -> Unit,
+    onOpenConfig: () -> Unit,
     contentPadding: PaddingValues = ServerRowDefaults.contentPadding,
 ) {
     val latency = server.latency
@@ -1742,40 +1685,66 @@ private fun ServerRow(
             MaterialTheme.colorScheme.surfaceContainer
         },
     ) {
+        // IntrinsicSize.Min gives the row a height the chevron can fill, so its tap target and
+        // ripple cover the whole strip at the row's end instead of a small circle inside it.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(contentPadding),
+                .height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            CompactSelectionDot(isSelected = isSelected)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = server.entity.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = server.endpointSummary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (latency != null) {
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    color = MaterialTheme.colorScheme.surface,
-                ) {
-                    LatencyBadgeContent(
-                        latency = latency,
-                        color = latencyColor,
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(contentPadding),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CompactSelectionDot(isSelected = isSelected)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = server.entity.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = server.endpointSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
+                if (latency != null) {
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        color = MaterialTheme.colorScheme.surface,
+                    ) {
+                        LatencyBadgeContent(
+                            latency = latency,
+                            color = latencyColor,
+                        )
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .clickable(
+                        onClick = onOpenConfig,
+                        onClickLabel = stringResource(R.string.config_viewer_open),
+                    )
+                    .padding(horizontal = ServerRowDefaults.chevronHorizontalPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.config_viewer_open),
+                    modifier = Modifier.size(ServerRowDefaults.chevronIconSize),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -1896,7 +1865,11 @@ internal fun latencyShowsError(latency: ServerLatencyState): Boolean {
 }
 
 private object ServerRowDefaults {
-    val contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+    // No end padding: the chevron's own strip supplies the row's end inset.
+    val contentPadding = PaddingValues(start = 12.dp, top = 10.dp, end = 0.dp, bottom = 10.dp)
+
+    val chevronHorizontalPadding = 7.dp
+    val chevronIconSize = 20.dp
 }
 
 private const val LATENCY_SHIMMER_DURATION_MS = 850

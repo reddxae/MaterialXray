@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="config_viewer_open">View config</string>
+    <string name="config_viewer_back">Back</string>
+    <string name="config_viewer_copy">Copy</string>
+    <string name="config_viewer_copied">Copied to clipboard</string>
+    <string name="config_viewer_clipboard_label" translatable="false">Material Xray server config</string>
+    <string name="config_viewer_not_found">This server is no longer available.</string>
+    <string name="config_viewer_banner_title">Not the final config</string>
+    <string name="config_viewer_banner_body">Material Xray rewrites inbounds, DNS and routing for compatibility. To see what actually runs, connect to this server and long-press the start button.</string>
+    <string name="config_viewer_section_connection">Connection</string>
+    <string name="config_viewer_section_transport">Transport</string>
+    <string name="config_viewer_section_security">Security</string>
+    <string name="config_viewer_section_extra">Other parameters</string>
+    <string name="config_viewer_section_raw_link">Share link</string>
+    <string name="config_viewer_field_name">Name</string>
+    <string name="config_viewer_field_protocol">Protocol</string>
+    <string name="config_viewer_field_address">Address</string>
+    <string name="config_viewer_field_port">Port</string>
+    <string name="config_viewer_field_id">ID</string>
+    <string name="config_viewer_field_password">Password</string>
+    <string name="config_viewer_field_transport_type">Type</string>
+    <string name="config_viewer_field_transport_path">Path</string>
+    <string name="config_viewer_field_transport_host">Host</string>
+    <string name="config_viewer_field_transport_service_name">Service name</string>
+    <string name="config_viewer_field_transport_mode">Mode</string>
+    <string name="config_viewer_field_security_type">Type</string>
+    <string name="config_viewer_field_security_sni">SNI</string>
+    <string name="config_viewer_field_security_fingerprint">Fingerprint</string>
+    <string name="config_viewer_field_security_alpn">ALPN</string>
+    <string name="config_viewer_field_security_public_key">Public key</string>
+    <string name="config_viewer_field_security_short_id">Short ID</string>
+    <string name="config_viewer_reveal_secret">Show value</string>
+    <string name="config_viewer_hide_secret">Hide value</string>
+</resources>

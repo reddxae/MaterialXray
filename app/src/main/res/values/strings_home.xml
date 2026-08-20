@@ -12,13 +12,11 @@
     <string name="home_subscription_fetch_failed_connection">Subscription fetch failed: could not connect to the server.</string>
     <string name="home_subscription_fetch_failed_network">Subscription fetch failed because of a network error.</string>
     <string name="home_subscription_refresh_batch_failed">%1$d subscriptions failed to refresh. First error: %2$s</string>
-    <string name="home_clipboard_xray_config_label">Xray config</string>
 
     <string name="home_root_fallback_message">Unable to access root on this device. Material Xray will fall back to rootless mode.</string>
     <string name="home_action_continue">Continue</string>
     <string name="home_action_cancel">Cancel</string>
     <string name="home_action_close">Close</string>
-    <string name="home_action_copy">Copy</string>
     <string name="home_action_start">Start</string>
     <string name="home_action_stop">Stop</string>
     <string name="home_action_always_on">Always on</string>

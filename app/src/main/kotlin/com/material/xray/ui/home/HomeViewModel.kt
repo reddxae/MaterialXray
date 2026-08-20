@@ -252,8 +252,6 @@ class HomeViewModel @Inject constructor(
     val isRefreshing: StateFlow<Boolean> = refreshOperations
         .map { it > 0 }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-    private val _runningConfig = MutableStateFlow<String?>(null)
-    val runningConfig: StateFlow<String?> = _runningConfig.asStateFlow()
     private val _pendingSubscriptionRouting = MutableStateFlow<SubscriptionRoutingData?>(null)
     val pendingSubscriptionRouting: StateFlow<SubscriptionRoutingData?> = _pendingSubscriptionRouting.asStateFlow()
     val showInstallPermissionRationale: StateFlow<Boolean> = appUpdateInstaller.installPermissionRationaleRequired
@@ -326,17 +324,6 @@ class HomeViewModel @Inject constructor(
 
     fun dismissInstallPermissionRationale() {
         appUpdateInstaller.dismissInstallPermissionRationale()
-    }
-
-    fun showRunningConfig() {
-        viewModelScope.launch {
-            _runningConfig.value = connectionRuntimeManager.readActiveConfig()
-                ?: context.localizedString(R.string.home_no_active_xray_config)
-        }
-    }
-
-    fun dismissRunningConfig() {
-        _runningConfig.value = null
     }
 
     fun selectServer(serverId: Long) {

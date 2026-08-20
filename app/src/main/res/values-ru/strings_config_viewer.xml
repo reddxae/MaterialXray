@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="config_viewer_open">Посмотреть конфигурацию</string>
+    <string name="config_viewer_back">Назад</string>
+    <string name="config_viewer_copy">Копировать</string>
+    <string name="config_viewer_copied">Скопировано в буфер обмена</string>
+    <string name="config_viewer_not_found">Этот сервер больше не доступен.</string>
+    <string name="config_viewer_banner_title">Это не итоговая конфигурация</string>
+    <string name="config_viewer_banner_body">Material Xray переписывает inbounds, DNS и маршрутизацию для совместимости. Чтобы увидеть, что запускается на самом деле, подключитесь к этому серверу и удерживайте кнопку запуска.</string>
+    <string name="config_viewer_section_connection">Подключение</string>
+    <string name="config_viewer_section_transport">Транспорт</string>
+    <string name="config_viewer_section_security">Безопасность</string>
+    <string name="config_viewer_section_extra">Прочие параметры</string>
+    <string name="config_viewer_section_raw_link">Ссылка</string>
+    <string name="config_viewer_field_name">Название</string>
+    <string name="config_viewer_field_protocol">Протокол</string>
+    <string name="config_viewer_field_address">Адрес</string>
+    <string name="config_viewer_field_port">Порт</string>
+    <string name="config_viewer_field_id">ID</string>
+    <string name="config_viewer_field_password">Пароль</string>
+    <string name="config_viewer_field_transport_type">Тип</string>
+    <string name="config_viewer_field_transport_path">Путь</string>
+    <string name="config_viewer_field_transport_host">Хост</string>
+    <string name="config_viewer_field_transport_service_name">Имя сервиса</string>
+    <string name="config_viewer_field_transport_mode">Режим</string>
+    <string name="config_viewer_field_security_type">Тип</string>
+    <string name="config_viewer_field_security_sni">SNI</string>
+    <string name="config_viewer_field_security_fingerprint">Отпечаток</string>
+    <string name="config_viewer_field_security_alpn">ALPN</string>
+    <string name="config_viewer_field_security_public_key">Открытый ключ</string>
+    <string name="config_viewer_field_security_short_id">Короткий ID</string>
+    <string name="config_viewer_reveal_secret">Показать значение</string>
+    <string name="config_viewer_hide_secret">Скрыть значение</string>
+</resources>

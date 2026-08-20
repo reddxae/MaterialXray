@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +37,8 @@ fun ScrolledTopAppBar(
     title: String,
     scrollBehavior: TopAppBarScrollBehavior,
     showLogo: Boolean,
+    navigationIcon: @Composable () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     val surface = MaterialTheme.colorScheme.surface
     val scrolledSurface = MaterialTheme.colorScheme.surfaceContainer
@@ -61,6 +64,8 @@ fun ScrolledTopAppBar(
 
     TopAppBar(
         title = { AppBarTitle(title, showLogo) },
+        navigationIcon = navigationIcon,
+        actions = actions,
         expandedHeight = 52.dp,
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = containerColor,

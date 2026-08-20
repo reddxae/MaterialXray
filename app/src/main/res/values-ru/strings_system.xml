@@ -62,7 +62,7 @@
         <item quantity="many">Соединений: %1$s</item>
         <item quantity="other">Соединения: %1$s</item>
     </plurals>
-    <string name="notification_value_with_unit">%1$s %2$s</string>
+    <string name="value_with_unit">%1$s %2$s</string>
 
     <!-- Описания состояний плитки быстрых настроек -->
     <string name="tile_state_connected">Подключено</string>

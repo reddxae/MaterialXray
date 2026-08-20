@@ -140,6 +140,7 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.PingMethod
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SessionTrafficMetrics
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.service.AppUpdateInstallProgress
 import com.material.xray.service.AppUpdateInstallStage
@@ -154,6 +155,7 @@ import com.material.xray.ui.text.labelResource
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -293,6 +295,8 @@ fun HomeScreen(showTitleBarLogo: Boolean, viewModel: HomeViewModel = hiltViewMod
                     showProgressDetails = uiState.showAdvancedOptions,
                     selectedServerName = connectionUiState.displayServerName,
                     activeBalancerServer = uiState.activeBalancerServer,
+                    pingMs = viewModel.activeServerPingMs,
+                    sessionTraffic = viewModel.sessionTraffic,
                     buttonColor = connectionUiState.buttonColor,
                     isConnected = connectionUiState.isConnected,
                     isRestartRequired = connectionUiState.isRestartRequired,
@@ -843,6 +847,8 @@ private fun ConnectionPanel(
     showProgressDetails: Boolean,
     selectedServerName: String,
     activeBalancerServer: ActiveBalancerServerState?,
+    pingMs: StateFlow<Int?>,
+    sessionTraffic: StateFlow<SessionTrafficMetrics?>,
     buttonColor: Color,
     isConnected: Boolean,
     isRestartRequired: Boolean,
@@ -854,7 +860,6 @@ private fun ConnectionPanel(
     onViewConfig: () -> Unit,
 ) {
     val buttonEnabled = (canStart || isConnected || isRestartRequired || isInterfaceBusy) && !isTransitioning
-    val activeBalancerLabel = activeBalancerServer?.let { balancerServerLabel(it) }
     val containerColor = if (buttonEnabled) {
         buttonColor.copy(alpha = 0.15f)
     } else {
@@ -973,16 +978,12 @@ private fun ConnectionPanel(
             }
         }
 
-        AnimatedVisibility(visible = isConnected && activeBalancerLabel != null) {
-            Text(
-                text = activeBalancerLabel.orEmpty(),
-                modifier = Modifier.padding(top = 12.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+        AnimatedVisibility(visible = isConnected) {
+            ConnectionStatsBanner(
+                activeBalancerServer = activeBalancerServer,
+                pingMs = pingMs,
+                sessionTraffic = sessionTraffic,
+                modifier = Modifier.padding(top = 16.dp),
             )
         }
 
@@ -1071,13 +1072,6 @@ private fun connectionActionLabel(
     isConnected -> R.string.home_action_stop
     isRestartRequired || isInterfaceBusy -> R.string.home_action_restart
     else -> R.string.home_action_start
-}
-
-@Composable
-private fun balancerServerLabel(server: ActiveBalancerServerState): String = if (server.latencyMs == null) {
-    stringResource(R.string.home_balancer_active_server, server.title)
-} else {
-    stringResource(R.string.home_balancer_active_server_with_latency, server.title, server.latencyMs)
 }
 
 @Composable

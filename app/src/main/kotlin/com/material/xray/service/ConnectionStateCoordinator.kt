@@ -3,6 +3,7 @@ package com.material.xray.service
 import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
+import com.material.xray.model.SessionTrafficMetrics
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.channels.Channel
@@ -33,6 +34,14 @@ class ConnectionStateCoordinator @Inject constructor() {
     private val _activeBalancerSelection = MutableStateFlow<ActiveBalancerSelection?>(null)
     internal val activeBalancerSelection: StateFlow<ActiveBalancerSelection?> = _activeBalancerSelection.asStateFlow()
     internal val activeBalancerSelectionSubscribers: StateFlow<Int> = _activeBalancerSelection.subscriptionCount
+    private val _sessionTraffic = MutableStateFlow<SessionTrafficMetrics?>(null)
+    val sessionTraffic: StateFlow<SessionTrafficMetrics?> = _sessionTraffic.asStateFlow()
+
+    /**
+     * Lets the service poll Xray's traffic counters only while something is watching them. Reading
+     * the counters costs a gRPC round trip per tick, so an unobserved poll is pure battery drain.
+     */
+    internal val sessionTrafficSubscribers: StateFlow<Int> = _sessionTraffic.subscriptionCount
 
     fun startConnection(transitionState: ConnectionState) {
         require(
@@ -122,12 +131,18 @@ class ConnectionStateCoordinator @Inject constructor() {
         }
         if (newState !is ConnectionState.Connected) {
             _activeBalancerSelection.value = null
+            _sessionTraffic.value = null
         }
     }
 
     @Synchronized
     internal fun updateActiveBalancerSelection(selection: ActiveBalancerSelection?) {
         _activeBalancerSelection.value = selection.takeIf { _state.value is ConnectionState.Connected }
+    }
+
+    @Synchronized
+    internal fun updateSessionTraffic(metrics: SessionTrafficMetrics?) {
+        _sessionTraffic.value = metrics.takeIf { _state.value is ConnectionState.Connected }
     }
 
     suspend fun emitEvent(event: ConnectionEvent) {

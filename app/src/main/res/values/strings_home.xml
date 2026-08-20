@@ -50,7 +50,14 @@
     <string name="home_select_server_below">Select a server below</string>
     <string name="home_selected_server">Selected server</string>
     <string name="home_balancer_active_server">Using: %1$s</string>
-    <string name="home_balancer_active_server_with_latency">Using: %1$s &#8226; %2$d ms</string>
+    <string name="home_stats_ping">Ping</string>
+    <string name="home_stats_download">Download</string>
+    <string name="home_stats_upload">Upload</string>
+    <string name="home_stats_session">Total this session</string>
+    <string name="home_stats_session_value">&#8595;\u0020%1$s\u0020\u0020&#8593;\u0020%2$s</string>
+    <string name="home_stats_session_description">Downloaded %1$s, uploaded %2$s this session</string>
+    <string name="home_stats_ping_value">%1$d ms</string>
+    <string name="home_stats_unavailable" translatable="false">&#8212;</string>
     <string name="home_server_endpoint_unknown">unknown</string>
     <plurals name="home_server_multiconnect_summary">
         <item quantity="one">multiconnect &#8226; %1$d outbound</item>

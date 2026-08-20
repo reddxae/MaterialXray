@@ -25,6 +25,8 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.material.xray.R
+import com.material.xray.core.format.rateUnit
+import com.material.xray.core.format.scaleBytes
 import com.material.xray.core.locale.appLocaleChanges
 import com.material.xray.core.locale.forAppLanguage
 import com.material.xray.core.locale.localizedString
@@ -49,10 +51,12 @@ import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
 import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.ServerConfig
+import com.material.xray.model.SessionTrafficMetrics
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.primaryBalancerTag
 import dagger.hilt.android.AndroidEntryPoint
 import java.text.NumberFormat
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -139,8 +143,8 @@ class XrayService : VpnService() {
     // Written on the main thread, read by the IO metrics loop to skip redundant updates.
     @Volatile
     private var notificationMetrics = NotificationMetrics()
-    private var notificationMetricsJob: Job? = null
-    private var notificationMetricsIntervalMs = 0
+    private var metricsJob: Job? = null
+    private var metricsIntervalMs = 0
     private var lastNotificationContent: NotificationContent? = null
     private var terminalFailureNotificationShown = false
     private var screenInteractive = true
@@ -155,7 +159,7 @@ class XrayService : VpnService() {
             if (screenInteractive == interactive) return
             screenInteractive = interactive
             updateBalancerSelectionTracker()
-            updateNotificationMetricsJob()
+            updateMetricsJob()
         }
     }
     private val networkRetargetWakeLock by lazy {
@@ -287,12 +291,18 @@ class XrayService : VpnService() {
         }
 
         scope.launch {
+            connectionStateCoordinator.sessionTrafficSubscribers.collect {
+                updateMetricsJob()
+            }
+        }
+
+        scope.launch {
             settingsRepo.notificationSettings.collectLatest { settings ->
                 notificationSettings = settings
                 if (!settings.showTrafficSpeed) {
                     notificationMetrics = notificationMetrics.copy(proxyBps = null, directBps = null)
                 }
-                updateNotificationMetricsJob()
+                updateMetricsJob()
                 updateNotification()
             }
         }
@@ -906,10 +916,10 @@ class XrayService : VpnService() {
             else -> {
                 stopBalancerSelectionTracker()
                 stopProcessWatchdog()
-                stopNotificationMetrics()
+                stopMetrics()
             }
         }
-        updateNotificationMetricsJob()
+        updateMetricsJob()
     }
 
     private fun startBalancerSelectionTracker() {
@@ -1008,64 +1018,86 @@ class XrayService : VpnService() {
         if (::healthWatchdog.isInitialized) healthWatchdog.stop()
     }
 
-    private fun updateNotificationMetricsJob() {
+    /**
+     * One loop serves both the notification and the connection banner, because both want the same
+     * Xray counters and polling them twice would double the gRPC traffic for no extra information.
+     */
+    private fun updateMetricsJob() {
         val connectedState = connectionStateCoordinator.state.value as? ConnectionState.Connected
-        if (connectedState == null || !notificationSettings.hasDynamicMetrics) {
-            stopNotificationMetrics()
+        val intervalMs = metricsPollIntervalMs(
+            notificationIntervalMs = notificationSettings.updateIntervalMs,
+            notificationWantsMetrics = notificationSettings.hasDynamicMetrics,
+            uiWantsSessionTraffic = uiWantsSessionTraffic(),
+        )
+        if (connectedState == null || intervalMs == null) {
+            stopMetrics()
         } else if (screenInteractive) {
-            startNotificationMetrics(connectedState)
+            startMetrics(connectedState, intervalMs)
         } else {
-            pauseNotificationMetrics()
+            pauseMetrics()
         }
     }
 
-    private fun startNotificationMetrics(state: ConnectionState.Connected) {
-        val intervalMs = notificationSettings.updateIntervalMs
-        if (notificationMetricsJob?.isActive == true && notificationMetricsIntervalMs == intervalMs) return
+    private fun uiWantsSessionTraffic(): Boolean = connectionStateCoordinator.sessionTrafficSubscribers.value > 0
 
-        pauseNotificationMetrics()
-        notificationMetricsIntervalMs = intervalMs
-        notificationMetricsJob = scope.launch(Dispatchers.IO) {
+    private fun startMetrics(state: ConnectionState.Connected, intervalMs: Int) {
+        // Every input that feeds the interval routes back through updateMetricsJob, which restarts
+        // the loop whenever the answer changes, so the loop can hold the interval it started with.
+        if (metricsJob?.isActive == true && metricsIntervalMs == intervalMs) return
+
+        pauseMetrics()
+        metricsIntervalMs = intervalMs
+        metricsJob = scope.launch(Dispatchers.IO) {
             // The previous traffic sample is owned by this coroutine: sharing it as a field let a
             // cancelled loop's late write leak a stale sample into the next metrics session.
             var previousSample: TrafficSample? = null
+            var nextNotificationUpdateAtMs = 0L
             while (isActive) {
                 val connectedState = connectionStateCoordinator.state.value as? ConnectionState.Connected ?: break
-                val reading = readNotificationMetrics(connectedState, previousSample)
+                val reading = readMetrics(connectedState, previousSample)
                 previousSample = reading.trafficSample
-                if (reading.metrics != notificationMetrics) {
+                connectionStateCoordinator.updateSessionTraffic(reading.sessionTraffic)
+                val nowMs = SystemClock.elapsedRealtime()
+                if (reading.metrics != notificationMetrics && nowMs >= nextNotificationUpdateAtMs) {
+                    nextNotificationUpdateAtMs = nowMs + notificationSettings.updateIntervalMs
                     withContext(Dispatchers.Main) {
                         notificationMetrics = reading.metrics
                         updateNotification()
                     }
                 }
-                delay(notificationSettings.updateIntervalMs.toLong())
+                delay(intervalMs.toLong())
             }
         }
-        if (state.corePid <= 0) stopNotificationMetrics()
+        if (state.corePid <= 0) stopMetrics()
     }
 
-    private fun stopNotificationMetrics() {
-        pauseNotificationMetrics()
+    private fun stopMetrics() {
+        pauseMetrics()
         notificationMetrics = NotificationMetrics()
+        connectionStateCoordinator.updateSessionTraffic(null)
     }
 
-    private fun pauseNotificationMetrics() {
-        notificationMetricsJob?.cancel()
-        notificationMetricsJob = null
-        notificationMetricsIntervalMs = 0
+    private fun pauseMetrics() {
+        metricsJob?.cancel()
+        metricsJob = null
+        metricsIntervalMs = 0
     }
 
-    private suspend fun readNotificationMetrics(
+    private suspend fun readMetrics(
         state: ConnectionState.Connected,
         previousSample: TrafficSample?,
-    ): NotificationMetricsReading {
+    ): MetricsReading {
         val settings = notificationSettings
-        val trafficReading = if (settings.showTrafficSpeed) {
-            readTrafficSpeeds(previousSample)
+        val uiWatching = uiWantsSessionTraffic()
+        val trafficReading = if (settings.showTrafficSpeed || uiWatching) {
+            readTraffic(previousSample)
         } else {
-            TrafficSpeedsReading(speeds = null, sample = null)
+            TrafficReading(speeds = null, sample = null)
         }
+        // The banner can be the only reason traffic was read at all, so the notification metrics
+        // must stay empty unless the user asked the notification for them: a field it changes
+        // every tick would rebuild the notification text once per poll for nothing.
+        val notificationSpeeds = trafficReading.speeds?.takeIf { settings.showTrafficSpeed }
         val processMetrics = if (settings.showRamUsage && settings.showConnectionCount) {
             connectionManager.readProcessMetrics(state.corePid)
         } else {
@@ -1089,36 +1121,31 @@ class XrayService : VpnService() {
         } else {
             null
         }
-        return NotificationMetricsReading(
+        return MetricsReading(
             metrics = NotificationMetrics(
-                proxyBps = trafficReading.speeds?.proxyBps,
-                directBps = trafficReading.speeds?.directBps,
+                proxyBps = notificationSpeeds?.proxyBps,
+                directBps = notificationSpeeds?.directBps,
                 ramMb = ramMb,
                 connectionCount = connectionCount,
             ),
+            sessionTraffic = trafficReading.sessionTraffic().takeIf { uiWatching },
             trafficSample = trafficReading.sample,
         )
     }
 
-    private suspend fun readTrafficSpeeds(previous: TrafficSample?): TrafficSpeedsReading {
-        val stats = connectionManager.readOutboundTrafficStatsBytes()
-        val hasProxyStats = stats.hasOutboundTrafficStats("proxy")
-        val hasDirectStats = stats.hasOutboundTrafficStats("direct")
-        if (!hasProxyStats && !hasDirectStats) return TrafficSpeedsReading(speeds = null, sample = null)
-        val now = System.currentTimeMillis()
-        val sample = TrafficSample(
-            timestampMs = now,
-            proxyBytes = stats.outboundBytes("proxy"),
-            directBytes = stats.outboundBytes("direct"),
-        )
-        if (previous == null) return TrafficSpeedsReading(speeds = null, sample = sample)
-        val elapsedSeconds = ((sample.timestampMs - previous.timestampMs).coerceAtLeast(1)).toDouble() / 1000.0
-        val proxyDelta = (sample.proxyBytes - previous.proxyBytes).coerceAtLeast(0)
-        val directDelta = (sample.directBytes - previous.directBytes).coerceAtLeast(0)
-        return TrafficSpeedsReading(
+    private suspend fun readTraffic(previous: TrafficSample?): TrafficReading {
+        val totals = connectionManager.readOutboundTrafficStatsBytes().readOutboundTraffic()
+            ?: return TrafficReading(speeds = null, sample = null)
+        // Rates are measured against the monotonic clock: a wall-clock correction between two
+        // samples would otherwise print a rate that never happened.
+        val sample = TrafficSample(elapsedRealtimeMs = SystemClock.elapsedRealtime(), totals = totals)
+        if (previous == null) return TrafficReading(speeds = null, sample = sample)
+        val elapsedMs = sample.elapsedRealtimeMs - previous.elapsedRealtimeMs
+        return TrafficReading(
             speeds = TrafficSpeeds(
-                proxyBps = (proxyDelta / elapsedSeconds).toLong(),
-                directBps = (directDelta / elapsedSeconds).toLong(),
+                directBps = bytesPerSecond(sample.totals.directBytes, previous.totals.directBytes, elapsedMs),
+                uplinkBps = bytesPerSecond(sample.totals.proxyUplinkBytes, previous.totals.proxyUplinkBytes, elapsedMs),
+                downlinkBps = bytesPerSecond(sample.totals.proxyDownlinkBytes, previous.totals.proxyDownlinkBytes, elapsedMs),
             ),
             sample = sample,
         )
@@ -1795,52 +1822,23 @@ class XrayService : VpnService() {
         }
     }
 
-    private fun Map<String, Long>.outboundBytes(tag: String): Long = get("outbound>>>$tag>>>traffic>>>uplink").orZero() +
-        get("outbound>>>$tag>>>traffic>>>downlink").orZero()
-
-    private fun Map<String, Long>.hasOutboundTrafficStats(tag: String): Boolean = containsKey("outbound>>>$tag>>>traffic>>>uplink") ||
-        containsKey("outbound>>>$tag>>>traffic>>>downlink")
-
-    private fun Long?.orZero(): Long = this ?: 0L
-
     private fun formatNullableBytesPerSecond(bytesPerSecond: Long?): String = bytesPerSecond?.let(::formatBytesPerSecond)
         ?: localizedString(R.string.notification_metric_unavailable)
 
     private fun formatBytesPerSecond(bytesPerSecond: Long): String {
-        val units = intArrayOf(
-            R.string.notification_unit_bytes_per_second,
-            R.string.notification_unit_kibibytes_per_second,
-            R.string.notification_unit_mebibytes_per_second,
-            R.string.notification_unit_gibibytes_per_second,
-        )
-        var value = bytesPerSecond.coerceAtLeast(0).toDouble()
-        var unitIndex = 0
-        while (value >= 1024.0 && unitIndex < units.lastIndex) {
-            value /= 1024.0
-            unitIndex++
-        }
-        val formattedValue = if (unitIndex == 0) {
-            formatInteger(value.toLong())
-        } else {
-            NumberFormat.getNumberInstance(forAppLanguage().resources.configuration.locales[0]).apply {
-                minimumFractionDigits = 1
-                maximumFractionDigits = 1
-            }.format(value)
-        }
-        return localizedString(
-            R.string.notification_value_with_unit,
-            formattedValue,
-            localizedString(units[unitIndex]),
-        )
+        val scaled = scaleBytes(bytesPerSecond, appLocale())
+        return localizedString(R.string.value_with_unit, scaled.value, localizedString(scaled.magnitude.rateUnit()))
     }
 
     private fun formatMebibytes(value: Long): String = localizedString(
-        R.string.notification_value_with_unit,
+        R.string.value_with_unit,
         formatInteger(value),
-        localizedString(R.string.notification_unit_mebibytes),
+        localizedString(R.string.traffic_unit_mebibytes),
     )
 
-    private fun formatInteger(value: Long): String = NumberFormat.getIntegerInstance(forAppLanguage().resources.configuration.locales[0]).format(value)
+    private fun formatInteger(value: Long): String = NumberFormat.getIntegerInstance(appLocale()).format(value)
+
+    private fun appLocale(): Locale = forAppLanguage().resources.configuration.locales[0]
 
     private fun startAsForeground(title: String, text: String, showDisconnectAction: Boolean) {
         terminalFailureNotificationShown = false
@@ -1935,25 +1933,43 @@ class XrayService : VpnService() {
     )
 
     private data class TrafficSample(
-        val timestampMs: Long,
-        val proxyBytes: Long,
-        val directBytes: Long,
+        val elapsedRealtimeMs: Long,
+        val totals: OutboundTrafficTotals,
     )
 
     private data class TrafficSpeeds(
-        val proxyBps: Long,
         val directBps: Long,
-    )
+        val uplinkBps: Long,
+        val downlinkBps: Long,
+    ) {
+        val proxyBps: Long get() = uplinkBps + downlinkBps
+    }
 
-    private data class NotificationMetricsReading(
+    private data class MetricsReading(
         val metrics: NotificationMetrics,
+        val sessionTraffic: SessionTrafficMetrics?,
         val trafficSample: TrafficSample?,
     )
 
-    private data class TrafficSpeedsReading(
+    private data class TrafficReading(
         val speeds: TrafficSpeeds?,
         val sample: TrafficSample?,
-    )
+    ) {
+        /**
+         * The first reading of a session has totals but no speeds yet, since a rate needs two
+         * samples. Reporting zero there would claim an idle tunnel, so the speeds stay absent and
+         * the banner shows them as unavailable for one tick.
+         */
+        fun sessionTraffic(): SessionTrafficMetrics? {
+            val totals = sample?.totals ?: return null
+            return SessionTrafficMetrics(
+                uplinkBps = speeds?.uplinkBps,
+                downlinkBps = speeds?.downlinkBps,
+                uplinkBytes = totals.proxyUplinkBytes,
+                downlinkBytes = totals.proxyDownlinkBytes,
+            )
+        }
+    }
 
     companion object {
         const val CHANNEL_ID = "xray_service"

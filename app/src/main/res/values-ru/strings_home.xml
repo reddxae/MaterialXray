@@ -50,7 +50,13 @@
     <string name="home_select_server_below">Выберите сервер ниже</string>
     <string name="home_selected_server">Выбранный сервер</string>
     <string name="home_balancer_active_server">Используется: %1$s</string>
-    <string name="home_balancer_active_server_with_latency">Используется: %1$s &#8226; %2$d мс</string>
+    <string name="home_stats_ping">Пинг</string>
+    <string name="home_stats_download">Загрузка</string>
+    <string name="home_stats_upload">Отдача</string>
+    <string name="home_stats_session">Всего за сеанс</string>
+    <string name="home_stats_session_value">&#8595;\u0020%1$s\u0020\u0020&#8593;\u0020%2$s</string>
+    <string name="home_stats_session_description">За сеанс загружено %1$s, отправлено %2$s</string>
+    <string name="home_stats_ping_value">%1$d мс</string>
     <string name="home_server_endpoint_unknown">неизвестно</string>
     <plurals name="home_server_multiconnect_summary">
         <item quantity="one">multiconnect &#8226; %1$d сервер</item>

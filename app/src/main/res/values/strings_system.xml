@@ -61,15 +61,22 @@
         <item quantity="one">Connection: %1$s</item>
         <item quantity="other">Connections: %1$s</item>
     </plurals>
-    <string name="notification_value_with_unit">%1$s %2$s</string>
     <string name="notification_metric_unavailable" translatable="false">--</string>
     <string name="notification_separator_compact" translatable="false">\u0020&#8226;\u0020</string>
     <string name="notification_separator_expanded" translatable="false">\n</string>
-    <string name="notification_unit_bytes_per_second" translatable="false">B/s</string>
-    <string name="notification_unit_kibibytes_per_second" translatable="false">KiB/s</string>
-    <string name="notification_unit_mebibytes_per_second" translatable="false">MiB/s</string>
-    <string name="notification_unit_gibibytes_per_second" translatable="false">GiB/s</string>
-    <string name="notification_unit_mebibytes" translatable="false">MiB</string>
+
+    <!-- Traffic units, shared by the notification and the connection banner -->
+    <string name="value_with_unit">%1$s %2$s</string>
+    <string name="traffic_unit_bytes" translatable="false">B</string>
+    <string name="traffic_unit_kibibytes" translatable="false">KiB</string>
+    <string name="traffic_unit_mebibytes" translatable="false">MiB</string>
+    <string name="traffic_unit_gibibytes" translatable="false">GiB</string>
+    <string name="traffic_unit_tebibytes" translatable="false">TiB</string>
+    <string name="traffic_unit_bytes_per_second" translatable="false">B/s</string>
+    <string name="traffic_unit_kibibytes_per_second" translatable="false">KiB/s</string>
+    <string name="traffic_unit_mebibytes_per_second" translatable="false">MiB/s</string>
+    <string name="traffic_unit_gibibytes_per_second" translatable="false">GiB/s</string>
+    <string name="traffic_unit_tebibytes_per_second" translatable="false">TiB/s</string>
 
     <!-- Quick Settings tile state descriptions -->
     <string name="tile_state_connected">Connected</string>

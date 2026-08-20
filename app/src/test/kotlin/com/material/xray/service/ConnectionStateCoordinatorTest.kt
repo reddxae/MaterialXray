@@ -2,6 +2,7 @@ package com.material.xray.service
 
 import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
+import com.material.xray.model.SessionTrafficMetrics
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -152,6 +153,48 @@ class ConnectionStateCoordinatorTest {
         runCurrent()
         assertEquals(0, coordinator.activeBalancerSelectionSubscribers.value)
     }
+
+    @Test
+    fun `session traffic subscriber count follows active UI collection`() = runTest {
+        val coordinator = ConnectionStateCoordinator()
+        assertEquals(0, coordinator.sessionTrafficSubscribers.value)
+
+        val collection = backgroundScope.launch { coordinator.sessionTraffic.collect { } }
+        runCurrent()
+        assertEquals(1, coordinator.sessionTrafficSubscribers.value)
+
+        collection.cancel()
+        runCurrent()
+        assertEquals(0, coordinator.sessionTrafficSubscribers.value)
+    }
+
+    @Test
+    fun `session traffic is dropped when the connection ends`() {
+        val coordinator = ConnectionStateCoordinator()
+        coordinator.restoreConnected(connectedState(corePid = 42))
+        coordinator.updateSessionTraffic(sessionTraffic())
+        assertEquals(sessionTraffic(), coordinator.sessionTraffic.value)
+
+        coordinator.markDisconnected()
+
+        assertNull(coordinator.sessionTraffic.value)
+    }
+
+    @Test
+    fun `session traffic is ignored while disconnected`() {
+        val coordinator = ConnectionStateCoordinator()
+
+        coordinator.updateSessionTraffic(sessionTraffic())
+
+        assertNull(coordinator.sessionTraffic.value)
+    }
+
+    private fun sessionTraffic() = SessionTrafficMetrics(
+        uplinkBps = 1_024L,
+        downlinkBps = 4_096L,
+        uplinkBytes = 10_240L,
+        downlinkBytes = 40_960L,
+    )
 
     private fun connectedState(corePid: Int) = ConnectionState.Connected(
         serverName = "Server",

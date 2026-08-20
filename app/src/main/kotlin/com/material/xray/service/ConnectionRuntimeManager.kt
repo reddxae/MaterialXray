@@ -36,9 +36,12 @@ class ConnectionRuntimeManager @Inject constructor(
     )
 
     suspend fun reconcileState() = stepExecutor.execute(
-        ConnectionStep("Reconcile Xray runtime state", ConnectionProgress.InspectingSavedRuntime) {
-            reconcileStateOnce()
-        },
+        ConnectionStep(
+            label = "Reconcile Xray runtime state",
+            progress = ConnectionProgress.InspectingSavedRuntime,
+            reported = false,
+            action = { reconcileStateOnce() },
+        ),
     )
 
     private suspend fun reconcileStateOnce() {

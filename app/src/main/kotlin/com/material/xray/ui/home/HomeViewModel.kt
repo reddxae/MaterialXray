@@ -234,9 +234,7 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Live traffic counters for the connection banner. Subscribing here is what makes the service
-     * poll Xray at all, so the grace period keeps a tab switch from restarting its loop. Past that
-     * grace the cached reading is dropped, so a banner that comes back later shows no figure until
-     * a fresh one arrives rather than a rate from minutes ago.
+     * poll Xray at all, so the grace period keeps a tab switch from restarting its loop.
      */
     val sessionTraffic: StateFlow<SessionTrafficMetrics?> = connectionStateCoordinator.sessionTraffic
         .stateIn(viewModelScope, liveReadingSharing(), null)
@@ -287,13 +285,11 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, liveReadingSharing(), null)
 
     /**
-     * Keeps a reading alive across a brief tab switch, then drops both the subscription and the
-     * cached value so nothing stale is shown when the banner returns.
+     * Keeps the last reading on screen when the banner comes back, rather than dashing every cell
+     * until fresh numbers arrive. The service primes its loop so a real reading lands within a
+     * fraction of a second, which bounds how long a carried-over rate can be shown.
      */
-    private fun liveReadingSharing() = SharingStarted.WhileSubscribed(
-        stopTimeoutMillis = LIVE_READING_GRACE_MILLIS,
-        replayExpirationMillis = 0,
-    )
+    private fun liveReadingSharing() = SharingStarted.WhileSubscribed(LIVE_READING_GRACE_MILLIS)
 
     private val refreshOperations = MutableStateFlow(0)
     val isRefreshing: StateFlow<Boolean> = refreshOperations

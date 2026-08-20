@@ -1050,13 +1050,20 @@ class XrayService : VpnService() {
         metricsJob = scope.launch(Dispatchers.IO) {
             // The previous traffic sample is owned by this coroutine: sharing it as a field let a
             // cancelled loop's late write leak a stale sample into the next metrics session.
-            var previousSample: TrafficSample? = null
+            //
+            // It is primed before the first tick because a rate needs two samples: without this
+            // the loop's opening reading would carry byte totals but no speeds, and reopening the
+            // home screen would dash both rate cells for a whole interval.
+            var previousSample: TrafficSample? = primingSample()
+            if (previousSample != null) delay(METRICS_PRIMING_DELAY_MS)
             var nextNotificationUpdateAtMs = 0L
             while (isActive) {
                 val connectedState = connectionStateCoordinator.state.value as? ConnectionState.Connected ?: break
                 val reading = readMetrics(connectedState, previousSample)
                 previousSample = reading.trafficSample
-                connectionStateCoordinator.updateSessionTraffic(reading.sessionTraffic)
+                // Only a real reading is published. A tick that read no traffic at all must not
+                // wipe the figures the banner is showing, and a disconnect clears them anyway.
+                reading.sessionTraffic?.let(connectionStateCoordinator::updateSessionTraffic)
                 val nowMs = SystemClock.elapsedRealtime()
                 if (reading.metrics != notificationMetrics && nowMs >= nextNotificationUpdateAtMs) {
                     nextNotificationUpdateAtMs = nowMs + notificationSettings.updateIntervalMs
@@ -1071,10 +1078,14 @@ class XrayService : VpnService() {
         if (state.corePid <= 0) stopMetrics()
     }
 
+    /**
+     * Stops the loop without clearing the last session traffic reading: the poll also stops when
+     * the banner simply goes off screen, and the connection it measured is still running. A state
+     * that is no longer connected clears the reading in the coordinator itself.
+     */
     private fun stopMetrics() {
         pauseMetrics()
         notificationMetrics = NotificationMetrics()
-        connectionStateCoordinator.updateSessionTraffic(null)
     }
 
     private fun pauseMetrics() {
@@ -1088,8 +1099,7 @@ class XrayService : VpnService() {
         previousSample: TrafficSample?,
     ): MetricsReading {
         val settings = notificationSettings
-        val uiWatching = uiWantsSessionTraffic()
-        val trafficReading = if (settings.showTrafficSpeed || uiWatching) {
+        val trafficReading = if (settings.showTrafficSpeed || uiWantsSessionTraffic()) {
             readTraffic(previousSample)
         } else {
             TrafficReading(speeds = null, sample = null)
@@ -1128,9 +1138,18 @@ class XrayService : VpnService() {
                 ramMb = ramMb,
                 connectionCount = connectionCount,
             ),
-            sessionTraffic = trafficReading.sessionTraffic().takeIf { uiWatching },
+            sessionTraffic = trafficReading.sessionTraffic(),
             trafficSample = trafficReading.sample,
         )
+    }
+
+    /**
+     * A first traffic sample to measure the loop's opening rates against, or `null` when no
+     * consumer wants traffic and the read would be a wasted round trip.
+     */
+    private suspend fun primingSample(): TrafficSample? {
+        if (!notificationSettings.showTrafficSpeed && !uiWantsSessionTraffic()) return null
+        return readTraffic(previous = null).sample
     }
 
     private suspend fun readTraffic(previous: TrafficSample?): TrafficReading {
@@ -1956,15 +1975,19 @@ class XrayService : VpnService() {
         val sample: TrafficSample?,
     ) {
         /**
-         * The first reading of a session has totals but no speeds yet, since a rate needs two
-         * samples. Reporting zero there would claim an idle tunnel, so the speeds stay absent and
-         * the banner shows them as unavailable for one tick.
+         * A reading is published whole or not at all.
+         *
+         * A rate needs two samples, so a tick with nothing to compare against has byte totals but
+         * no speeds. Publishing that half reading would blank the rate cells of a banner that is
+         * already showing figures, which reads as a flicker; withholding it leaves the previous
+         * complete reading in place until a real one replaces it.
          */
         fun sessionTraffic(): SessionTrafficMetrics? {
             val totals = sample?.totals ?: return null
+            val speeds = speeds ?: return null
             return SessionTrafficMetrics(
-                uplinkBps = speeds?.uplinkBps,
-                downlinkBps = speeds?.downlinkBps,
+                uplinkBps = speeds.uplinkBps,
+                downlinkBps = speeds.downlinkBps,
                 uplinkBytes = totals.proxyUplinkBytes,
                 downlinkBytes = totals.proxyDownlinkBytes,
             )
@@ -2001,6 +2024,7 @@ class XrayService : VpnService() {
         private const val PROCESS_RESTART_DELAY_MS = 2_000L
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
+        private const val METRICS_PRIMING_DELAY_MS = 250L
         private const val ROOTLESS_TUN_NAME = "tun0"
         private const val TRANSPORT_LABEL_WIFI = "wifi"
         private const val TRANSPORT_LABEL_ETHERNET = "ethernet"

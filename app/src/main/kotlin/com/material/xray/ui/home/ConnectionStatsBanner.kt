@@ -83,13 +83,13 @@ internal fun ConnectionStatsBanner(
                 StatCell(
                     icon = Icons.Outlined.ArrowDownward,
                     label = stringResource(R.string.home_stats_download),
-                    value = traffic?.downlinkBps?.let { formatRate(it, locale) },
+                    value = traffic?.let { formatRate(it.downlinkBps, locale) },
                     modifier = Modifier.weight(1f),
                 )
                 StatCell(
                     icon = Icons.Outlined.ArrowUpward,
                     label = stringResource(R.string.home_stats_upload),
-                    value = traffic?.uplinkBps?.let { formatRate(it, locale) },
+                    value = traffic?.let { formatRate(it.uplinkBps, locale) },
                     modifier = Modifier.weight(1f),
                 )
             }

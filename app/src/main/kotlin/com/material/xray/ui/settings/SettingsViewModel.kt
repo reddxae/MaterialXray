@@ -226,10 +226,18 @@ class SettingsViewModel @Inject constructor(
     fun setNotificationShowConnectionCount(enabled: Boolean) = viewModelScope.launch {
         settingsRepo.setNotificationShowConnectionCount(enabled)
     }
+    fun setNotificationShowPing(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setNotificationShowPing(enabled)
+    }
+    fun setNotificationShowSessionTraffic(enabled: Boolean) = viewModelScope.launch {
+        settingsRepo.setNotificationShowSessionTraffic(enabled)
+    }
     fun setNotificationFieldEnabled(field: NotificationField, enabled: Boolean) = when (field) {
         NotificationField.TrafficSpeed -> setNotificationShowTrafficSpeed(enabled)
         NotificationField.RamUsage -> setNotificationShowRamUsage(enabled)
         NotificationField.ConnectionCount -> setNotificationShowConnectionCount(enabled)
+        NotificationField.Ping -> setNotificationShowPing(enabled)
+        NotificationField.SessionTraffic -> setNotificationShowSessionTraffic(enabled)
     }
     fun setNotificationFieldOrder(order: List<NotificationField>) = viewModelScope.launch {
         settingsRepo.setNotificationFieldOrder(order)

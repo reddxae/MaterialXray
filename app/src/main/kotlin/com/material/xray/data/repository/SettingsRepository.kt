@@ -117,6 +117,8 @@ class SettingsRepository @Inject constructor(
         val NOTIFICATION_SHOW_TRAFFIC_SPEED = booleanPreferencesKey("notification_show_traffic_speed")
         val NOTIFICATION_SHOW_RAM_USAGE = booleanPreferencesKey("notification_show_ram_usage")
         val NOTIFICATION_SHOW_CONNECTION_COUNT = booleanPreferencesKey("notification_show_connection_count")
+        val NOTIFICATION_SHOW_PING = booleanPreferencesKey("notification_show_ping")
+        val NOTIFICATION_SHOW_SESSION_TRAFFIC = booleanPreferencesKey("notification_show_session_traffic")
         val NOTIFICATION_FIELD_ORDER = stringPreferencesKey("notification_field_order")
         val SUBSCRIPTION_SEND_HWID = booleanPreferencesKey("subscription_send_hwid")
         val SUBSCRIPTION_PREFER_JSON = booleanPreferencesKey("subscription_prefer_json")
@@ -237,6 +239,8 @@ class SettingsRepository @Inject constructor(
             showTrafficSpeed = prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] ?: false,
             showRamUsage = prefs[NOTIFICATION_SHOW_RAM_USAGE] ?: false,
             showConnectionCount = prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] ?: false,
+            showPing = prefs[NOTIFICATION_SHOW_PING] ?: false,
+            showSessionTraffic = prefs[NOTIFICATION_SHOW_SESSION_TRAFFIC] ?: false,
             fieldOrder = decodeNotificationFieldOrder(prefs[NOTIFICATION_FIELD_ORDER]),
         )
     }
@@ -287,6 +291,8 @@ class SettingsRepository @Inject constructor(
                 showTrafficSpeed = prefs[NOTIFICATION_SHOW_TRAFFIC_SPEED] ?: false,
                 showRamUsage = prefs[NOTIFICATION_SHOW_RAM_USAGE] ?: false,
                 showConnectionCount = prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] ?: false,
+                showPing = prefs[NOTIFICATION_SHOW_PING] ?: false,
+                showSessionTraffic = prefs[NOTIFICATION_SHOW_SESSION_TRAFFIC] ?: false,
                 fieldOrder = decodeNotificationFieldOrder(prefs[NOTIFICATION_FIELD_ORDER]),
             ),
             subscriptionSendHardwareId = prefs[SUBSCRIPTION_SEND_HWID] ?: true,
@@ -424,6 +430,14 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setNotificationShowConnectionCount(enabled: Boolean) = store.edit { prefs ->
         prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] = enabled
+    }
+
+    suspend fun setNotificationShowPing(enabled: Boolean) = store.edit { prefs ->
+        prefs[NOTIFICATION_SHOW_PING] = enabled
+    }
+
+    suspend fun setNotificationShowSessionTraffic(enabled: Boolean) = store.edit { prefs ->
+        prefs[NOTIFICATION_SHOW_SESSION_TRAFFIC] = enabled
     }
     suspend fun setNotificationFieldOrder(fields: List<NotificationField>) = store.edit { prefs ->
         prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(fields)
@@ -563,6 +577,12 @@ class SettingsRepository @Inject constructor(
             map["notification_show_connection_count"]
                 ?.toBooleanStrictOrNull()
                 ?.let { prefs[NOTIFICATION_SHOW_CONNECTION_COUNT] = it }
+            map["notification_show_ping"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[NOTIFICATION_SHOW_PING] = it }
+            map["notification_show_session_traffic"]
+                ?.toBooleanStrictOrNull()
+                ?.let { prefs[NOTIFICATION_SHOW_SESSION_TRAFFIC] = it }
             map["notification_field_order"]?.let { encoded ->
                 prefs[NOTIFICATION_FIELD_ORDER] = encodeNotificationFieldOrder(decodeNotificationFieldOrder(encoded))
             }

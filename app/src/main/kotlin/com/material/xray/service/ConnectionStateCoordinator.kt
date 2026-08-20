@@ -43,6 +43,14 @@ class ConnectionStateCoordinator @Inject constructor() {
      */
     internal val sessionTrafficSubscribers: StateFlow<Int> = _sessionTraffic.subscriptionCount
 
+    /**
+     * Round-trip time to whatever the tunnel is currently using, measured by the service so the
+     * connection banner and the notification read one number instead of probing the endpoint twice.
+     */
+    private val _activePingMs = MutableStateFlow<Int?>(null)
+    val activePingMs: StateFlow<Int?> = _activePingMs.asStateFlow()
+    internal val activePingSubscribers: StateFlow<Int> = _activePingMs.subscriptionCount
+
     fun startConnection(transitionState: ConnectionState) {
         require(
             transitionState == ConnectionState.Connecting ||
@@ -132,6 +140,7 @@ class ConnectionStateCoordinator @Inject constructor() {
         if (newState !is ConnectionState.Connected) {
             _activeBalancerSelection.value = null
             _sessionTraffic.value = null
+            _activePingMs.value = null
         }
     }
 
@@ -143,6 +152,11 @@ class ConnectionStateCoordinator @Inject constructor() {
     @Synchronized
     internal fun updateSessionTraffic(metrics: SessionTrafficMetrics?) {
         _sessionTraffic.value = metrics.takeIf { _state.value is ConnectionState.Connected }
+    }
+
+    @Synchronized
+    internal fun updateActivePing(latencyMs: Int?) {
+        _activePingMs.value = latencyMs.takeIf { _state.value is ConnectionState.Connected }
     }
 
     suspend fun emitEvent(event: ConnectionEvent) {

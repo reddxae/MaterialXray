@@ -57,6 +57,10 @@
     <string name="notification_ram_expanded">Core RAM: %1$s</string>
     <string name="notification_connections_compact">Conn %1$s</string>
     <string name="notification_connections_expanded_unavailable">Connections: %1$s</string>
+    <string name="notification_ping_compact">Ping %1$s</string>
+    <string name="notification_ping_expanded">Ping: %1$s</string>
+    <string name="notification_session_compact">&#8595;\u0020%1$s / &#8593;\u0020%2$s</string>
+    <string name="notification_session_expanded">Session: &#8595;\u0020%1$s | &#8593;\u0020%2$s</string>
     <plurals name="notification_connections_expanded">
         <item quantity="one">Connection: %1$s</item>
         <item quantity="other">Connections: %1$s</item>
@@ -67,6 +71,7 @@
 
     <!-- Traffic units, shared by the notification and the connection banner -->
     <string name="value_with_unit">%1$s %2$s</string>
+    <string name="unit_milliseconds">ms</string>
     <string name="traffic_unit_bytes" translatable="false">B</string>
     <string name="traffic_unit_kibibytes" translatable="false">KiB</string>
     <string name="traffic_unit_mebibytes" translatable="false">MiB</string>

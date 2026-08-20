@@ -32,7 +32,6 @@ import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.maskedBalancerOutboundAddress
 import com.material.xray.model.matchesBalancerOutbound
-import com.material.xray.model.proxyOutboundCount
 import com.material.xray.service.AlwaysOnVpnState
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.AppUpdateInstallProgress
@@ -54,7 +53,6 @@ import javax.inject.Inject
 import javax.net.ssl.SSLException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
@@ -65,11 +63,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -240,49 +234,12 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, liveReadingSharing(), null)
 
     /**
-     * The endpoint to keep pinging while connected, or `null` when nothing should be probed.
-     *
-     * A balancer config is excluded because Xray's observatory already reports a delay for the
-     * outbound it picked. A config with several proxy outbounds is excluded too: its [ServerConfig]
-     * address is whichever outbound happened to be parsed first, so a probe would report the
-     * latency of an endpoint the tunnel may not be using and label it as the connection's.
+     * Round-trip time to whatever the tunnel is currently using, measured by the service against
+     * the config it actually connected with. Subscribing here is what starts the probe, so nothing
+     * is measured for the banner while it is off screen.
      */
-    private val livePingTarget: Flow<ServerConfig?> = combine(
-        connectionState,
-        selectedServer,
-        activeBalancerServer,
-    ) { state, server, balancer ->
-        if (state !is ConnectionState.Connected || balancer != null) return@combine null
-        server?.takeIf { it.proxyOutboundCount() == null }
-    }.distinctUntilChanged { old, new -> old?.address == new?.address && old?.port == new?.port }
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val livePingMs: Flow<Int?> = livePingTarget.flatMapLatest { server ->
-        if (server == null) {
-            flowOf(null)
-        } else {
-            flow {
-                while (true) {
-                    emit(serverLatencyTester.measureTcping(server).takeIf { it >= 0 })
-                    delay(LIVE_PING_INTERVAL_MILLIS)
-                }
-            }
-        }
-    }
-
-    /**
-     * Round-trip time to whatever the tunnel is currently using: the observatory delay for a
-     * balancer, a TCP connect to the server endpoint otherwise.
-     *
-     * This is the time to reach the proxy host rather than through the tunnel. In rootless mode the
-     * app excludes itself from its own VPN, so a probe from this process could not traverse it; in
-     * root mode the path depends on the fwmark rules. It is also always a TCP connect, even when
-     * the server list is configured to measure with httping, because httping runs a throwaway Xray
-     * process per probe and cannot run on a ten-second loop.
-     */
-    val activeServerPingMs: StateFlow<Int?> = combine(activeBalancerServer, livePingMs) { balancer, probed ->
-        balancer?.latencyMs?.toInt() ?: probed
-    }.stateIn(viewModelScope, liveReadingSharing(), null)
+    val activeServerPingMs: StateFlow<Int?> = connectionStateCoordinator.activePingMs
+        .stateIn(viewModelScope, liveReadingSharing(), null)
 
     /**
      * Keeps the last reading on screen when the banner comes back, rather than dashing every cell
@@ -771,7 +728,6 @@ class HomeViewModel @Inject constructor(
     private companion object {
         const val MAX_CONCURRENT_LATENCY_TESTS = 25
         const val LATENCY_SORT_INTERVAL_MILLIS = 750L
-        const val LIVE_PING_INTERVAL_MILLIS = 10_000L
         const val LIVE_READING_GRACE_MILLIS = 5_000L
     }
 }

@@ -27,9 +27,11 @@ import androidx.core.content.ContextCompat
 import com.material.xray.R
 import com.material.xray.core.format.rateUnit
 import com.material.xray.core.format.scaleBytes
+import com.material.xray.core.format.sizeUnit
 import com.material.xray.core.locale.appLocaleChanges
 import com.material.xray.core.locale.forAppLanguage
 import com.material.xray.core.locale.localizedString
+import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
@@ -54,6 +56,7 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.SessionTrafficMetrics
 import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.primaryBalancerTag
+import com.material.xray.model.proxyOutboundCount
 import dagger.hilt.android.AndroidEntryPoint
 import java.text.NumberFormat
 import java.util.Locale
@@ -98,6 +101,8 @@ class XrayService : VpnService() {
 
     @Inject lateinit var startupDiagnosticsLogger: StartupDiagnosticsLogger
 
+    @Inject lateinit var serverLatencyTester: ServerLatencyTester
+
     private lateinit var connectionManager: ConnectionManager
     private lateinit var connectionLifecycle: ConnectionLifecycle
     private lateinit var healthWatchdog: XrayHealthWatchdog
@@ -134,6 +139,7 @@ class XrayService : VpnService() {
     private var rootServiceRequested: Boolean? = null
     private var balancerSelectionJob: Job? = null
     private var balancerSelectionTag: String? = null
+    private var pingJob: Job? = null
     private var vpnInterface: ParcelFileDescriptor? = null
 
     // Written on the main thread, read by the IO metrics loop.
@@ -159,6 +165,7 @@ class XrayService : VpnService() {
             if (screenInteractive == interactive) return
             screenInteractive = interactive
             updateBalancerSelectionTracker()
+            updatePingTracker()
             updateMetricsJob()
         }
     }
@@ -297,12 +304,23 @@ class XrayService : VpnService() {
         }
 
         scope.launch {
+            connectionStateCoordinator.activePingSubscribers.collect {
+                updatePingTracker()
+            }
+        }
+
+        scope.launch {
             settingsRepo.notificationSettings.collectLatest { settings ->
                 notificationSettings = settings
                 if (!settings.showTrafficSpeed) {
                     notificationMetrics = notificationMetrics.copy(proxyBps = null, directBps = null)
                 }
+                if (!settings.showSessionTraffic) {
+                    notificationMetrics = notificationMetrics.copy(sessionUplinkBytes = null, sessionDownlinkBytes = null)
+                }
+                if (!settings.showPing) notificationMetrics = notificationMetrics.copy(pingMs = null)
                 updateMetricsJob()
+                updatePingTracker()
                 updateNotification()
             }
         }
@@ -919,6 +937,7 @@ class XrayService : VpnService() {
                 stopMetrics()
             }
         }
+        updatePingTracker()
         updateMetricsJob()
     }
 
@@ -964,6 +983,67 @@ class XrayService : VpnService() {
         } else {
             pauseBalancerSelectionTracker()
         }
+    }
+
+    /**
+     * Keeps a single round-trip measurement for whatever the tunnel is using, shared by the
+     * connection banner and the notification so neither probes the endpoint on its own.
+     *
+     * It runs far slower than the metrics poll: a reading costs a bare TCP connect the server sees,
+     * and at the metrics cadence that would be a connect every second.
+     */
+    private fun updatePingTracker() {
+        val wanted = notificationSettings.needsPingProbe || connectionStateCoordinator.activePingSubscribers.value > 0
+        if (
+            screenInteractive &&
+            wanted &&
+            connectionStateCoordinator.state.value is ConnectionState.Connected
+        ) {
+            startPingTracker()
+        } else {
+            pausePingTracker()
+        }
+    }
+
+    private fun startPingTracker() {
+        if (pingJob?.isActive == true) return
+
+        pingJob = scope.launch(Dispatchers.IO) {
+            while (isActive && connectionStateCoordinator.state.value is ConnectionState.Connected) {
+                val latencyMs = measureActivePing()
+                connectionStateCoordinator.updateActivePing(latencyMs)
+                // The ping field can be the only one enabled, in which case the metrics loop is not
+                // running and this is the only thing that can put the reading in the notification.
+                if (notificationSettings.showPing && notificationMetrics.pingMs != latencyMs) {
+                    withContext(Dispatchers.Main) {
+                        notificationMetrics = notificationMetrics.copy(pingMs = latencyMs)
+                        updateNotification()
+                    }
+                }
+                delay(PING_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun pausePingTracker() {
+        pingJob?.cancel()
+        pingJob = null
+    }
+
+    /**
+     * A balancer reports the delay its observatory measured for the outbound it picked, which beats
+     * probing an endpoint it may not be using. A config with several proxy outbounds reports
+     * nothing at all, because its recorded address is only the first outbound that was parsed and a
+     * probe of it would be labelled as the connection's own latency.
+     */
+    private suspend fun measureActivePing(): Int? {
+        val config = activeConfig ?: return null
+        val balancerTag = config.primaryBalancerTag()
+        if (balancerTag != null) {
+            return connectionManager.readBalancerSelection(balancerTag)?.latencyMs?.toInt()
+        }
+        if (config.proxyOutboundCount() != null) return null
+        return serverLatencyTester.measureTcping(config).takeIf { it >= 0 }
     }
 
     private fun startProcessWatchdog(state: ConnectionState.Connected) {
@@ -1026,7 +1106,7 @@ class XrayService : VpnService() {
         val connectedState = connectionStateCoordinator.state.value as? ConnectionState.Connected
         val intervalMs = metricsPollIntervalMs(
             notificationIntervalMs = notificationSettings.updateIntervalMs,
-            notificationWantsMetrics = notificationSettings.hasDynamicMetrics,
+            notificationWantsMetrics = notificationSettings.needsMetricsPoll,
             uiWantsSessionTraffic = uiWantsSessionTraffic(),
         )
         if (connectedState == null || intervalMs == null) {
@@ -1099,7 +1179,8 @@ class XrayService : VpnService() {
         previousSample: TrafficSample?,
     ): MetricsReading {
         val settings = notificationSettings
-        val trafficReading = if (settings.showTrafficSpeed || uiWantsSessionTraffic()) {
+        val wantsTraffic = settings.showTrafficSpeed || settings.showSessionTraffic || uiWantsSessionTraffic()
+        val trafficReading = if (wantsTraffic) {
             readTraffic(previousSample)
         } else {
             TrafficReading(speeds = null, sample = null)
@@ -1131,12 +1212,17 @@ class XrayService : VpnService() {
         } else {
             null
         }
+        // The totals need no second sample, so the session field reports from the very first tick.
+        val sessionTotals = trafficReading.sample?.totals?.takeIf { settings.showSessionTraffic }
         return MetricsReading(
             metrics = NotificationMetrics(
                 proxyBps = notificationSpeeds?.proxyBps,
                 directBps = notificationSpeeds?.directBps,
                 ramMb = ramMb,
                 connectionCount = connectionCount,
+                pingMs = connectionStateCoordinator.activePingMs.value.takeIf { settings.showPing },
+                sessionUplinkBytes = sessionTotals?.proxyUplinkBytes,
+                sessionDownlinkBytes = sessionTotals?.proxyDownlinkBytes,
             ),
             sessionTraffic = trafficReading.sessionTraffic(),
             trafficSample = trafficReading.sample,
@@ -1838,6 +1924,24 @@ class XrayService : VpnService() {
                     )
                 }
             }
+            NotificationField.Ping -> {
+                val ping = metrics.pingMs?.let(::formatMilliseconds)
+                    ?: localizedString(R.string.notification_metric_unavailable)
+                if (compact) {
+                    localizedString(R.string.notification_ping_compact, ping)
+                } else {
+                    localizedString(R.string.notification_ping_expanded, ping)
+                }
+            }
+            NotificationField.SessionTraffic -> {
+                val downloaded = formatNullableBytes(metrics.sessionDownlinkBytes)
+                val uploaded = formatNullableBytes(metrics.sessionUplinkBytes)
+                if (compact) {
+                    localizedString(R.string.notification_session_compact, downloaded, uploaded)
+                } else {
+                    localizedString(R.string.notification_session_expanded, downloaded, uploaded)
+                }
+            }
         }
     }
 
@@ -1848,6 +1952,20 @@ class XrayService : VpnService() {
         val scaled = scaleBytes(bytesPerSecond, appLocale())
         return localizedString(R.string.value_with_unit, scaled.value, localizedString(scaled.magnitude.rateUnit()))
     }
+
+    private fun formatNullableBytes(bytes: Long?): String = bytes?.let(::formatBytes)
+        ?: localizedString(R.string.notification_metric_unavailable)
+
+    private fun formatBytes(bytes: Long): String {
+        val scaled = scaleBytes(bytes, appLocale())
+        return localizedString(R.string.value_with_unit, scaled.value, localizedString(scaled.magnitude.sizeUnit()))
+    }
+
+    private fun formatMilliseconds(value: Int): String = localizedString(
+        R.string.value_with_unit,
+        formatInteger(value.toLong()),
+        localizedString(R.string.unit_milliseconds),
+    )
 
     private fun formatMebibytes(value: Long): String = localizedString(
         R.string.value_with_unit,
@@ -1943,6 +2061,9 @@ class XrayService : VpnService() {
         val directBps: Long? = null,
         val ramMb: Long? = null,
         val connectionCount: Int? = null,
+        val pingMs: Int? = null,
+        val sessionUplinkBytes: Long? = null,
+        val sessionDownlinkBytes: Long? = null,
     )
 
     private data class NotificationContent(
@@ -2025,6 +2146,7 @@ class XrayService : VpnService() {
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
         private const val METRICS_PRIMING_DELAY_MS = 250L
+        private const val PING_POLL_INTERVAL_MS = 10_000L
         private const val ROOTLESS_TUN_NAME = "tun0"
         private const val TRANSPORT_LABEL_WIFI = "wifi"
         private const val TRANSPORT_LABEL_ETHERNET = "ethernet"

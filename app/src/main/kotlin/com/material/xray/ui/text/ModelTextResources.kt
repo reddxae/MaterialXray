@@ -118,6 +118,8 @@ val NotificationField.labelResource: Int
         NotificationField.TrafficSpeed -> R.string.notification_field_traffic_speed_label
         NotificationField.RamUsage -> R.string.notification_field_ram_usage_label
         NotificationField.ConnectionCount -> R.string.notification_field_connection_count_label
+        NotificationField.Ping -> R.string.notification_field_ping_label
+        NotificationField.SessionTraffic -> R.string.notification_field_session_traffic_label
     }
 
 @get:StringRes
@@ -126,6 +128,8 @@ val NotificationField.descriptionResource: Int
         NotificationField.TrafficSpeed -> R.string.notification_field_traffic_speed_description
         NotificationField.RamUsage -> R.string.notification_field_ram_usage_description
         NotificationField.ConnectionCount -> R.string.notification_field_connection_count_description
+        NotificationField.Ping -> R.string.notification_field_ping_description
+        NotificationField.SessionTraffic -> R.string.notification_field_session_traffic_description
     }
 
 @get:StringRes

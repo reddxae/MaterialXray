@@ -43,6 +43,10 @@
     <string name="notification_field_ram_usage_description">Memory used by the core</string>
     <string name="notification_field_connection_count_label">Connections</string>
     <string name="notification_field_connection_count_description">Open sockets owned by the core</string>
+    <string name="notification_field_ping_label">Ping</string>
+    <string name="notification_field_ping_description">Round-trip time to the server in use</string>
+    <string name="notification_field_session_traffic_label">Session traffic</string>
+    <string name="notification_field_session_traffic_description">Data moved since the core started</string>
 
     <string name="notification_style_normal_label">Normal</string>
     <string name="notification_style_normal_description">Each field on its own line</string>

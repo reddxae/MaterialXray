@@ -56,6 +56,10 @@
     <string name="notification_ram_expanded">ОЗУ ядра: %1$s</string>
     <string name="notification_connections_compact">%1$s Соед.</string>
     <string name="notification_connections_expanded_unavailable">Соединения: %1$s</string>
+    <string name="notification_ping_compact">Пинг %1$s</string>
+    <string name="notification_ping_expanded">Пинг: %1$s</string>
+    <string name="notification_session_compact">&#8595;\u0020%1$s / &#8593;\u0020%2$s</string>
+    <string name="notification_session_expanded">За сеанс: &#8595;\u0020%1$s | &#8593;\u0020%2$s</string>
     <plurals name="notification_connections_expanded">
         <item quantity="one">Соединение: %1$s</item>
         <item quantity="few">Соединения: %1$s</item>
@@ -63,6 +67,7 @@
         <item quantity="other">Соединения: %1$s</item>
     </plurals>
     <string name="value_with_unit">%1$s %2$s</string>
+    <string name="unit_milliseconds">мс</string>
 
     <!-- Описания состояний плитки быстрых настроек -->
     <string name="tile_state_connected">Подключено</string>

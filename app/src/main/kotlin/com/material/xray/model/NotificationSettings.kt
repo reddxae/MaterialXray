@@ -7,18 +7,29 @@ data class NotificationSettings(
     val showTrafficSpeed: Boolean = false,
     val showRamUsage: Boolean = false,
     val showConnectionCount: Boolean = false,
+    val showPing: Boolean = false,
+    val showSessionTraffic: Boolean = false,
     val fieldOrder: List<NotificationField> = NotificationField.entries,
 ) {
     val anyFieldEnabled: Boolean
-        get() = showTrafficSpeed || showRamUsage || showConnectionCount
+        get() = showTrafficSpeed || showRamUsage || showConnectionCount || showPing || showSessionTraffic
 
-    val hasDynamicMetrics: Boolean
-        get() = enabled && anyFieldEnabled
+    /**
+     * Whether the shared metrics poll has to run. Ping is left out: it is measured on its own far
+     * slower schedule, so a notification that only shows a ping should not start the poll.
+     */
+    val needsMetricsPoll: Boolean
+        get() = enabled && (showTrafficSpeed || showRamUsage || showConnectionCount || showSessionTraffic)
+
+    val needsPingProbe: Boolean
+        get() = enabled && showPing
 
     fun isFieldEnabled(field: NotificationField): Boolean = when (field) {
         NotificationField.TrafficSpeed -> showTrafficSpeed
         NotificationField.RamUsage -> showRamUsage
         NotificationField.ConnectionCount -> showConnectionCount
+        NotificationField.Ping -> showPing
+        NotificationField.SessionTraffic -> showSessionTraffic
     }
 
     fun normalizedFieldOrder(): List<NotificationField> = (fieldOrder + NotificationField.entries).distinct()
@@ -34,6 +45,8 @@ enum class NotificationField {
     TrafficSpeed,
     RamUsage,
     ConnectionCount,
+    Ping,
+    SessionTraffic,
 }
 
 enum class NotificationStyle {

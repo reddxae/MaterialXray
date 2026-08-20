@@ -1,7 +1,10 @@
 package com.material.xray
 
+import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -28,7 +31,14 @@ class MainActivity : AppCompatActivity() {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         notifyAppLocaleChanged()
-        enableEdgeToEdge()
+        val navigationBarStyle = if (
+            resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        ) {
+            SystemBarStyle.dark(Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(navigationBarStyle = navigationBarStyle)
         // Hold the splash screen until the home data snapshot is ready, so the first visible
         // frame renders the subscription list, server rows, and selected server together instead
         // of popping in piece by piece. On warm starts the snapshot is already loaded and the

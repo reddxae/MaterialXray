@@ -10,14 +10,22 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -106,6 +114,7 @@ import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
+import com.material.xray.model.ipv6DnsServers
 import com.material.xray.model.isInProgress
 import com.material.xray.service.OemAutostartGuidance
 import com.material.xray.ui.components.DropdownOption
@@ -124,12 +133,43 @@ import org.xmlpull.v1.XmlPullParser
 fun SettingsScreen(showTitleBarLogo: Boolean, viewModel: SettingsViewModel = hiltViewModel()) {
     val persistedSettings by viewModel.settings.collectAsStateWithLifecycle()
     val settings = persistedSettings
+    // The DNS subpage is local state rather than a navigation destination, because the app keeps a
+    // single flat graph of tabs. It is drawn over the settings list rather than swapped with it, so
+    // the list keeps its scroll position and its event collectors while the subpage is open.
+    var showDnsSettings by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = showDnsSettings) { showDnsSettings = false }
+
     if (settings == null) {
         SettingsLoadingScreen(showTitleBarLogo)
-    } else {
-        SettingsScreenContent(viewModel, settings)
+        return
+    }
+
+    Box {
+        SettingsScreenContent(
+            viewModel = viewModel,
+            settings = settings,
+            onOpenDnsSettings = { showDnsSettings = true },
+        )
+
+        AnimatedContent(
+            targetState = showDnsSettings,
+            transitionSpec = {
+                fadeIn(tween(SUBPAGE_FADE_MS)) togetherWith fadeOut(tween(SUBPAGE_FADE_MS)) using null
+            },
+            label = "dnsSettings",
+        ) { dnsSettingsOpen ->
+            if (dnsSettingsOpen) {
+                DnsSettingsScreen(
+                    settings = settings,
+                    viewModel = viewModel,
+                    onBack = { showDnsSettings = false },
+                )
+            }
+        }
     }
 }
+
+private const val SUBPAGE_FADE_MS = 180
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("CyclomaticComplexMethod")
@@ -137,6 +177,7 @@ fun SettingsScreen(showTitleBarLogo: Boolean, viewModel: SettingsViewModel = hil
 private fun SettingsScreenContent(
     viewModel: SettingsViewModel,
     settings: SettingsSnapshot,
+    onOpenDnsSettings: () -> Unit,
 ) {
     val rootAvailable by viewModel.rootAvailable.collectAsStateWithLifecycle()
     val tproxyCompatibility by viewModel.tproxyCompatibility.collectAsStateWithLifecycle()
@@ -195,8 +236,6 @@ private fun SettingsScreenContent(
     var editingXrayMemoryRestartThresholdMiB by rememberSaveable(xrayMemoryRestartThresholdMiB) {
         mutableStateOf(xrayMemoryRestartThresholdMiB.toString())
     }
-    var editingDns by rememberSaveable(dnsServers) { mutableStateOf(dnsServers) }
-    var editingDomesticDns by rememberSaveable(domesticDnsServers) { mutableStateOf(domesticDnsServers) }
     var editingGeoipUrl by rememberSaveable(geoipUrl) { mutableStateOf(geoipUrl) }
     var editingGeositeUrl by rememberSaveable(geositeUrl) { mutableStateOf(geositeUrl) }
     var editingLatencyCheckUrl by rememberSaveable(latencyCheckUrl) { mutableStateOf(latencyCheckUrl) }
@@ -232,10 +271,6 @@ private fun SettingsScreenContent(
         xrayMemoryRestartThresholdMiB,
     ) {
         derivedStateOf { editingXrayMemoryRestartThresholdMiB != xrayMemoryRestartThresholdMiB.toString() }
-    }
-    val hasDnsChanges by remember(editingDns, dnsServers) { derivedStateOf { editingDns != dnsServers } }
-    val hasDomesticDnsChanges by remember(editingDomesticDns, domesticDnsServers) {
-        derivedStateOf { editingDomesticDns != domesticDnsServers }
     }
     val hasGeoipUrlChanges by remember(editingGeoipUrl, geoipUrl) {
         derivedStateOf { editingGeoipUrl.trim() != geoipUrl }
@@ -436,6 +471,13 @@ private fun SettingsScreenContent(
                             onCheckedChange = { viewModel.setAllowIpv6(it) },
                             enabled = isIpv6SelectionEnabled(rootServiceActive, rootConnectionBackend, tproxyCompatibility),
                         )
+
+                        // The resolver lists carry both address families, so this only happens on a
+                        // hand-written list. Worth saying here, because the switch looks like it
+                        // applies to DNS and in that state it cannot.
+                        if (allowIpv6 && hasIpv4OnlyDnsServers(dnsServers, domesticDnsServers)) {
+                            SettingsNotice(text = stringResource(R.string.settings_allow_ipv6_dns_ipv4_only))
+                        }
                     }
 
                     SettingsNestedSection(title = stringResource(R.string.settings_routing_policy_title)) {
@@ -592,57 +634,11 @@ private fun SettingsScreenContent(
             }
 
             item(key = "dns") {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    OutlinedTextField(
-                        value = editingDns,
-                        onValueChange = { editingDns = it },
-                        label = { Text(stringResource(R.string.settings_dns_servers_label)) },
-                        placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        supportingText = { Text(stringResource(R.string.settings_dns_servers_supporting_text)) },
-                    )
-                    if (hasDnsChanges) {
-                        Button(
-                            onClick = {
-                                editingDns = viewModel.normalizeDnsServers(editingDns)
-                                viewModel.setDnsServers(editingDns)
-                            },
-                        ) {
-                            Text(stringResource(R.string.settings_save))
-                        }
-                    }
-                }
-            }
-
-            item(key = "domestic_dns") {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    OutlinedTextField(
-                        value = editingDomesticDns,
-                        onValueChange = { editingDomesticDns = it },
-                        label = { Text(stringResource(R.string.settings_domestic_dns_label)) },
-                        placeholder = { Text(stringResource(R.string.settings_dns_servers_placeholder)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        supportingText = { Text(stringResource(R.string.settings_domestic_dns_supporting_text)) },
-                    )
-                    if (hasDomesticDnsChanges) {
-                        Button(
-                            onClick = {
-                                editingDomesticDns = viewModel.normalizeDnsServers(editingDomesticDns)
-                                viewModel.setDomesticDnsServers(editingDomesticDns)
-                            },
-                        ) {
-                            Text(stringResource(R.string.settings_save))
-                        }
-                    }
-                }
+                SettingsActionRow(
+                    title = stringResource(R.string.settings_dns_title),
+                    subtitle = stringResource(R.string.settings_dns_row_subtitle),
+                    onClick = onOpenDnsSettings,
+                )
             }
 
             if (showAdvancedOptions) {
@@ -1055,8 +1051,16 @@ private fun SettingsServiceSection(
     }
 }
 
+/**
+ * A note attached to the setting above it, for something the control itself cannot say.
+ *
+ * [action] is optional because some notes are only an explanation and have nothing to act on.
+ */
 @Composable
-private fun OemAutostartBanner(directSettingsAvailable: Boolean, onOpenSettings: () -> Unit) {
+private fun SettingsNotice(
+    text: String,
+    action: @Composable (ColumnScope.() -> Unit)? = null,
+) {
     Column(
         modifier = Modifier
             .padding(horizontal = 16.dp)
@@ -1066,31 +1070,41 @@ private fun OemAutostartBanner(directSettingsAvailable: Boolean, onOpenSettings:
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = stringResource(
-                if (directSettingsAvailable) {
-                    R.string.settings_oem_autostart_required
-                } else {
-                    R.string.settings_oem_autostart_external_required
-                },
-            ),
+            text = text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
         )
-        TextButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.align(Alignment.End),
-        ) {
-            Text(
-                stringResource(
-                    if (directSettingsAvailable) {
-                        R.string.settings_open_autostart_settings
-                    } else {
-                        R.string.settings_open_app_settings
-                    },
-                ),
-            )
-        }
+        action?.invoke(this)
     }
+}
+
+@Composable
+private fun OemAutostartBanner(directSettingsAvailable: Boolean, onOpenSettings: () -> Unit) {
+    SettingsNotice(
+        text = stringResource(
+            if (directSettingsAvailable) {
+                R.string.settings_oem_autostart_required
+            } else {
+                R.string.settings_oem_autostart_external_required
+            },
+        ),
+        action = {
+            TextButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(
+                    stringResource(
+                        if (directSettingsAvailable) {
+                            R.string.settings_open_autostart_settings
+                        } else {
+                            R.string.settings_open_app_settings
+                        },
+                    ),
+                )
+            }
+        },
+    )
 }
 
 @Composable
@@ -1100,6 +1114,15 @@ private fun tproxyCompatibilitySupportingText(compatibility: TproxyCompatibility
     -> null
     is TproxyCompatibility.Supported -> null
     is TproxyCompatibility.Unsupported -> stringResource(R.string.settings_tproxy_unsupported)
+}
+
+/** Whether IPv6 is allowed but no configured resolver can be reached over it. */
+internal fun hasIpv4OnlyDnsServers(dnsServers: String, domesticDnsServers: String): Boolean {
+    val lists = listOf(dnsServers, domesticDnsServers)
+    // An empty list hands that lookup to the OS resolver, which a dual-stack network may well have
+    // given an IPv6 address. That is an unknown rather than an absence, so there is nothing to claim.
+    if (lists.any(String::isBlank)) return false
+    return lists.none { ipv6DnsServers(it).isNotEmpty() }
 }
 
 internal fun shouldShowTunMtu(

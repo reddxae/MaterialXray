@@ -44,4 +44,18 @@
     <string name="notification_style_normal_description">Каждое поле на отдельной строке</string>
     <string name="notification_style_compact_label">Компактный</string>
     <string name="notification_style_compact_description">Все поля в одной строке</string>
+
+    <string name="dns_preset_system_label">Системный</string>
+    <string name="dns_preset_system_description">Тот, который выдаёт сеть. Ближе всего, и чаще всего именно он фильтрует и ведёт журнал.</string>
+    <string name="dns_preset_cloudflare_description">1.1.1.1. Быстрый и без фильтрации.</string>
+    <string name="dns_preset_cloudflare_security_label">Cloudflare Security</string>
+    <string name="dns_preset_cloudflare_security_description">1.1.1.2. Ещё и отказывает известным вредоносным доменам.</string>
+    <string name="dns_preset_google_description">8.8.8.8. Доступен почти отовсюду, без фильтрации.</string>
+    <string name="dns_preset_quad9_description">9.9.9.9. Некоммерческий, отказывает вредоносным доменам.</string>
+    <string name="dns_preset_adguard_description">94.140.14.14. Отказывает рекламе и трекерам, из-за чего часть приложений может ломаться.</string>
+    <string name="dns_preset_yandex_description">77.88.8.8. Близко к российским сетям.</string>
+    <string name="dns_preset_custom_label">Свои</string>
+    <string name="dns_preset_custom_description">Ввести адреса серверов вручную.</string>
+    <string name="dns_preset_direct_none_label">Как для проксируемых</string>
+    <string name="dns_preset_direct_none_description">Отдельного сервера нет. Прямые имена идут через выбранный выше.</string>
 </resources>

@@ -107,6 +107,7 @@ class ConfigGenerator {
                     syntheticDnsAddress = syntheticDnsAddress,
                     domainStrategy = routingDomainStrategy,
                     domainMatcher = routingDomainMatcher,
+                    allowIpv6 = allowIpv6,
                     dataInboundTags = dataInboundTags,
                 ),
             )

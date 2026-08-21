@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.material.xray.model.DnsPreset
 import com.material.xray.model.LauncherIcon
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
@@ -21,7 +22,6 @@ import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import com.material.xray.model.XrayRuntimeSettings
-import com.material.xray.model.normalizeDnsServersForIpv6
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -133,8 +133,11 @@ class SettingsRepository @Inject constructor(
         const val DEFAULT_GEOSITE_URL =
             "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat"
         const val DEFAULT_LATENCY_CHECK_URL = "https://gstatic.com/generate_204"
-        const val DEFAULT_DNS_SERVERS = "https://1.1.1.1/dns-query,https://1.0.0.1/dns-query"
-        const val DEFAULT_DOMESTIC_DNS_SERVERS = "77.88.8.8,77.88.8.1"
+
+        // Spelled as presets rather than literals so the shipped default is always one the DNS
+        // screen can name back to the user.
+        val DEFAULT_DNS_SERVERS = DnsPreset.Cloudflare.servers(encrypted = true)
+        val DEFAULT_DOMESTIC_DNS_SERVERS = DnsPreset.Yandex.servers(encrypted = false)
         const val DEFAULT_PASSIVE_HEALTH_MONITORING_ENABLED = true
         const val DEFAULT_TUN_NAME = ""
     }
@@ -334,12 +337,8 @@ class SettingsRepository @Inject constructor(
     )
 
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
-    suspend fun setDnsServers(servers: String) = store.edit { prefs ->
-        prefs[DNS_SERVERS] = normalizeDnsServersForIpv6(servers, prefs[ALLOW_IPV6] ?: false)
-    }
-    suspend fun setDomesticDnsServers(servers: String) = store.edit { prefs ->
-        prefs[DOMESTIC_DNS_SERVERS] = normalizeDnsServersForIpv6(servers, prefs[ALLOW_IPV6] ?: false)
-    }
+    suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }
+    suspend fun setDomesticDnsServers(servers: String) = store.edit { it[DOMESTIC_DNS_SERVERS] = servers }
     suspend fun setXrayBufferSizeKiB(bufferSizeKiB: Int) {
         require(XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB))
         store.edit { it[XRAY_BUFFER_SIZE_KIB] = bufferSizeKiB }
@@ -357,14 +356,7 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setAutoConnect(enabled: Boolean) = store.edit { it[AUTO_CONNECT] = enabled }
     suspend fun setBypassLan(enabled: Boolean) = store.edit { it[BYPASS_LAN] = enabled }
-    suspend fun setAllowIpv6(enabled: Boolean) = store.edit { prefs ->
-        prefs[DNS_SERVERS] = normalizeDnsServersForIpv6(prefs[DNS_SERVERS] ?: DEFAULT_DNS_SERVERS, enabled)
-        prefs[DOMESTIC_DNS_SERVERS] = normalizeDnsServersForIpv6(
-            prefs[DOMESTIC_DNS_SERVERS] ?: DEFAULT_DOMESTIC_DNS_SERVERS,
-            enabled,
-        )
-        prefs[ALLOW_IPV6] = enabled
-    }
+    suspend fun setAllowIpv6(enabled: Boolean) = store.edit { it[ALLOW_IPV6] = enabled }
     suspend fun setLastServerId(id: Long) = store.edit { it[LAST_SERVER_ID] = id }
     suspend fun compareAndSetLastServerId(expectedId: Long, id: Long): Boolean {
         var updated = false
@@ -631,7 +623,6 @@ class SettingsRepository @Inject constructor(
                 preferences = prefs,
                 sourceRevision = settingsDefaultsRevisionFromBackup(map, sourceBackupVersion),
             )
-            normalizeStoredDnsSettings(prefs)
         }
     }
 

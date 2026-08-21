@@ -99,6 +99,7 @@ internal class RawConfigTunInjector(
                 domainStrategy = routingDomainStrategy,
                 domainMatcher = routingDomainMatcher,
                 defaultRouteTarget = defaultRouteTarget,
+                allowIpv6 = allowIpv6,
                 dataInboundTags = effectiveInbounds.map { it.tag },
             ),
             raw = rawRouting,

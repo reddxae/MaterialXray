@@ -5,6 +5,7 @@ import com.material.xray.model.RoutingRuleOperator
 import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.isIpv4DnsServerLiteral
 import com.material.xray.model.isIpv6DnsServerLiteral
+import com.material.xray.model.resolveDnsServersForIpv6
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -32,7 +33,7 @@ internal fun buildDns(
     allowIpv6: Boolean = false,
 ) = buildJsonObject {
     val domesticDomains = directDomains(routingRules, bypassLan)
-    val defaultServers = servers.commaSeparatedValues().map(String::toReliableXrayDnsAddress)
+    val defaultServers = resolveDnsServersForIpv6(servers, allowIpv6).map(String::toReliableXrayDnsAddress)
     if (!allowIpv6) {
         put("queryStrategy", "UseIPv4")
     }
@@ -58,16 +59,18 @@ internal fun buildDns(
                 defaultServers.forEach { add(it) }
             }
             if (domesticDomains.isNotEmpty()) {
-                domesticServers.commaSeparatedValues().map(String::toReliableXrayDnsAddress).forEach { domesticServer ->
-                    add(
-                        buildJsonObject {
-                            put("address", domesticServer)
-                            put("domains", buildJsonArray { domesticDomains.forEach { add(it) } })
-                            put("skipFallback", true)
-                            put("tag", DOMESTIC_DNS_TAG)
-                        },
-                    )
-                }
+                resolveDnsServersForIpv6(domesticServers, allowIpv6)
+                    .map(String::toReliableXrayDnsAddress)
+                    .forEach { domesticServer ->
+                        add(
+                            buildJsonObject {
+                                put("address", domesticServer)
+                                put("domains", buildJsonArray { domesticDomains.forEach { add(it) } })
+                                put("skipFallback", true)
+                                put("tag", DOMESTIC_DNS_TAG)
+                            },
+                        )
+                    }
             }
         },
     )
@@ -83,6 +86,7 @@ internal fun buildRouting(
     domainStrategy: String = SubscriptionRouting.DEFAULT_DOMAIN_STRATEGY,
     domainMatcher: String? = null,
     defaultRouteTarget: XrayRouteTarget = XrayRouteTarget.Outbound("proxy"),
+    allowIpv6: Boolean = false,
     dataInboundTags: List<String> = listOf("tun-in") + appProxyRoutes.map { it.inboundTag },
 ) = buildJsonObject {
     val hasDomesticDomains = directDomains(routingRules, bypassLan).isNotEmpty()
@@ -94,12 +98,14 @@ internal fun buildRouting(
             add(dnsRoutingRule(dataInboundTags))
             syntheticDnsAddress?.let { add(syntheticDnsPeerBlockRule(dataInboundTags, it)) }
             add(dnsOverTlsRoutingRule(dataInboundTags))
-            if (dnsServers.commaSeparatedValues().isNotEmpty()) {
+            // These two rules address the tags buildDns emits, so they have to be decided from the
+            // same resolved lists. A stored list that IPv6 filtering empties leaves no tag to route.
+            if (resolveDnsServersForIpv6(dnsServers, allowIpv6).isNotEmpty()) {
                 add(defaultDnsRoutingRule(defaultRouteTarget))
             }
             if (
                 hasDomesticDomains &&
-                domesticDnsServers.commaSeparatedValues().isNotEmpty()
+                resolveDnsServersForIpv6(domesticDnsServers, allowIpv6).isNotEmpty()
             ) {
                 add(domesticDnsRoutingRule())
             }

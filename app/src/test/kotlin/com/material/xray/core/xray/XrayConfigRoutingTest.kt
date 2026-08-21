@@ -62,14 +62,101 @@ class XrayConfigRoutingTest {
     }
 
     @Test
-    fun `buildDns omits ipv4-only query strategy when ipv6 is allowed`() {
-        val dns = buildDns(servers = "1.1.1.1", allowIpv6 = true)
+    fun `buildDns omits ipv4-only query strategy and keeps the stored ipv6 resolvers when ipv6 is allowed`() {
+        val dns = buildDns(servers = "1.1.1.1,2606:4700:4700::1111", allowIpv6 = true)
 
         assertTrue("queryStrategy" !in dns)
         assertEquals(
-            listOf("https://1.1.1.1/dns-query"),
+            listOf("https://1.1.1.1/dns-query", "https://[2606:4700:4700::1111]/dns-query"),
             dns.getValue("servers").jsonArray.map { it.jsonPrimitive.content },
         )
+    }
+
+    @Test
+    fun `buildDns drops ipv6 resolvers from both lists when ipv6 is not allowed`() {
+        val dns = buildDns(
+            servers = "8.8.8.8,2001:4860:4860::8888",
+            domesticServers = "77.88.8.8,2a02:6b8::feed:0ff",
+            routingRules = listOf(directRule()),
+            bypassLan = true,
+            allowIpv6 = false,
+        )
+
+        val servers = dns.getValue("servers").jsonArray
+        assertEquals("8.8.8.8", servers.first().jsonPrimitive.content)
+        assertEquals(
+            listOf("77.88.8.8"),
+            servers.drop(1).map { it.jsonObject.getValue("address").jsonPrimitive.content },
+        )
+    }
+
+    @Test
+    fun `buildDns keeps ipv6 resolvers in the domestic list when ipv6 is allowed`() {
+        val dns = buildDns(
+            servers = "",
+            domesticServers = "77.88.8.8,2a02:6b8::feed:0ff",
+            routingRules = listOf(directRule()),
+            bypassLan = true,
+            allowIpv6 = true,
+        )
+
+        assertEquals(
+            listOf("77.88.8.8", "2a02:6b8::feed:0ff"),
+            dns.getValue("servers").jsonArray.drop(1).map { it.jsonObject.getValue("address").jsonPrimitive.content },
+        )
+    }
+
+    @Test
+    fun `an ipv6-only resolver list with ipv6 off leaves no dns tag and no rule addressing it`() {
+        // buildDns falls back to the system resolver here, so a rule pointing at default-dns would
+        // address a tag that no longer exists.
+        val dns = buildDns(
+            servers = "2606:4700:4700::1111",
+            domesticServers = "2a02:6b8::feed:0ff",
+            routingRules = listOf(directRule()),
+            bypassLan = true,
+            allowIpv6 = false,
+        )
+        val routing = buildRouting(
+            routingRules = listOf(directRule()),
+            bypassLan = true,
+            dnsServers = "2606:4700:4700::1111",
+            domesticDnsServers = "2a02:6b8::feed:0ff",
+            allowIpv6 = false,
+        )
+
+        assertTrue("tag" !in dns)
+        assertEquals("localhost", dns.getValue("servers").jsonArray.single().jsonPrimitive.content)
+        val inboundTags = routing.getValue("rules").jsonArray.flatMap { rule ->
+            rule.jsonObject["inboundTag"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+        }
+        assertTrue("default-dns" !in inboundTags)
+        assertTrue("domestic-dns" !in inboundTags)
+    }
+
+    @Test
+    fun `an ipv6-only resolver list with ipv6 on is tagged and routed`() {
+        val dns = buildDns(
+            servers = "2606:4700:4700::1111",
+            domesticServers = "2a02:6b8::feed:0ff",
+            routingRules = listOf(directRule()),
+            bypassLan = true,
+            allowIpv6 = true,
+        )
+        val routing = buildRouting(
+            routingRules = listOf(directRule()),
+            bypassLan = true,
+            dnsServers = "2606:4700:4700::1111",
+            domesticDnsServers = "2a02:6b8::feed:0ff",
+            allowIpv6 = true,
+        )
+
+        assertEquals("default-dns", dns.getValue("tag").jsonPrimitive.content)
+        val inboundTags = routing.getValue("rules").jsonArray.flatMap { rule ->
+            rule.jsonObject["inboundTag"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
+        }
+        assertTrue("default-dns" in inboundTags)
+        assertTrue("domestic-dns" in inboundTags)
     }
 
     @Test

@@ -49,6 +49,7 @@ data class SettingsSnapshot(
     val defaultOutbound: XrayOutbound,
     val launcherIcon: LauncherIcon,
     val showTitleBarLogo: Boolean,
+    val floatingConnectButton: Boolean,
     val showAdvancedOptions: Boolean,
     val notificationSettings: NotificationSettings,
     val subscriptionSendHardwareId: Boolean,
@@ -99,6 +100,7 @@ class SettingsRepository @Inject constructor(
         val DEFAULT_OUTBOUND = stringPreferencesKey("default_outbound")
         val LAUNCHER_ICON = stringPreferencesKey("launcher_icon")
         val SHOW_TITLE_BAR_LOGO = booleanPreferencesKey("show_title_bar_logo")
+        val FLOATING_CONNECT_BUTTON = booleanPreferencesKey("floating_connect_button")
         val SHOW_ADVANCED_OPTIONS = booleanPreferencesKey("show_advanced_options")
         val APP_SPECIFIC_SERVER_NOTE_SHOWN = booleanPreferencesKey("app_specific_server_note_shown")
         val ROUTING_POLICY_CONTROL = stringPreferencesKey("routing_policy_control")
@@ -281,6 +283,7 @@ class SettingsRepository @Inject constructor(
             defaultOutbound = XrayOutbound.fromTag(prefs[DEFAULT_OUTBOUND]),
             launcherIcon = LauncherIcon.fromValue(prefs[LAUNCHER_ICON]),
             showTitleBarLogo = prefs[SHOW_TITLE_BAR_LOGO] ?: true,
+            floatingConnectButton = prefs[FLOATING_CONNECT_BUTTON] ?: false,
             showAdvancedOptions = showAdvancedOptions,
             notificationSettings = NotificationSettings(
                 enabled = prefs[NOTIFICATION_ENABLED] ?: true,
@@ -385,6 +388,9 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setShowTitleBarLogo(enabled: Boolean) = store.edit { prefs ->
         prefs[SHOW_TITLE_BAR_LOGO] = enabled
+    }
+    suspend fun setFloatingConnectButton(enabled: Boolean) = store.edit { prefs ->
+        prefs[FLOATING_CONNECT_BUTTON] = enabled
     }
     suspend fun setShowAdvancedOptions(enabled: Boolean) = store.edit { prefs ->
         val wasEnabled = prefs[SHOW_ADVANCED_OPTIONS] ?: false
@@ -552,6 +558,7 @@ class SettingsRepository @Inject constructor(
             map["default_outbound"]?.let { prefs[DEFAULT_OUTBOUND] = XrayOutbound.fromTag(it).tag }
             map["launcher_icon"]?.let { prefs[LAUNCHER_ICON] = LauncherIcon.fromValue(it).value }
             map["show_title_bar_logo"]?.toBooleanStrictOrNull()?.let { prefs[SHOW_TITLE_BAR_LOGO] = it }
+            map["floating_connect_button"]?.toBooleanStrictOrNull()?.let { prefs[FLOATING_CONNECT_BUTTON] = it }
             showAdvancedOptions?.let { prefs[SHOW_ADVANCED_OPTIONS] = it }
             map["app_specific_server_note_shown"]
                 ?.toBooleanStrictOrNull()

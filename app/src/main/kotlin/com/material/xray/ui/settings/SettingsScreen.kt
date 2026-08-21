@@ -164,6 +164,7 @@ private fun SettingsScreenContent(
     val defaultOutbound = settings.defaultOutbound
     val launcherIcon = settings.launcherIcon
     val showTitleBarLogo = settings.showTitleBarLogo
+    val floatingConnectButton = settings.floatingConnectButton
     val showAdvancedOptions = settings.showAdvancedOptions
     val notificationSettings = settings.notificationSettings
     val subscriptionSendHardwareId = settings.subscriptionSendHardwareId
@@ -351,6 +352,13 @@ private fun SettingsScreenContent(
                         title = stringResource(R.string.settings_show_title_bar_logo),
                         checked = showTitleBarLogo,
                         onCheckedChange = viewModel::setShowTitleBarLogo,
+                    )
+
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.settings_floating_connect_button_title),
+                        description = stringResource(R.string.settings_floating_connect_button_description),
+                        checked = floatingConnectButton,
+                        onCheckedChange = viewModel::setFloatingConnectButton,
                     )
 
                     SettingsSwitchRow(

@@ -42,6 +42,8 @@
     <string name="settings_app_language_dialog_title">Выберите язык приложения</string>
     <string name="settings_app_language_system_default">Как в системе</string>
     <string name="settings_show_title_bar_logo">Показывать логотип в строке заголовка</string>
+    <string name="settings_floating_connect_button_title">Плавающая кнопка подключения</string>
+    <string name="settings_floating_connect_button_description">Показывать небольшую кнопку в углу вместо большой кнопки питания</string>
     <string name="settings_notification_title">Уведомление</string>
     <string name="settings_customize_service_notification">Изменить уведомление службы</string>
     <string name="settings_notification_permission_unavailable">Уведомления недоступны</string>

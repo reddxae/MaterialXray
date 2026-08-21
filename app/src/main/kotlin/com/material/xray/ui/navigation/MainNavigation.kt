@@ -56,6 +56,7 @@ fun MainNavigation() {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val loadedSettings = settings ?: return
     val showTitleBarLogo = loadedSettings.showTitleBarLogo
+    val floatingConnectButton = loadedSettings.floatingConnectButton
     val showAdvancedOptions = loadedSettings.showAdvancedOptions
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -155,6 +156,7 @@ fun MainNavigation() {
                 composable(Screen.Home.route) {
                     HomeScreen(
                         showTitleBarLogo = showTitleBarLogo,
+                        floatingConnectButton = floatingConnectButton,
                         onOpenServerConfig = { serverId, name ->
                             configViewerRequest = ConfigViewerRequest.Server(serverId, name)
                         },

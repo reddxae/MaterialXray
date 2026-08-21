@@ -52,8 +52,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.NetworkPing
@@ -66,6 +70,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -162,6 +167,7 @@ import kotlinx.coroutines.flow.StateFlow
 @Composable
 fun HomeScreen(
     showTitleBarLogo: Boolean,
+    floatingConnectButton: Boolean,
     onOpenServerConfig: (Long, String) -> Unit,
     onViewRunningConfig: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -274,6 +280,16 @@ fun HomeScreen(
         }
     }
 
+    val onConnectionClick = {
+        connectionUiState.handleClick(
+            context = context,
+            useRootService = uiState.useRootService,
+            disconnect = viewModel::disconnect,
+            connectRoot = viewModel::connect,
+            connectVpn = startRootlessConnection,
+        )
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0.dp),
@@ -284,12 +300,21 @@ fun HomeScreen(
                 showLogo = showTitleBarLogo,
             )
         },
+        floatingActionButton = {
+            ConnectionFab(
+                visible = floatingConnectButton,
+                state = connectionUiState,
+                canStart = uiState.selectedServer != null,
+                onClick = onConnectionClick,
+                onViewConfig = onViewRunningConfig,
+            )
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 14.dp),
+            contentPadding = homeListContentPadding(floatingConnectButton),
             verticalArrangement = Arrangement.spacedBy(14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -309,15 +334,8 @@ fun HomeScreen(
                     isTransitioning = connectionUiState.isTransitioning,
                     isAlwaysOnVpn = connectionUiState.isAlwaysOnVpn,
                     canStart = uiState.selectedServer != null,
-                    onClick = {
-                        connectionUiState.handleClick(
-                            context = context,
-                            useRootService = uiState.useRootService,
-                            disconnect = viewModel::disconnect,
-                            connectRoot = viewModel::connect,
-                            connectVpn = startRootlessConnection,
-                        )
-                    },
+                    compact = floatingConnectButton,
+                    onClick = onConnectionClick,
                     onViewConfig = onViewRunningConfig,
                 )
             }
@@ -773,6 +791,7 @@ private fun buildConnectionUiState(
         connectionState is ConnectionState.UpdatingRoutingData ||
         connectionState is ConnectionState.Disconnecting
     val selectedServerName = selectedServer?.name ?: stringResource(R.string.home_no_server_selected)
+    val stopLike = isConnected && !alwaysOnVpn || isRestartRequired || isInterfaceBusy
 
     return ConnectionUiState(
         isConnected = isConnected,
@@ -781,9 +800,16 @@ private fun buildConnectionUiState(
         isTransitioning = isTransitioning,
         isAlwaysOnVpn = alwaysOnVpn,
         buttonColor = when {
-            isConnected && !alwaysOnVpn || isRestartRequired || isInterfaceBusy -> MaterialTheme.colorScheme.error
+            stopLike -> MaterialTheme.colorScheme.error
             isTransitioning -> MaterialTheme.colorScheme.tertiary
             else -> MaterialTheme.colorScheme.primary
+        },
+        // The compact button fills with the role colour itself rather than the softer *Container
+        // pair: it is small and floats over scrolling content, so it needs the contrast.
+        fabContentColor = when {
+            stopLike -> MaterialTheme.colorScheme.onError
+            isTransitioning -> MaterialTheme.colorScheme.onTertiary
+            else -> MaterialTheme.colorScheme.onPrimary
         },
         displayServerName = (connectionState as? ConnectionState.Connected)?.serverName ?: selectedServerName,
     )
@@ -817,6 +843,7 @@ private data class ConnectionUiState(
     val isTransitioning: Boolean,
     val isAlwaysOnVpn: Boolean,
     val buttonColor: Color,
+    val fabContentColor: Color,
     val displayServerName: String,
 )
 
@@ -836,6 +863,7 @@ private fun ConnectionPanel(
     isTransitioning: Boolean,
     isAlwaysOnVpn: Boolean,
     canStart: Boolean,
+    compact: Boolean,
     onClick: () -> Unit,
     onViewConfig: () -> Unit,
 ) {
@@ -890,70 +918,79 @@ private fun ConnectionPanel(
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
-        Box(
-            modifier = Modifier.height(with(LocalDensity.current) { MaterialTheme.typography.bodySmall.lineHeight.toDp() }),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                showProgressDetails && connectionProgress != null -> Text(
-                    text = connectionProgressText(connectionProgress),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-                connectionState is ConnectionState.Connected -> CoreUptime(startTime = connectionState.startTime)
+        // The row is normally held open even when empty so the panel does not jump as progress
+        // text and uptime come and go. Idle-and-disconnected has nothing coming, so the compact
+        // layout drops it rather than leave a gap.
+        if (!compact || connectionState !is ConnectionState.Disconnected) {
+            Box(
+                modifier = Modifier.height(
+                    with(LocalDensity.current) { MaterialTheme.typography.bodySmall.lineHeight.toDp() },
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    showProgressDetails && connectionProgress != null -> Text(
+                        text = connectionProgressText(connectionProgress),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                    connectionState is ConnectionState.Connected -> CoreUptime(startTime = connectionState.startTime)
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        if (!compact) {
+            Spacer(modifier = Modifier.height(24.dp))
 
-        Surface(
-            color = containerColor,
-            contentColor = contentColor,
-            shape = CircleShape,
-            modifier = Modifier
-                .size(124.dp)
-                .clip(CircleShape)
-                .combinedClickable(
-                    enabled = buttonEnabled,
-                    onClick = onClick,
-                    onLongClick = {
-                        if (isConnected) {
-                            onViewConfig()
-                        }
-                    },
-                ),
-        ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                if (isTransitioning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(54.dp),
-                        strokeWidth = 4.dp,
-                        color = buttonColor,
-                    )
-                } else {
-                    Text(
-                        text = stringResource(
-                            connectionActionLabel(
-                                isConnected = isConnected,
-                                isAlwaysOnVpn = isAlwaysOnVpn,
-                                isRestartRequired = isRestartRequired,
-                                isInterfaceBusy = isInterfaceBusy,
+            Surface(
+                color = containerColor,
+                contentColor = contentColor,
+                shape = CircleShape,
+                modifier = Modifier
+                    .size(124.dp)
+                    .clip(CircleShape)
+                    .combinedClickable(
+                        enabled = buttonEnabled,
+                        onClick = onClick,
+                        onLongClick = {
+                            if (isConnected) {
+                                onViewConfig()
+                            }
+                        },
+                    ),
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    if (isTransitioning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(54.dp),
+                            strokeWidth = 4.dp,
+                            color = buttonColor,
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(
+                                connectionActionLabel(
+                                    isConnected = isConnected,
+                                    isAlwaysOnVpn = isAlwaysOnVpn,
+                                    isRestartRequired = isRestartRequired,
+                                    isInterfaceBusy = isInterfaceBusy,
+                                ),
                             ),
-                        ),
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                        style = MaterialTheme.typography.titleLarge,
-                        textAlign = TextAlign.Center,
-                        color = contentColor,
-                        maxLines = 1,
-                        autoSize = TextAutoSize.StepBased(
-                            minFontSize = 10.sp,
-                            maxFontSize = MaterialTheme.typography.titleLarge.fontSize,
-                            stepSize = 1.sp,
-                        ),
-                    )
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            style = MaterialTheme.typography.titleLarge,
+                            textAlign = TextAlign.Center,
+                            color = contentColor,
+                            maxLines = 1,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 10.sp,
+                                maxFontSize = MaterialTheme.typography.titleLarge.fontSize,
+                                stepSize = 1.sp,
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -968,6 +1005,79 @@ private fun ConnectionPanel(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+    }
+}
+
+/**
+ * Compact alternative to the large power button, anchored in the corner of the home screen.
+ * Kept as a [Surface] rather than a [androidx.compose.material3.FloatingActionButton] so it can
+ * express a disabled state and keep the long-press shortcut to the running config.
+ */
+@Composable
+private fun ConnectionFab(
+    visible: Boolean,
+    state: ConnectionUiState,
+    canStart: Boolean,
+    onClick: () -> Unit,
+    onViewConfig: () -> Unit,
+) {
+    if (!visible) return
+    val enabled = (canStart || state.isConnected || state.isRestartRequired || state.isInterfaceBusy) &&
+        !state.isTransitioning
+    val actionLabel = stringResource(
+        connectionActionLabel(
+            isConnected = state.isConnected,
+            isAlwaysOnVpn = state.isAlwaysOnVpn,
+            isRestartRequired = state.isRestartRequired,
+            isInterfaceBusy = state.isInterfaceBusy,
+        ),
+    )
+    val shape = FloatingActionButtonDefaults.shape
+
+    Surface(
+        color = if (enabled) state.buttonColor else MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = if (enabled) {
+            state.fabContentColor
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_FAB_CONTENT_ALPHA)
+        },
+        shape = shape,
+        shadowElevation = 6.dp,
+        modifier = Modifier
+            .size(64.dp)
+            .clip(shape)
+            .combinedClickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClickLabel = actionLabel,
+                onClick = onClick,
+                onLongClick = {
+                    if (state.isConnected) {
+                        onViewConfig()
+                    }
+                },
+            ),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            if (state.isTransitioning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(26.dp),
+                    strokeWidth = 3.dp,
+                    color = state.fabContentColor,
+                )
+            } else {
+                Icon(
+                    imageVector = connectionActionIcon(
+                        isConnected = state.isConnected,
+                        isAlwaysOnVpn = state.isAlwaysOnVpn,
+                        isRestartRequired = state.isRestartRequired,
+                        isInterfaceBusy = state.isInterfaceBusy,
+                    ),
+                    contentDescription = actionLabel,
+                    modifier = Modifier.size(30.dp),
+                )
+            }
+        }
     }
 }
 
@@ -1053,6 +1163,27 @@ private fun connectionActionLabel(
     isRestartRequired || isInterfaceBusy -> R.string.home_action_restart
     else -> R.string.home_action_start
 }
+
+/** Icon counterpart to [connectionActionLabel], for the compact button that has no room for text. */
+private fun connectionActionIcon(
+    isConnected: Boolean,
+    isAlwaysOnVpn: Boolean,
+    isRestartRequired: Boolean,
+    isInterfaceBusy: Boolean,
+): ImageVector = when {
+    isConnected && isAlwaysOnVpn -> Icons.Default.Settings
+    isConnected -> Icons.Default.Stop
+    isRestartRequired || isInterfaceBusy -> Icons.Default.RestartAlt
+    else -> Icons.Default.PlayArrow
+}
+
+/** The floating button overlays the list, so the last item needs room to scroll clear of it. */
+private fun homeListContentPadding(floatingConnectButton: Boolean) = PaddingValues(
+    start = 16.dp,
+    top = 14.dp,
+    end = 16.dp,
+    bottom = if (floatingConnectButton) 14.dp + FloatingConnectButtonClearance else 14.dp,
+)
 
 @Composable
 private fun ErrorCard(message: String) {
@@ -1976,6 +2107,10 @@ private val subscriptionUrlRegex = Regex(
 private val trailingUrlPunctuation = setOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
 private val SubscriptionBlockGap = 6.dp
 private val SubscriptionMetadataGap = 10.dp
+
+/** 64dp button plus its 16dp scaffold inset, so list content can scroll clear of it. */
+private val FloatingConnectButtonClearance = 80.dp
+private const val DISABLED_FAB_CONTENT_ALPHA = 0.38f
 private const val QR_SCANNER_TRANSITION_MS = 180
 private const val CORE_UPTIME_REFRESH_INTERVAL_MS = 1_000L
 private const val CAMERA_PERMISSION_PREFS = "camera_permission"

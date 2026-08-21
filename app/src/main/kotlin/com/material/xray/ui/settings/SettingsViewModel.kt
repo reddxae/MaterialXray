@@ -227,6 +227,10 @@ class SettingsViewModel @Inject constructor(
         if (enabled == currentSettings().showTitleBarLogo) return@launch
         settingsRepo.setShowTitleBarLogo(enabled)
     }
+    fun setFloatingConnectButton(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == currentSettings().floatingConnectButton) return@launch
+        settingsRepo.setFloatingConnectButton(enabled)
+    }
     fun setShowAdvancedOptions(enabled: Boolean) = viewModelScope.launch {
         if (enabled == currentSettings().showAdvancedOptions) return@launch
         settingsRepo.setShowAdvancedOptions(enabled)

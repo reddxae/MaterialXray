@@ -32,12 +32,13 @@ class GitHubReleaseFetcher @Inject constructor(
         currentVersionName: String,
         onStatus: suspend (AppUpdateCheckStatus) -> Unit = {},
     ): GitHubRelease = withContext(Dispatchers.IO) {
+        val repository = resolveRepository(currentVersionName)
         var lastFailure: Exception? = null
-        val urls = githubMirrorUrls(GITHUB_API_URL)
+        val urls = githubMirrorUrls("https://api.github.com/repos/${repository.fullName}/releases/latest")
         onStatus(AppUpdateCheckStatus.Fetching(urls.first()))
         for ((index, url) in urls.withIndex()) {
             try {
-                val response = fetchRelease(url, currentVersionName)
+                val response = fetchRelease(url, currentVersionName, repository.fullName)
                 onStatus(AppUpdateCheckStatus.ReleaseReceived(url, response.statusCode))
                 return@withContext response.release
             } catch (error: CancellationException) {
@@ -68,14 +69,37 @@ class GitHubReleaseFetcher @Inject constructor(
         throw IOException("All GitHub release endpoints failed", lastFailure)
     }
 
-    private fun fetchRelease(url: String, currentVersionName: String): ReleaseResponse {
-        val request = Request.Builder()
-            .url(url)
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "MaterialXray/$currentVersionName")
-            .build()
+    private fun resolveRepository(currentVersionName: String): GitHubRepository = fetchRepository(REPOSITORY_API_URL, currentVersionName)
 
+    private fun fetchRepository(url: String, currentVersionName: String): GitHubRepository {
+        val request = githubRequest(url, currentVersionName)
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("GitHub repository request failed with HTTP ${response.code}")
+            try {
+                parseRepository(json.parseToJsonElement(response.body.string()).jsonObject)
+            } catch (error: IllegalArgumentException) {
+                throw IOException("GitHub repository response was not valid", error)
+            }
+        }
+    }
+
+    private fun parseRepository(repository: JsonObject): GitHubRepository {
+        val id = repository["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+        if (id != GITHUB_REPOSITORY_ID) throw IllegalArgumentException("Unexpected GitHub repository ID")
+        val fullName = repository["full_name"]
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.takeIf(GITHUB_FULL_NAME_PATTERN::matches)
+            ?: throw IllegalArgumentException("GitHub repository response did not include a valid full name")
+        return GitHubRepository(fullName)
+    }
+
+    private fun fetchRelease(
+        url: String,
+        currentVersionName: String,
+        repositoryFullName: String,
+    ): ReleaseResponse {
+        val request = githubRequest(url, currentVersionName)
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw HttpStatusException(response.code)
@@ -84,6 +108,7 @@ class GitHubReleaseFetcher @Inject constructor(
                 ReleaseResponse(
                     release = parseRelease(
                         release = json.parseToJsonElement(response.body.string()).jsonObject,
+                        repositoryFullName = repositoryFullName,
                         statusCode = response.code,
                     ),
                     statusCode = response.code,
@@ -98,7 +123,18 @@ class GitHubReleaseFetcher @Inject constructor(
         }
     }
 
-    private fun parseRelease(release: JsonObject, statusCode: Int): GitHubRelease {
+    private fun githubRequest(url: String, currentVersionName: String): Request = Request.Builder()
+        .url(url)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "MaterialXray/$currentVersionName")
+        .build()
+
+    private fun parseRelease(
+        release: JsonObject,
+        repositoryFullName: String,
+        statusCode: Int,
+    ): GitHubRelease {
         val tagName = release["tag_name"]
             ?.jsonPrimitive
             ?.contentOrNull
@@ -115,7 +151,7 @@ class GitHubReleaseFetcher @Inject constructor(
                 asset.jsonObject["browser_download_url"]
                     ?.jsonPrimitive
                     ?.contentOrNull
-                    ?.takeIf(::isOfficialApkUrl)
+                    ?.takeIf { isOfficialApkUrl(it, repositoryFullName) }
             }
             ?.firstOrNull()
             ?: throw InvalidReleaseResponseException(
@@ -125,17 +161,23 @@ class GitHubReleaseFetcher @Inject constructor(
         return GitHubRelease(tagName = tagName, apkDownloadUrl = apkDownloadUrl)
     }
 
-    private fun isOfficialApkUrl(value: String): Boolean {
+    private fun isOfficialApkUrl(value: String, repositoryFullName: String): Boolean {
         val url = value.toHttpUrlOrNull() ?: return false
         return url.isHttps &&
             url.host == "github.com" &&
-            url.encodedPath.startsWith("/reddxae/MaterialXray/releases/download/") &&
+            url.encodedPath.startsWith("/$repositoryFullName/releases/download/") &&
             url.encodedPath.endsWith(".apk")
     }
 
     private companion object {
-        const val GITHUB_API_URL = "https://api.github.com/repos/reddxae/MaterialXray/releases/latest"
+        const val GITHUB_REPOSITORY_ID = 1208039570L
+        const val REPOSITORY_API_URL = "https://api.github.com/repositories/$GITHUB_REPOSITORY_ID"
+        val GITHUB_FULL_NAME_PATTERN = Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
     }
+
+    private data class GitHubRepository(
+        val fullName: String,
+    )
 
     private data class ReleaseResponse(
         val release: GitHubRelease,

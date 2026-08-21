@@ -29,6 +29,87 @@ class ProviderRoutingCoordinatorTest {
     }
 
     @Test
+    fun `selected subscription without provider routing preserves manual routing`() = runTest {
+        var appRoutingApplyCalls = 0
+        var xrayRoutingApplyCalls = 0
+        val coordinator = coordinator(
+            selection = ProviderRoutingSelection.Selected(
+                subscriptionId = 7,
+                appRoutingProvided = false,
+                xrayRoutingProvided = false,
+            ),
+            applyAppRouting = {
+                appRoutingApplyCalls += 1
+                true
+            },
+            applyXrayRouting = {
+                xrayRoutingApplyCalls += 1
+                true
+            },
+        )
+
+        val result = coordinator.refreshSelectedServer()
+
+        assertEquals(ProviderRoutingRefreshResult.Unchanged, result)
+        assertEquals(0, appRoutingApplyCalls)
+        assertEquals(0, xrayRoutingApplyCalls)
+    }
+
+    @Test
+    fun `app-only provider applies only app routing`() = runTest {
+        var appRoutingApplyCalls = 0
+        var xrayRoutingApplyCalls = 0
+        val coordinator = coordinator(
+            selection = ProviderRoutingSelection.Selected(
+                subscriptionId = 7,
+                appRoutingProvided = true,
+                xrayRoutingProvided = false,
+            ),
+            applyAppRouting = {
+                appRoutingApplyCalls += 1
+                true
+            },
+            applyXrayRouting = {
+                xrayRoutingApplyCalls += 1
+                true
+            },
+        )
+
+        val result = coordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
+
+        assertEquals(ProviderRoutingRefreshResult.Persisted(PendingRoutingChange.APP_ROUTING), result)
+        assertEquals(1, appRoutingApplyCalls)
+        assertEquals(0, xrayRoutingApplyCalls)
+    }
+
+    @Test
+    fun `xray-only provider applies only xray routing`() = runTest {
+        var appRoutingApplyCalls = 0
+        var xrayRoutingApplyCalls = 0
+        val coordinator = coordinator(
+            selection = ProviderRoutingSelection.Selected(
+                subscriptionId = 7,
+                appRoutingProvided = false,
+                xrayRoutingProvided = true,
+            ),
+            applyAppRouting = {
+                appRoutingApplyCalls += 1
+                true
+            },
+            applyXrayRouting = {
+                xrayRoutingApplyCalls += 1
+                true
+            },
+        )
+
+        val result = coordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
+
+        assertEquals(ProviderRoutingRefreshResult.Persisted(PendingRoutingChange.XRAY_CONFIG), result)
+        assertEquals(0, appRoutingApplyCalls)
+        assertEquals(1, xrayRoutingApplyCalls)
+    }
+
+    @Test
     fun `xray configuration change takes precedence and requests active update`() = runTest {
         val requestedChanges = mutableListOf<PendingRoutingChange>()
         val coordinator = coordinator(

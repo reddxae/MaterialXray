@@ -11,6 +11,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.SubscriptionFetchException
 import com.material.xray.data.repository.AppUpdateRepository
 import com.material.xray.data.repository.ProviderRoutingActiveUpdate
+import com.material.xray.data.repository.ProviderRoutingAvailability
 import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.ServerSelectionCoordinator
@@ -19,6 +20,7 @@ import com.material.xray.data.repository.SubscriptionAppRoutingRepository
 import com.material.xray.data.repository.SubscriptionRefreshCoordinator
 import com.material.xray.data.repository.SubscriptionRepository
 import com.material.xray.data.repository.SubscriptionRoutingRepository
+import com.material.xray.data.repository.selectedProviderRoutingAvailability
 import com.material.xray.data.repository.toSubscriptionAppRouting
 import com.material.xray.data.repository.toSubscriptionRouting
 import com.material.xray.model.AppUpdate
@@ -97,6 +99,18 @@ data class ActiveBalancerServerState(
 data class SubscriptionRoutingData(
     val appRouting: SubscriptionAppRouting?,
     val routing: SubscriptionRouting?,
+)
+
+internal fun SubscriptionEntity.manualRoutingData(
+    policy: RoutingPolicyControl,
+    selectedProvider: ProviderRoutingAvailability?,
+) = SubscriptionRoutingData(
+    appRouting = toSubscriptionAppRouting().takeUnless {
+        policy == RoutingPolicyControl.SubscriptionProvider && selectedProvider?.appRoutingProvided == true
+    },
+    routing = toSubscriptionRouting().takeUnless {
+        policy == RoutingPolicyControl.SubscriptionProvider && selectedProvider?.xrayRoutingProvided == true
+    },
 )
 
 sealed interface HomeUiEvent {
@@ -196,6 +210,19 @@ class HomeViewModel @Inject constructor(
 
     val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepo.routingPolicyControl
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
+    internal val providerRoutingAvailability: StateFlow<ProviderRoutingAvailability?> = homeData
+        .map { data ->
+            data?.let {
+                selectedProviderRoutingAvailability(it.selectedServerId, it.servers, it.subscriptions)
+            }
+        }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            homeData.value?.let {
+                selectedProviderRoutingAvailability(it.selectedServerId, it.servers, it.subscriptions)
+            },
+        )
 
     val selectedServer: StateFlow<ServerConfig?> = homeData
         .map { it?.selectedServer }
@@ -371,9 +398,9 @@ class HomeViewModel @Inject constructor(
     }
 
     fun requestApplySubscriptionRouting(sub: SubscriptionEntity) {
-        val routing = SubscriptionRoutingData(
-            appRouting = sub.toSubscriptionAppRouting(),
-            routing = sub.toSubscriptionRouting(),
+        val routing = sub.manualRoutingData(
+            policy = routingPolicyControl.value,
+            selectedProvider = providerRoutingAvailability.value,
         )
         if (routing.appRouting == null && routing.routing == null) return
         _pendingSubscriptionRouting.value = routing

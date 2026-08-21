@@ -1,5 +1,6 @@
 package com.material.xray.data.repository
 
+import com.material.xray.data.db.dao.SubscriptionDao
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.service.PendingRoutingChange
 import com.material.xray.service.RoutingChangeManager
@@ -25,7 +26,11 @@ sealed interface ProviderRoutingRefreshResult {
 internal sealed interface ProviderRoutingSelection {
     data object NotProviderControlled : ProviderRoutingSelection
     data object NoSelectedServer : ProviderRoutingSelection
-    data class Selected(val subscriptionId: Long) : ProviderRoutingSelection
+    data class Selected(
+        val subscriptionId: Long,
+        val appRoutingProvided: Boolean = true,
+        val xrayRoutingProvided: Boolean = true,
+    ) : ProviderRoutingSelection
 }
 
 @Singleton
@@ -39,6 +44,7 @@ class ProviderRoutingCoordinator internal constructor(
     constructor(
         settingsRepository: SettingsRepository,
         serverRepository: ServerRepository,
+        subscriptionDao: SubscriptionDao,
         subscriptionAppRoutingRepository: SubscriptionAppRoutingRepository,
         subscriptionRoutingRepository: SubscriptionRoutingRepository,
         routingChangeManager: RoutingChangeManager,
@@ -52,7 +58,13 @@ class ProviderRoutingCoordinator internal constructor(
                 if (server == null) {
                     ProviderRoutingSelection.NoSelectedServer
                 } else {
-                    ProviderRoutingSelection.Selected(server.subscriptionId)
+                    val availability = subscriptionDao.getById(server.subscriptionId)
+                        ?.providerRoutingAvailability()
+                    ProviderRoutingSelection.Selected(
+                        subscriptionId = server.subscriptionId,
+                        appRoutingProvided = availability?.appRoutingProvided == true,
+                        xrayRoutingProvided = availability?.xrayRoutingProvided == true,
+                    )
                 }
             }
         },
@@ -70,16 +82,16 @@ class ProviderRoutingCoordinator internal constructor(
         when (selection) {
             ProviderRoutingSelection.NotProviderControlled -> ProviderRoutingRefreshResult.NotProviderControlled
             ProviderRoutingSelection.NoSelectedServer -> ProviderRoutingRefreshResult.NoSelectedServer
-            is ProviderRoutingSelection.Selected -> refreshSelectedSubscription(selection.subscriptionId, activeUpdate)
+            is ProviderRoutingSelection.Selected -> refreshSelectedSubscription(selection, activeUpdate)
         }
     }
 
     private suspend fun refreshSelectedSubscription(
-        subscriptionId: Long,
+        selection: ProviderRoutingSelection.Selected,
         activeUpdate: ProviderRoutingActiveUpdate,
     ): ProviderRoutingRefreshResult {
-        val appRoutingChanged = applyAppRouting(subscriptionId)
-        val xrayRoutingChanged = applyXrayRouting(subscriptionId)
+        val appRoutingChanged = selection.appRoutingProvided && applyAppRouting(selection.subscriptionId)
+        val xrayRoutingChanged = selection.xrayRoutingProvided && applyXrayRouting(selection.subscriptionId)
         if (!appRoutingChanged && !xrayRoutingChanged) return ProviderRoutingRefreshResult.Unchanged
 
         val change = if (xrayRoutingChanged) {

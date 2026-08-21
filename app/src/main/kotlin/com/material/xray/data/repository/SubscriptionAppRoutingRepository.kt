@@ -25,7 +25,8 @@ class SubscriptionAppRoutingRepository @Inject constructor(
 
     suspend fun applyForSubscription(subscriptionId: Long): Boolean {
         val subscription = subscriptionDao.getById(subscriptionId) ?: return false
-        return replaceActiveRouting(subscription.toSubscriptionAppRouting())
+        val routing = subscription.toSubscriptionAppRouting() ?: return false
+        return replaceActiveRouting(routing)
     }
 
     private suspend fun replaceActiveRouting(routing: SubscriptionAppRouting?): Boolean {

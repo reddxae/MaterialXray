@@ -138,8 +138,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.material.xray.R
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
-import com.material.xray.data.repository.toSubscriptionAppRouting
-import com.material.xray.data.repository.toSubscriptionRouting
+import com.material.xray.data.repository.ProviderRoutingAvailability
 import com.material.xray.model.AppUpdate
 import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
@@ -382,13 +381,16 @@ fun HomeScreen(
                         contentType = { "subscription" },
                     ) { subscription ->
                         val servers = uiState.serversBySubscription[subscription.id].orEmpty()
+                        val manualRouting = subscription.manualRoutingData(
+                            policy = uiState.routingPolicyControl,
+                            selectedProvider = uiState.providerRoutingAvailability,
+                        )
                         SubscriptionCard(
                             subscription = subscription,
                             servers = servers,
                             selectedServerId = uiState.selectedServerId,
                             defaultPingMethod = uiState.defaultPingMethod,
-                            canApplyRouting = uiState.routingPolicyControl == RoutingPolicyControl.User &&
-                                (subscription.toSubscriptionAppRouting() != null || subscription.toSubscriptionRouting() != null),
+                            canApplyRouting = manualRouting.appRouting != null || manualRouting.routing != null,
                             onDelete = {
                                 if (servers.isEmpty()) {
                                     viewModel.deleteSubscription(subscription)
@@ -751,6 +753,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
     val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
+    val providerRoutingAvailability by viewModel.providerRoutingAvailability.collectAsStateWithLifecycle()
     val pendingSubscriptionRouting by viewModel.pendingSubscriptionRouting.collectAsStateWithLifecycle()
     val availableUpdate by viewModel.availableUpdate.collectAsStateWithLifecycle()
     val appUpdateInstallProgress by viewModel.appUpdateInstallProgress.collectAsStateWithLifecycle()
@@ -770,6 +773,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         isRefreshing = isRefreshing,
         defaultPingMethod = defaultPingMethod,
         routingPolicyControl = routingPolicyControl,
+        providerRoutingAvailability = providerRoutingAvailability,
         pendingSubscriptionRouting = pendingSubscriptionRouting,
         availableUpdate = availableUpdate,
         appUpdateInstallProgress = appUpdateInstallProgress,
@@ -830,6 +834,7 @@ private data class HomeUiState(
     val isRefreshing: Boolean,
     val defaultPingMethod: PingMethod,
     val routingPolicyControl: RoutingPolicyControl,
+    val providerRoutingAvailability: ProviderRoutingAvailability?,
     val pendingSubscriptionRouting: SubscriptionRoutingData?,
     val availableUpdate: AppUpdate?,
     val appUpdateInstallProgress: AppUpdateInstallProgress?,

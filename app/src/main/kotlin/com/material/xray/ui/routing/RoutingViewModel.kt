@@ -3,8 +3,10 @@ package com.material.xray.ui.routing
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.material.xray.data.db.dao.SubscriptionDao
+import com.material.xray.data.repository.ProviderRoutingAvailability
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.data.repository.selectedProviderRoutingAvailability
 import com.material.xray.model.RoutingPolicyControl
 import com.material.xray.model.RoutingRule
 import com.material.xray.model.RoutingRuleCatalog
@@ -15,6 +17,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -27,21 +30,29 @@ class RoutingViewModel @Inject constructor(
 ) : ViewModel() {
     val rules: StateFlow<List<RoutingRule>> = settingsRepository.routingRules
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val routingPolicyControl: StateFlow<RoutingPolicyControl> = settingsRepository.routingPolicyControl
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.default)
-    val automaticRoutingProviderName: StateFlow<String?> = combine(
+    private val selectedProviderRouting: StateFlow<ProviderRoutingAvailability?> = combine(
         settingsRepository.lastServerId,
         serverRepository.observeAll(),
         subscriptionDao.observeAll(),
-    ) { selectedServerId, servers, subscriptions ->
-        val subscriptionId = servers.firstOrNull { it.id == selectedServerId }?.subscriptionId
-        subscriptions.firstOrNull { it.id == subscriptionId }?.name?.trim()
-            ?.takeIf { it.isNotEmpty() }
-    }.stateIn(
+        ::selectedProviderRoutingAvailability,
+    ).stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         null,
     )
+    val routingPolicyControl: StateFlow<RoutingPolicyControl> = combine(
+        settingsRepository.routingPolicyControl,
+        selectedProviderRouting,
+    ) { policy, provider ->
+        if (policy == RoutingPolicyControl.SubscriptionProvider && provider?.xrayRoutingProvided == true) {
+            RoutingPolicyControl.SubscriptionProvider
+        } else {
+            RoutingPolicyControl.User
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RoutingPolicyControl.User)
+    val automaticRoutingProviderName: StateFlow<String?> = selectedProviderRouting
+        .map { it?.providerName }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun updateRule(rule: RoutingRule) {
         viewModelScope.launch {

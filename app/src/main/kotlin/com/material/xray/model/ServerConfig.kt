@@ -45,7 +45,7 @@ data class ServerConfig(
 fun ServerConfig.endpointSummary(): String {
     val proxyOutboundCount = proxyOutboundCount()
     if (proxyOutboundCount != null) {
-        return "multiconnect${PROXY_CONFIG_SEPARATOR}$proxyOutboundCount outbounds"
+        return "multi${PROXY_CONFIG_SEPARATOR}$proxyOutboundCount servers"
     }
 
     return formatProxyConfigSummary(

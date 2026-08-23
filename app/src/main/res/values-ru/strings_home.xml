@@ -47,7 +47,7 @@
     <string name="home_no_server_selected">Сервер не выбран</string>
     <string name="home_select_server_below">Выберите сервер ниже</string>
     <string name="home_selected_server">Выбранный сервер</string>
-    <string name="home_balancer_active_server">Используется: %1$s</string>
+    <string name="home_balancer_active_server">%1$s</string>
     <string name="home_stats_ping">Пинг</string>
     <string name="home_stats_download">Загрузка</string>
     <string name="home_stats_upload">Отдача</string>
@@ -57,10 +57,10 @@
     <string name="home_stats_ping_value">%1$d мс</string>
     <string name="home_server_endpoint_unknown">неизвестно</string>
     <plurals name="home_server_multiconnect_summary">
-        <item quantity="one">multiconnect &#8226; %1$d сервер</item>
-        <item quantity="few">multiconnect &#8226; %1$d сервера</item>
-        <item quantity="many">multiconnect &#8226; %1$d серверов</item>
-        <item quantity="other">multiconnect &#8226; %1$d сервера</item>
+        <item quantity="one">multi &#8226; %1$d сервер</item>
+        <item quantity="few">multi &#8226; %1$d сервера</item>
+        <item quantity="many">multi &#8226; %1$d серверов</item>
+        <item quantity="other">multi &#8226; %1$d сервера</item>
     </plurals>
     <string name="home_no_active_xray_config">Активный файл конфигурации Xray не найден.</string>
     <string name="home_connection_connected">Подключено</string>

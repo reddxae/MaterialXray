@@ -219,7 +219,7 @@ class SubscriptionFetcherTest {
 
         assertEquals(Protocol.TROJAN, config.protocol)
         assertEquals("proxy.example", config.address)
-        assertEquals("multiconnect • 3 outbounds", config.endpointSummary())
+        assertEquals("multi • 3 servers", config.endpointSummary())
     }
 
     @Test

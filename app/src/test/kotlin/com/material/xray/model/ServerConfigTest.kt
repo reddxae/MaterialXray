@@ -42,7 +42,7 @@ class ServerConfigTest {
             """.trimIndent(),
         )
 
-        assertEquals("multiconnect • 3 outbounds", config.endpointSummary())
+        assertEquals("multi • 3 servers", config.endpointSummary())
     }
 
     @Test

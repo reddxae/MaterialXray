@@ -115,9 +115,9 @@
     <string name="apps_route_missing_server_description">Этому приложению назначена удалённая конфигурация.</string>
     <string name="apps_server_endpoint_unknown">%1$s &#8226; неизвестно</string>
     <plurals name="apps_server_multiconnect_summary">
-        <item quantity="one">multiconnect &#8226; %1$d исходящее соединение</item>
-        <item quantity="few">multiconnect &#8226; %1$d исходящих соединения</item>
-        <item quantity="many">multiconnect &#8226; %1$d исходящих соединений</item>
-        <item quantity="other">multiconnect &#8226; %1$d исходящего соединения</item>
+        <item quantity="one">multi &#8226; %1$d сервер</item>
+        <item quantity="few">multi &#8226; %1$d сервера</item>
+        <item quantity="many">multi &#8226; %1$d серверов</item>
+        <item quantity="other">multi &#8226; %1$d сервера</item>
     </plurals>
 </resources>

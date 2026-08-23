@@ -107,7 +107,7 @@
     <string name="apps_route_missing_server_description">This app is assigned to a deleted configuration.</string>
     <string name="apps_server_endpoint_unknown">%1$s &#8226; unknown</string>
     <plurals name="apps_server_multiconnect_summary">
-        <item quantity="one">multiconnect &#8226; %1$d outbound</item>
-        <item quantity="other">multiconnect &#8226; %1$d outbounds</item>
+        <item quantity="one">multi &#8226; %1$d server</item>
+        <item quantity="other">multi &#8226; %1$d servers</item>
     </plurals>
 </resources>

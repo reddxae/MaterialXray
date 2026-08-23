@@ -3,9 +3,11 @@ package com.material.xray.service
 import com.material.xray.model.Protocol
 import com.material.xray.model.ServerConfig
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.job
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -13,6 +15,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionLifecycleTest {
     @Test
     fun `connection failure does not rerun the entire attempt`() = runTest {
@@ -77,6 +80,44 @@ class ConnectionLifecycleTest {
         first.await()
         second.await()
         assertEquals(listOf("first-start", "first-end", "second"), order)
+    }
+
+    @Test
+    fun `latest commands discard superseded queued work`() = runTest {
+        val blockerStarted = CompletableDeferred<Unit>()
+        val releaseBlocker = CompletableDeferred<Unit>()
+        val handled = mutableListOf<String>()
+        val lifecycle = lifecycle(runAttempt = { true })
+
+        lifecycle.launch {
+            blockerStarted.complete(Unit)
+            releaseBlocker.await()
+        }
+        blockerStarted.await()
+        lifecycle.launchLatest { handled += "first" }
+        lifecycle.launchLatest { handled += "second" }
+
+        releaseBlocker.complete(Unit)
+        runCurrent()
+
+        assertEquals(listOf("second"), handled)
+    }
+
+    @Test
+    fun `latest commands settle before running`() = runTest {
+        val handled = mutableListOf<String>()
+        val lifecycle = lifecycle(runAttempt = { true })
+
+        lifecycle.launchLatest(200) { handled += "first" }
+        advanceTimeBy(100)
+        lifecycle.launchLatest(200) { handled += "second" }
+        advanceTimeBy(199)
+        runCurrent()
+        assertTrue(handled.isEmpty())
+
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(listOf("second"), handled)
     }
 
     @Test

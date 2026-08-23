@@ -2,8 +2,10 @@ package com.material.xray.service
 
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.ServerConfig
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -43,6 +45,7 @@ internal class ConnectionLifecycle(
     private val onCommandFailure: suspend (Throwable) -> Unit,
 ) {
     private val commandMutex = Mutex()
+    private val latestCommandVersion = AtomicLong()
 
     @Volatile
     var activeConfig: ServerConfig? = null
@@ -62,17 +65,18 @@ internal class ConnectionLifecycle(
      */
     // Catching Throwable is the point here: this is the last barrier before the dispatcher's
     // uncaught handler, which would kill the process with the tunnel still established.
-    @Suppress("TooGenericExceptionCaught")
     fun launch(block: suspend () -> Unit) {
         scope.launch {
+            serialized { runCommand(block) }
+        }
+    }
+
+    fun launchLatest(settleDelayMillis: Long = 0, block: suspend () -> Unit) {
+        val version = latestCommandVersion.incrementAndGet()
+        scope.launch {
+            if (settleDelayMillis > 0) delay(settleDelayMillis)
             serialized {
-                try {
-                    block()
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Throwable) {
-                    onCommandFailure(error)
-                }
+                if (version == latestCommandVersion.get()) runCommand(block)
             }
         }
     }
@@ -83,6 +87,17 @@ internal class ConnectionLifecycle(
             return@withLock block()
         } finally {
             afterCommand()
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun runCommand(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            onCommandFailure(error)
         }
     }
 

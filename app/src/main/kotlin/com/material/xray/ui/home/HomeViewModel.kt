@@ -118,6 +118,7 @@ sealed interface HomeUiEvent {
 }
 
 const val LATENCY_TESTING = Int.MIN_VALUE
+private const val SERVER_SELECTION_SETTLE_MILLIS = 200L
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -141,6 +142,7 @@ class HomeViewModel @Inject constructor(
     private val routingChangeManager: RoutingChangeManager,
     private val serverLatencyTester: ServerLatencyTester,
 ) : ViewModel() {
+    private var serverSelectionJob: Job? = null
     private var latencyJob: Job? = null
     private var latencyRunId = 0L
     private var activeLatencyServerIds = emptySet<Long>()
@@ -354,23 +356,29 @@ class HomeViewModel @Inject constructor(
     }
 
     fun selectServer(serverId: Long) {
-        viewModelScope.launch {
-            serverSelectionCoordinator.withSelectionLock {
-                if (serverId == settingsRepo.lastServerId.first()) return@withSelectionLock
-                val serverEntity = serverRepo.getById(serverId) ?: return@withSelectionLock
-                val config = runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull()
-                    ?: return@withSelectionLock
+        serverSelectionJob?.cancel()
+        serverSelectionJob = viewModelScope.launch {
+            val selectionChanged = serverSelectionCoordinator.withSelectionLock {
+                if (serverId == settingsRepo.lastServerId.first()) return@withSelectionLock false
+                val serverEntity = serverRepo.getById(serverId) ?: return@withSelectionLock false
+                runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull() ?: return@withSelectionLock false
                 settingsRepo.setLastServerId(serverId)
+                true
+            }
+            if (!selectionChanged) return@launch
+
+            delay(SERVER_SELECTION_SETTLE_MILLIS)
+            serverSelectionCoordinator.withSelectionLock {
+                if (serverId != settingsRepo.lastServerId.first()) return@withSelectionLock
                 providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
 
                 val state = connectionState.value
-                if (state is ConnectionState.Connected || state is ConnectionState.Error) {
+                if (state is ConnectionState.Connected ||
+                    state is ConnectionState.ApplyingRoutingChanges ||
+                    state is ConnectionState.Error
+                ) {
                     routingChangeManager.clearPendingChanges()
-                    if (state is ConnectionState.Connected) {
-                        XrayService.switchServer(context, config)
-                    } else {
-                        XrayService.connect(context, config)
-                    }
+                    XrayService.switchServer(context)
                 }
             }
         }

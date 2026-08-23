@@ -129,6 +129,7 @@ class XrayService : VpnService() {
     private var lastNetworkSafetyCheckAtMs = 0L
     private var processRecoveryJob: Job? = null
     private var alwaysOnRetryJob: Job? = null
+    private var fullReconfigurationPending = false
 
     @Volatile
     private var xrayMemoryRestartThresholdMiB = XrayRuntimeSettings.DEFAULT_XRAY_MEMORY_RESTART_THRESHOLD_MIB
@@ -419,19 +420,7 @@ class XrayService : VpnService() {
                     localizedString(R.string.notification_status_switching_server),
                     showDisconnectAction = false,
                 )
-                val configJson = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
-                launchConnectionCommand {
-                    val config = Json.decodeFromString<ServerConfig>(configJson)
-                    connectionLifecycle.updateActiveConfig(config)
-                    stopProcessWatchdog()
-                    logBuffer.append(LogSource.APP, "Switching to ${config.name}...")
-                    updateNotification(localizedString(R.string.notification_status_switching_server))
-                    restartRuntime(
-                        config = config,
-                        transitionState = ConnectionState.ApplyingRoutingChanges,
-                        preparation = ConnectionPreparation.FastServerSwitch,
-                    )
-                }
+                requestReconfiguration(forceFull = false)
             }
             ACTION_DISCONNECT -> {
                 if (isRunningAlwaysOnVpn()) {
@@ -443,7 +432,7 @@ class XrayService : VpnService() {
             }
             ACTION_FORCE_DISCONNECT -> launchDisconnectCommand()
             ACTION_RELOAD -> {
-                launchConnectionCommand { reloadActiveConnection() }
+                requestReconfiguration(forceFull = true)
             }
             ACTION_RELOAD_APP_ROUTING -> {
                 launchConnectionCommand { reloadAppRouting() }
@@ -517,6 +506,15 @@ class XrayService : VpnService() {
 
     private fun launchConnectionCommand(block: suspend () -> Unit) {
         connectionLifecycle.launch(block)
+    }
+
+    private fun requestReconfiguration(forceFull: Boolean) {
+        fullReconfigurationPending = fullReconfigurationPending || forceFull
+        connectionLifecycle.launchLatest(RECONFIGURE_SETTLE_DELAY_MS) {
+            val runFullReconfiguration = fullReconfigurationPending
+            fullReconfigurationPending = false
+            reloadActiveConnection(forceFull = runFullReconfiguration)
+        }
     }
 
     private suspend fun <T> runConnectionCommand(block: suspend () -> T): T = connectionLifecycle.serialized(block)
@@ -777,13 +775,35 @@ class XrayService : VpnService() {
         alwaysOnVpnState.active.value
     }
 
-    private suspend fun reloadActiveConnection(): Boolean {
-        val config = activeConfig ?: return true
+    private suspend fun reloadActiveConnection(forceFull: Boolean = true): Boolean {
+        val connectionState = connectionStateCoordinator.state.value
+        if (connectionState !is ConnectionState.Connected && connectionState !is ConnectionState.Error) return true
+
+        val previousConfig = activeConfig
+        val config = loadLastServerConfig() ?: previousConfig ?: return true
+        val switchingServer = config != previousConfig
+        connectionLifecycle.updateActiveConfig(config)
+
+        if (connectionState is ConnectionState.Error) {
+            return connectWithCurrentSettings(config)
+        }
+
         stopProcessWatchdog()
-        logBuffer.append(LogSource.APP, "Applying routing changes...")
+        logBuffer.append(
+            LogSource.APP,
+            if (switchingServer) "Switching to ${config.name}..." else "Applying routing changes...",
+        )
         connectionStateCoordinator.markApplyingRoutingChanges()
         updateNotification()
-        return restartRuntime(config, ConnectionState.ApplyingRoutingChanges)
+        return restartRuntime(
+            config,
+            ConnectionState.ApplyingRoutingChanges,
+            preparation = if (switchingServer && !forceFull) {
+                ConnectionPreparation.FastServerSwitch
+            } else {
+                ConnectionPreparation.Full
+            },
+        )
     }
 
     private suspend fun reloadAppRouting(): Boolean = executeStep(
@@ -2210,6 +2230,7 @@ class XrayService : VpnService() {
         private const val PROCESS_WATCHDOG_INTERVAL_MS = 10_000L
         private const val BALANCER_SELECTION_POLL_INTERVAL_MS = 5_000L
         private const val METRICS_PRIMING_DELAY_MS = 250L
+        private const val RECONFIGURE_SETTLE_DELAY_MS = 200L
         private const val PING_POLL_INTERVAL_MS = 10_000L
         private const val ROOTLESS_TUN_NAME = "tun0"
         private const val TRANSPORT_LABEL_WIFI = "wifi"
@@ -2236,12 +2257,10 @@ class XrayService : VpnService() {
             )
         }
 
-        fun switchServer(context: Context, serverConfig: ServerConfig) {
-            val intent = Intent(context, XrayService::class.java).apply {
-                action = ACTION_SWITCH_SERVER
-                putExtra(EXTRA_SERVER_CONFIG, Json.encodeToString(ServerConfig.serializer(), serverConfig))
-            }
-            context.startForegroundService(intent)
+        fun switchServer(context: Context) {
+            context.startForegroundService(
+                Intent(context, XrayService::class.java).setAction(ACTION_SWITCH_SERVER),
+            )
         }
 
         fun disconnect(context: Context, force: Boolean = false) {

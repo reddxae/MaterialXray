@@ -161,7 +161,8 @@ class SettingsRuntimeManager @Inject constructor(
     }
 
     private fun reloadActiveConnectionIfConnected() {
-        if (stateCoordinator.state.value is ConnectionState.Connected) {
+        val state = stateCoordinator.state.value
+        if (state is ConnectionState.Connected || state is ConnectionState.ApplyingRoutingChanges) {
             XrayService.reload(context)
         }
     }

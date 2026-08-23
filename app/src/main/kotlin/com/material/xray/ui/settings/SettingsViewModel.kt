@@ -36,6 +36,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -57,6 +58,7 @@ data class BackupOperationMessage(
 )
 
 private const val APP_UPDATE_CHECK_STATUS_MINIMUM_DURATION_MILLIS = 750L
+private const val RUNTIME_MODE_SETTLE_MILLIS = 200L
 
 @HiltViewModel
 @Suppress("TooManyFunctions")
@@ -83,6 +85,8 @@ class SettingsViewModel @Inject constructor(
     private val _backupEvents = Channel<BackupOperationMessage>(Channel.BUFFERED)
     private val _appUpdateCheckStatus = MutableStateFlow<AppUpdateCheckStatus?>(null)
     private var preparedBackupImport: PreparedBackupImport? = null
+    private var rootModeJob: Job? = null
+    private var rootBackendJob: Job? = null
 
     val settings = settingsDataState.data
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
@@ -134,34 +138,46 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun openOemAutostartSettings() = oemAutostartManager.openSettings()
-    fun setUseRootService(enabled: Boolean) = viewModelScope.launch {
-        if (enabled == currentSettings().useRootService) return@launch
-        if (!enabled) {
-            settingsRuntimeManager.setUseRootService(false)
-            return@launch
+    fun setUseRootService(enabled: Boolean) {
+        rootModeJob?.cancel()
+        rootModeJob = viewModelScope.launch {
+            delay(RUNTIME_MODE_SETTLE_MILLIS)
+            if (enabled == currentSettings().useRootService) return@launch
+            if (!enabled) {
+                settingsRuntimeManager.setUseRootService(false)
+                return@launch
+            }
+
+            if (rootAvailable.value == false) {
+                _rootAccessDeniedEvents.send(Unit)
+                return@launch
+            }
+
+            val rootAvailable = settingsRuntimeManager.setUseRootService(true)
+            if (!rootAvailable) {
+                _rootAccessDeniedEvents.send(Unit)
+                return@launch
+            }
+
+            if (currentSettings().autoConnect) oemAutostartManager.grantWithRoot(force = true)
+
+            if (tproxyCompatibility.value != TproxyCompatibility.Checking) {
+                settingsRuntimeManager.detectTproxyCompatibility()
+            }
         }
-
-        if (rootAvailable.value == false) {
-            _rootAccessDeniedEvents.send(Unit)
-            return@launch
-        }
-
-        val rootAvailable = settingsRuntimeManager.setUseRootService(true)
-        if (!rootAvailable) {
-            _rootAccessDeniedEvents.send(Unit)
-            return@launch
-        }
-
-        if (currentSettings().autoConnect) oemAutostartManager.grantWithRoot(force = true)
-
-        checkTproxyCompatibility()
     }
-    fun setRootConnectionBackend(backend: RootConnectionBackend) = viewModelScope.launch {
-        if (backend == currentSettings().rootConnectionBackend) return@launch
-        if (backend == RootConnectionBackend.Tproxy && tproxyCompatibility.value is TproxyCompatibility.Unsupported) {
-            return@launch
+    fun setRootConnectionBackend(backend: RootConnectionBackend) {
+        rootBackendJob?.cancel()
+        rootBackendJob = viewModelScope.launch {
+            delay(RUNTIME_MODE_SETTLE_MILLIS)
+            if (backend == currentSettings().rootConnectionBackend) return@launch
+            if (backend == RootConnectionBackend.Tproxy &&
+                tproxyCompatibility.value is TproxyCompatibility.Unsupported
+            ) {
+                return@launch
+            }
+            settingsRuntimeManager.setRootConnectionBackend(backend)
         }
-        settingsRuntimeManager.setRootConnectionBackend(backend)
     }
 
     fun retryTproxyCompatibilityCheck() = checkTproxyCompatibility(forceRefresh = true)

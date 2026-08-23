@@ -13,6 +13,9 @@ enum class Protocol(
     TROJAN("Trojan", "trojan"),
     SHADOWSOCKS("Shadowsocks", "ss"),
     HYSTERIA2("Hysteria2", "hysteria", setOf("hysteria2", "hy2")),
+    HTTP("HTTP", "http", setOf("https")),
+    SOCKS("SOCKS", "socks", setOf("socks5", "socks5h")),
+    WIREGUARD("WireGuard", "wireguard", setOf("wg")),
     RAW("Raw JSON", "raw"),
     ;
 

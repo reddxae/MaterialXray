@@ -19,5 +19,12 @@ class ShareLinkParser {
     fun parseMultiple(text: String): List<ServerConfig> = text.lines()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
-        .mapNotNull { parse(it) }
+        .mapNotNull { parseSubscriptionLine(it) }
+
+    private fun parseSubscriptionLine(uri: String): ServerConfig? = when {
+        uri.startsWith("http://") || uri.startsWith("https://") -> HttpProxyParser.parse(uri)
+        uri.startsWith("socks://") || uri.startsWith("socks5://") || uri.startsWith("socks5h://") -> SocksParser.parse(uri)
+        uri.startsWith("wireguard://") || uri.startsWith("wg://") -> WireGuardParser.parse(uri)
+        else -> parse(uri)
+    }
 }

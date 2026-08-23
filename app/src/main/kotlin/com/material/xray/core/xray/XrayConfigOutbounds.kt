@@ -14,6 +14,14 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
 import com.material.xray.model.SERVER_EXTRA_SPIDER_X
+import com.material.xray.model.SERVER_EXTRA_USERNAME
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_ADDRESS
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_ALLOWED_IPS
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_KEEP_ALIVE
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_MTU
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_PRESHARED_KEY
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_PUBLIC_KEY
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_RESERVED
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayOutbound
@@ -323,8 +331,60 @@ private fun buildOutboundSettings(server: ServerConfig): JsonObject = when (serv
         put("port", server.port)
     }
 
+    Protocol.HTTP, Protocol.SOCKS -> buildJsonObject {
+        put("address", server.address)
+        put("port", server.port)
+        server.extra[SERVER_EXTRA_USERNAME]?.takeIf { it.isNotEmpty() }?.let { username ->
+            put("user", username)
+            put("pass", server.password)
+        }
+    }
+
+    Protocol.WIREGUARD -> buildJsonObject {
+        put("secretKey", server.password)
+        put(
+            "address",
+            buildJsonArray {
+                server.extra.csvValues(SERVER_EXTRA_WIREGUARD_ADDRESS).forEach(::add)
+            },
+        )
+        put(
+            "peers",
+            buildJsonArray {
+                add(
+                    buildJsonObject {
+                        put("publicKey", server.extra[SERVER_EXTRA_WIREGUARD_PUBLIC_KEY].orEmpty())
+                        put("endpoint", formatEndpoint(server.address, server.port))
+                        server.extra[SERVER_EXTRA_WIREGUARD_PRESHARED_KEY]
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { put("preSharedKey", it) }
+                        server.extra[SERVER_EXTRA_WIREGUARD_KEEP_ALIVE]?.toIntOrNull()?.let { put("keepAlive", it) }
+                        server.extra.csvValues(SERVER_EXTRA_WIREGUARD_ALLOWED_IPS)
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { allowedIps ->
+                                put("allowedIPs", buildJsonArray { allowedIps.forEach(::add) })
+                            }
+                    },
+                )
+            },
+        )
+        server.extra[SERVER_EXTRA_WIREGUARD_MTU]?.toIntOrNull()?.let { put("mtu", it) }
+        server.extra.csvValues(SERVER_EXTRA_WIREGUARD_RESERVED)
+            .mapNotNull(String::toIntOrNull)
+            .takeIf { it.size == 3 }
+            ?.let { reserved -> put("reserved", buildJsonArray { reserved.forEach(::add) }) }
+    }
+
     Protocol.RAW -> error("Raw JSON configs must be handled before outbound generation")
 }
+
+private fun Map<String, String>.csvValues(key: String): List<String> = get(key)
+    ?.split(',')
+    ?.map(String::trim)
+    ?.filter(String::isNotEmpty)
+    .orEmpty()
+
+private fun formatEndpoint(address: String, port: Int): String = if (':' in address) "[$address]:$port" else "$address:$port"
 
 private fun buildStreamSettings(
     server: ServerConfig,

@@ -7,6 +7,7 @@ import com.material.xray.R
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.model.Protocol
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_PRESHARED_KEY
 import com.material.xray.model.ServerConfig
 import com.material.xray.service.ConnectionRuntimeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -202,7 +203,7 @@ private fun Protocol.credentialLabelRes(): Int = when (this) {
     else -> R.string.config_viewer_field_password
 }
 
-private val SECRET_EXTRA_KEYS = setOf(SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD)
+private val SECRET_EXTRA_KEYS = setOf(SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD, SERVER_EXTRA_WIREGUARD_PRESHARED_KEY)
 private val configJson = Json {
     prettyPrint = true
     prettyPrintIndent = "  "

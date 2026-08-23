@@ -12,6 +12,11 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.SERVER_EXTRA_MLDSA65_VERIFY
+import com.material.xray.model.SERVER_EXTRA_USERNAME
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_ADDRESS
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_MTU
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_PUBLIC_KEY
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_RESERVED
 import com.material.xray.model.SERVER_EXTRA_XHTTP_EXTRA
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayOutbound
@@ -298,6 +303,55 @@ class XrayConfigOutboundsTest {
             .single().jsonObject
         assertEquals("salamander", udpMask.getValue("type").jsonPrimitive.content)
         assertEquals("512-1200", udpMask.getValue("settings").jsonObject.getValue("packetSize").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `buildProxyOutbound creates HTTP SOCKS and WireGuard settings`() {
+        val authenticatedServers = listOf(Protocol.HTTP, Protocol.SOCKS).map { protocol ->
+            buildProxyOutbound(
+                server = server(protocol.displayName).copy(
+                    protocol = protocol,
+                    password = "secret",
+                    extra = mapOf(SERVER_EXTRA_USERNAME to "alice"),
+                ),
+                fwmark = 0,
+                physicalInterface = null,
+                tag = "proxy",
+            )
+        }
+
+        authenticatedServers.forEach { outbound ->
+            val settings = outbound.getValue("settings").jsonObject
+            assertEquals("203.0.113.8", settings.getValue("address").jsonPrimitive.content)
+            assertEquals("alice", settings.getValue("user").jsonPrimitive.content)
+            assertEquals("secret", settings.getValue("pass").jsonPrimitive.content)
+        }
+
+        val wireGuard = buildProxyOutbound(
+            server = server("WireGuard").copy(
+                protocol = Protocol.WIREGUARD,
+                address = "2001:db8::1",
+                port = 51820,
+                password = "private-key",
+                extra = mapOf(
+                    SERVER_EXTRA_WIREGUARD_PUBLIC_KEY to "public-key",
+                    SERVER_EXTRA_WIREGUARD_ADDRESS to "172.16.0.2/32,2606:4700:110::2/128",
+                    SERVER_EXTRA_WIREGUARD_MTU to "1280",
+                    SERVER_EXTRA_WIREGUARD_RESERVED to "1,2,3",
+                ),
+            ),
+            fwmark = 0,
+            physicalInterface = null,
+            tag = "proxy",
+        ).getValue("settings").jsonObject
+
+        assertEquals("private-key", wireGuard.getValue("secretKey").jsonPrimitive.content)
+        assertEquals(2, wireGuard.getValue("address").jsonArray.size)
+        val peer = wireGuard.getValue("peers").jsonArray.single().jsonObject
+        assertEquals("public-key", peer.getValue("publicKey").jsonPrimitive.content)
+        assertEquals("[2001:db8::1]:51820", peer.getValue("endpoint").jsonPrimitive.content)
+        assertEquals(1280, wireGuard.getValue("mtu").jsonPrimitive.int)
+        assertEquals(listOf(1, 2, 3), wireGuard.getValue("reserved").jsonArray.map { it.jsonPrimitive.int })
     }
 
     private fun tagged(tag: String) = buildJsonObject { put("tag", tag) }

@@ -7,6 +7,9 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_OBFS_PASSWORD
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
+import com.material.xray.model.SERVER_EXTRA_USERNAME
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_ADDRESS
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_PUBLIC_KEY
 import com.material.xray.model.SubscriptionAppRoutingMode
 import com.material.xray.model.SubscriptionHeader
 import com.material.xray.model.SubscriptionRequestIdentity
@@ -338,6 +341,55 @@ class SubscriptionFetcherTest {
         assertEquals("100 mbps", config.extra[SERVER_EXTRA_HYSTERIA_UP])
         assertEquals("20000-30000", config.extra[SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS])
         assertTrue(config.rawConfigJson.isNotBlank())
+    }
+
+    @Test
+    fun `fetch derives HTTP SOCKS and WireGuard json outbounds`() = runTest {
+        val body = """
+            [
+              {
+                "remarks": "HTTP JSON",
+                "outbounds": [{
+                  "protocol": "http",
+                  "settings": { "address": "http.example", "port": 8080, "user": "alice", "pass": "secret" }
+                }]
+              },
+              {
+                "remarks": "SOCKS JSON",
+                "outbounds": [{
+                  "protocol": "socks",
+                  "settings": { "address": "socks.example", "port": 1080 }
+                }]
+              },
+              {
+                "remarks": "WireGuard JSON",
+                "outbounds": [{
+                  "protocol": "wireguard",
+                  "settings": {
+                    "secretKey": "private-key",
+                    "address": ["172.16.0.2/32"],
+                    "peers": [{
+                      "endpoint": "[2001:db8::1]:51820",
+                      "publicKey": "public-key"
+                    }]
+                  }
+                }]
+              }
+            ]
+        """.trimIndent()
+        val configs = fetcherReturning(body, contentType = "application/json")
+            .fetchWithMetadata("https://subscriptions.example/json-proxies")
+            .configs
+
+        assertEquals(listOf(Protocol.HTTP, Protocol.SOCKS, Protocol.WIREGUARD), configs.map { it.protocol })
+        assertEquals("alice", configs[0].extra[SERVER_EXTRA_USERNAME])
+        assertEquals("secret", configs[0].password)
+        assertEquals("socks.example", configs[1].address)
+        assertEquals("2001:db8::1", configs[2].address)
+        assertEquals(51820, configs[2].port)
+        assertEquals("private-key", configs[2].password)
+        assertEquals("public-key", configs[2].extra[SERVER_EXTRA_WIREGUARD_PUBLIC_KEY])
+        assertEquals("172.16.0.2/32", configs[2].extra[SERVER_EXTRA_WIREGUARD_ADDRESS])
     }
 
     @Test

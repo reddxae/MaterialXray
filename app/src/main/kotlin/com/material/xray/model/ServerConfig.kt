@@ -151,5 +151,13 @@ internal const val SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS = "hysteriaUdpHopPorts"
 internal const val SERVER_EXTRA_HYSTERIA_UDP_HOP_INTERVAL = "hysteriaUdpHopInterval"
 internal const val SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT = "hysteriaUdpIdleTimeout"
 internal const val SERVER_EXTRA_HYSTERIA_CONGESTION = "hysteriaCongestion"
+internal const val SERVER_EXTRA_USERNAME = "username"
+internal const val SERVER_EXTRA_WIREGUARD_PUBLIC_KEY = "wireguardPublicKey"
+internal const val SERVER_EXTRA_WIREGUARD_PRESHARED_KEY = "wireguardPresharedKey"
+internal const val SERVER_EXTRA_WIREGUARD_ADDRESS = "wireguardAddress"
+internal const val SERVER_EXTRA_WIREGUARD_MTU = "wireguardMtu"
+internal const val SERVER_EXTRA_WIREGUARD_RESERVED = "wireguardReserved"
+internal const val SERVER_EXTRA_WIREGUARD_KEEP_ALIVE = "wireguardKeepAlive"
+internal const val SERVER_EXTRA_WIREGUARD_ALLOWED_IPS = "wireguardAllowedIps"
 
 private val SPECIAL_OUTBOUND_PROTOCOLS = setOf("freedom", "blackhole", "dns")

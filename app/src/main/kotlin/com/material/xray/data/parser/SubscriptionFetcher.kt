@@ -16,6 +16,14 @@ import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_HOP_PORTS
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UDP_IDLE_TIMEOUT
 import com.material.xray.model.SERVER_EXTRA_HYSTERIA_UP
 import com.material.xray.model.SERVER_EXTRA_PROXY_OUTBOUND_COUNT
+import com.material.xray.model.SERVER_EXTRA_USERNAME
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_ADDRESS
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_ALLOWED_IPS
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_KEEP_ALIVE
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_MTU
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_PRESHARED_KEY
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_PUBLIC_KEY
+import com.material.xray.model.SERVER_EXTRA_WIREGUARD_RESERVED
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionMetadata
@@ -332,6 +340,9 @@ class SubscriptionFetcher @Inject constructor(
             "trojan" -> deriveServerOutbound(outbound, settings, Protocol.TROJAN, passwordKey = "password")
             "shadowsocks", "ss" -> deriveShadowsocksOutbound(outbound, settings)
             "hysteria" -> deriveHysteriaOutbound(outbound, settings)
+            "http" -> deriveAuthenticatedProxyOutbound(outbound, settings, Protocol.HTTP)
+            "socks" -> deriveAuthenticatedProxyOutbound(outbound, settings, Protocol.SOCKS)
+            "wireguard" -> deriveWireGuardOutbound(outbound, settings)
             else -> deriveRawOutbound(outbound)
         }
     }
@@ -410,6 +421,50 @@ class SubscriptionFetcher @Inject constructor(
         )
     }
 
+    private fun deriveAuthenticatedProxyOutbound(
+        outbound: JsonObject,
+        settings: JsonObject?,
+        protocol: Protocol,
+    ): DerivedOutbound {
+        val server = settings?.findArray("servers")?.firstObject()
+        val endpoint = settings?.takeIf { it.findString("address") != null } ?: server
+        val account = settings?.takeIf { it.findString("user") != null }
+            ?: server?.findArray("users")?.firstObject()
+        return DerivedOutbound(
+            protocol = protocol,
+            address = firstString(endpoint, outbound, "address"),
+            port = firstInt(endpoint, outbound, "port"),
+            password = firstString(account, outbound, "pass"),
+            extra = account?.findString("user")
+                ?.takeIf { it.isNotBlank() }
+                ?.let { mapOf(SERVER_EXTRA_USERNAME to it) }
+                .orEmpty(),
+        )
+    }
+
+    private fun deriveWireGuardOutbound(outbound: JsonObject, settings: JsonObject?): DerivedOutbound {
+        val peer = settings?.findArray("peers")?.firstObject()
+        val endpoint = peer?.findString("endpoint")?.toEndpoint()
+        return DerivedOutbound(
+            protocol = Protocol.WIREGUARD,
+            address = endpoint?.first.orEmpty(),
+            port = endpoint?.second ?: 0,
+            password = firstString(settings, outbound, "secretKey"),
+            extra = buildMap {
+                peer?.findString("publicKey")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_WIREGUARD_PUBLIC_KEY, it) }
+                peer?.findString("preSharedKey")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_WIREGUARD_PRESHARED_KEY, it) }
+                settings?.findArray("address")?.stringList()?.takeIf { it.isNotEmpty() }
+                    ?.let { put(SERVER_EXTRA_WIREGUARD_ADDRESS, it.joinToString(",")) }
+                settings?.findString("mtu")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_WIREGUARD_MTU, it) }
+                settings?.findArray("reserved")?.stringList()?.takeIf { it.isNotEmpty() }
+                    ?.let { put(SERVER_EXTRA_WIREGUARD_RESERVED, it.joinToString(",")) }
+                peer?.findString("keepAlive")?.takeIf { it.isNotBlank() }?.let { put(SERVER_EXTRA_WIREGUARD_KEEP_ALIVE, it) }
+                peer?.findArray("allowedIPs")?.stringList()?.takeIf { it.isNotEmpty() }
+                    ?.let { put(SERVER_EXTRA_WIREGUARD_ALLOWED_IPS, it.joinToString(",")) }
+            },
+        )
+    }
+
     private fun deriveServerOutbound(
         outbound: JsonObject,
         settings: JsonObject?,
@@ -448,6 +503,18 @@ class SubscriptionFetcher @Inject constructor(
     }
 
     private fun firstInt(primary: JsonObject?, fallback: JsonObject, key: String): Int = primary?.findInt(key) ?: fallback.findFirstIntRecursive(key) ?: 0
+
+    private fun String.toEndpoint(): Pair<String, Int>? {
+        val value = trim()
+        if (value.startsWith('[')) {
+            val host = value.substringAfter('[').substringBefore(']')
+            val port = value.substringAfter(']', "").removePrefix(":").toValidPortOrNull()
+            return if (host.isNotBlank() && port != null) host to port else null
+        }
+        val host = value.substringBeforeLast(':', "")
+        val port = value.substringAfterLast(':', "").toValidPortOrNull()
+        return if (host.isNotBlank() && port != null) host to port else null
+    }
 
     private fun parseMetadata(response: Response): SubscriptionMetadata = SubscriptionStandardHeaders.parseMetadata(response.headers)
 

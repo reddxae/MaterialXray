@@ -598,6 +598,21 @@ internal class ConnectionManager(
         tproxyPlan: TproxyTrafficPlan?,
         syntheticDnsAddress: String?,
     ) {
+        val effectiveInbounds = tproxyPlan?.runtimeState?.groups?.map { group ->
+            XrayInbound.Tproxy(
+                port = group.port,
+                tag = group.inboundTag,
+                outboundMark = runtimeSettings.fwmark,
+                allowIpv6 = runtimeSettings.allowIpv6,
+                acceptNonLoopback = tproxyPlan.runtimeState.tetherUpstreamInterface != null,
+            )
+        }
+
+        // A hand-edited config replaces generation wholesale, but not the identifiers this connect
+        // just allocated: the API endpoint and the inbounds have to be the current ones or the
+        // stats clients talk to nothing and the firewall rule guards the wrong port.
+        if (writeOverriddenXrayConfig(runtimeSettings, appRoutingPlan, xrayApiEndpoint, effectiveInbounds)) return
+
         val configJson = executeStep(
             ConnectionStep(
                 "Config generation",
@@ -624,15 +639,7 @@ internal class ConnectionManager(
                             xrayApiEndpoint = xrayApiEndpoint,
                             xrayBufferSizeKiB = runtimeSettings.xrayBufferSizeKiB,
                             tunMtu = runtimeSettings.tunMtu,
-                            inbounds = tproxyPlan?.runtimeState?.groups?.map { group ->
-                                XrayInbound.Tproxy(
-                                    port = group.port,
-                                    tag = group.inboundTag,
-                                    outboundMark = runtimeSettings.fwmark,
-                                    allowIpv6 = runtimeSettings.allowIpv6,
-                                    acceptNonLoopback = tproxyPlan.runtimeState.tetherUpstreamInterface != null,
-                                )
-                            },
+                            inbounds = effectiveInbounds,
                         )
                     }
                 },
@@ -646,6 +653,44 @@ internal class ConnectionManager(
             ),
         )
         log.append(LogSource.APP, "Config written to ${xrayBinary.configPath()} (${configJson.length} chars)")
+    }
+
+    /**
+     * Writes the hand-edited config, with this connect's runtime identity patched back into it.
+     * Returns false when there is no override, or when it is too broken to patch, so the caller
+     * generates a config as usual rather than starting the core against something unusable.
+     */
+    private suspend fun writeOverriddenXrayConfig(
+        runtimeSettings: XrayRuntimeSettings,
+        appRoutingPlan: AppRoutingPlan,
+        xrayApiEndpoint: XrayApiEndpoint,
+        inbounds: List<XrayInbound>?,
+    ): Boolean {
+        val override = xrayBinary.readOverrideConfig() ?: return false
+        val patched = withContext(Dispatchers.Default) {
+            configGenerator.applyRuntimeIdentity(
+                configJson = override,
+                tunName = runtimeSettings.tunName,
+                appProxyRoutes = appRoutingPlan.proxyRoutes,
+                xrayApiEndpoint = xrayApiEndpoint,
+                tunMtu = runtimeSettings.tunMtu,
+                inbounds = inbounds,
+            )
+        }
+        if (patched == null) {
+            log.append(LogSource.APP, "Edited active config is not a JSON object; generating a config instead")
+            return false
+        }
+
+        executeStep(
+            ConnectionStep(
+                "Config write",
+                ConnectionProgress.GeneratingConfiguration,
+                action = { xrayBinary.writeConfig(patched) },
+            ),
+        )
+        log.append(LogSource.APP, "Using edited active config (${patched.length} chars)")
+        return true
     }
 
     private fun logAppRoutingPlan(appRoutingPlan: AppRoutingPlan) {

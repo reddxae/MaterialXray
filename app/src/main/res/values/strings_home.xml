@@ -183,4 +183,10 @@
         <item quantity="other">Expires in %1$d days</item>
     </plurals>
     <string name="home_gigabytes">%1$s GB</string>
+    <string name="home_server_edited">Edited locally</string>
+    <string name="home_server_guarded">Guarded against updates</string>
+    <string name="home_discard_edited_config_title">Discard edited config?</string>
+    <string name="home_discard_edited_config_body">You edited the active Xray config. Selecting another server throws that edit away.</string>
+    <string name="home_discard_edited_config_confirm">Discard and switch</string>
+    <string name="home_discard_edited_config_cancel">Keep editing</string>
 </resources>

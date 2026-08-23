@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import com.material.xray.R
 import com.material.xray.core.locale.localizedString
+import com.material.xray.core.xray.ACTIVE_CONFIG_FILE
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.data.repository.ServerRepository
@@ -27,7 +28,7 @@ class ConnectionRuntimeManager @Inject constructor(
     private val log: LogBuffer,
 ) {
     private val stateFile = StateFile(context)
-    private val activeConfigFile = context.filesDir.resolve("config.json")
+    private val activeConfigFile = context.filesDir.resolve(ACTIVE_CONFIG_FILE)
     private val stepExecutor = ConnectionStepExecutor(
         elapsedRealtime = SystemClock::elapsedRealtime,
         log = { message -> log.append(LogSource.APP, message) },

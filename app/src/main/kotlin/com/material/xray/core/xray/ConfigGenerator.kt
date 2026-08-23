@@ -160,6 +160,40 @@ class ConfigGenerator {
         inbounds = inbounds,
     )
 
+    /**
+     * Rewrites the keys the app owns per connect into a hand-edited config, leaving every other key
+     * exactly as the user wrote it.
+     *
+     * A hand-edited config is captured from one connect but replayed on all later ones, and the
+     * runtime identity is not stable between them: the control API endpoint is a fresh abstract
+     * socket name or loopback port every time, and the TUN name is whatever was free. Replaying the
+     * captured values would point the stats and routing clients at an endpoint nothing is listening
+     * on, and would leave the port the core actually opens outside the loopback firewall rule that
+     * was installed for the fresh one.
+     *
+     * Returns null when [configJson] is not a JSON object, so the caller can fall back rather than
+     * hand the core a document it cannot patch.
+     */
+    fun applyRuntimeIdentity(
+        configJson: String,
+        tunName: String,
+        appProxyRoutes: List<AppProxyRoute> = emptyList(),
+        xrayApiEndpoint: XrayApiEndpoint = XrayApiEndpoint.UnixSocket(XRAY_API_SOCKET_NAME_PREFIX),
+        tunMtu: Int = XrayRuntimeSettings.DEFAULT_TUN_MTU,
+        inbounds: List<XrayInbound>? = null,
+    ): String? {
+        val original = runCatching { json.parseToJsonElement(configJson) as? JsonObject }.getOrNull() ?: return null
+        val effectiveInbounds = inbounds ?: buildList {
+            add(XrayInbound.Tun(tunName, "tun-in", tunMtu))
+            appProxyRoutes.forEach { route -> add(XrayInbound.Tun(route.tunName, route.inboundTag, tunMtu)) }
+        }
+
+        val patched = original.toMutableMap()
+        patched["inbounds"] = buildJsonArray { effectiveInbounds.forEach { add(it.toJson()) } }
+        patched["api"] = buildStatsApi(xrayApiEndpoint)
+        return json.encodeToString(JsonObject.serializer(), JsonObject(patched))
+    }
+
     private fun bootstrapDnsHosts(
         server: ServerConfig,
         appProxyRoutes: List<AppProxyRoute>,

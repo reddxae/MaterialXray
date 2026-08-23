@@ -175,10 +175,11 @@ class SubscriptionRepository @Inject constructor(
         return database.withTransaction {
             val current = subscriptionDao.getById(subId) ?: return@withTransaction null
             val existingServers = serverDao.getBySubscription(subId)
+            val finalServers = mergeGuardedServersInto(existingServers, prepared.servers)
             serverDao.deleteBySubscription(subId)
-            val insertedIds = if (prepared.servers.isEmpty()) emptyList() else serverDao.insertAll(prepared.servers)
+            val insertedIds = if (finalServers.isEmpty()) emptyList() else serverDao.insertAll(finalServers)
             subscriptionDao.update(current.applyFetchedData(prepared.fetched))
-            val insertedServers = prepared.servers.zip(insertedIds).map { (server, id) -> server.copy(id = id) }
+            val insertedServers = finalServers.zip(insertedIds).map { (server, id) -> server.copy(id = id) }
             RefreshResult(
                 subscriptionId = subId,
                 serverIdByConfigJson = insertedServers
@@ -319,6 +320,37 @@ internal fun SubscriptionEntity.isDueForRefresh(nowMillis: Long): Boolean {
 
     val intervalMillis = interval * MILLIS_PER_HOUR
     return nowMillis - lastUpdated >= intervalMillis
+}
+
+/**
+ * Keeps guarded servers verbatim while every other server is replaced by the fetched set.
+ *
+ * A guarded server carries its existing non-zero id, so re-inserting it inside the same transaction
+ * that deleted it restores the same primary key: the selected server, the app bypass rows and the
+ * id replacement map all keep pointing at it without any extra work.
+ *
+ * Matching is by exact trimmed name, the same identity the id replacement map falls back to. A
+ * guarded server the provider renamed or dropped is appended at the end rather than lost, because
+ * guarding means updates to that outbound are ignored, not that it may disappear.
+ */
+internal fun mergeGuardedServersInto(
+    existingServers: List<ServerEntity>,
+    fetchedServers: List<ServerEntity>,
+): List<ServerEntity> {
+    val unmatchedGuarded = existingServers.filter { it.guarded }.toMutableList()
+    if (unmatchedGuarded.isEmpty()) return fetchedServers
+
+    // ponytail: linear scan per fetched server. A subscription holds tens of servers, so an index
+    // is not worth the duplicate-name bookkeeping it would need.
+    val slotted = fetchedServers.map { fetched ->
+        val name = fetched.name.trim()
+        // A blank name identifies nothing, so it must not claim the first blank-named slot. The id
+        // replacement map skips blank names for the same reason.
+        val matchIndex = if (name.isEmpty()) -1 else unmatchedGuarded.indexOfFirst { it.name.trim() == name }
+        if (matchIndex < 0) fetched else unmatchedGuarded.removeAt(matchIndex)
+    }
+
+    return (slotted + unmatchedGuarded).mapIndexed { index, server -> server.copy(sortOrder = index) }
 }
 
 private const val MILLIS_PER_HOUR = 60L * 60L * 1000L

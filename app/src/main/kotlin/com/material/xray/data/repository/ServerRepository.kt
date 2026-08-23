@@ -26,6 +26,22 @@ class ServerRepository @Inject constructor(
         serverDao.updateLatency(id, latencyMs)
     }
 
+    /** Persists a locally edited config and marks the server as edited. */
+    suspend fun saveEditedConfig(id: Long, config: ServerConfig) {
+        serverDao.updateEditedConfig(
+            id = id,
+            name = config.name,
+            protocol = config.protocol.name,
+            address = config.address,
+            port = config.port,
+            configJson = json.encodeToString(ServerConfig.serializer(), config),
+        )
+    }
+
+    suspend fun setGuarded(id: Long, guarded: Boolean) {
+        serverDao.updateGuarded(id, guarded)
+    }
+
     suspend fun updateSortOrders(serverIds: List<Long>) {
         serverDao.updateSortOrders(serverIds)
     }

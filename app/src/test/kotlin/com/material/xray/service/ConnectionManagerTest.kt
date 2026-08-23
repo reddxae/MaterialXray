@@ -696,11 +696,13 @@ class ConnectionManagerTest {
         override val androidBinaryPath = "/tmp/xray/libxray.so"
         var rootReady = true
         var configJson: String? = null
+        var overrideConfigJson: String? = null
 
         override fun configPath(): String = "/tmp/xray/config.json"
         override suspend fun ensureRootBinaryExtracted(): Boolean = rootReady
         override suspend fun ensureAndroidBinaryAvailable(): Boolean = true
         override suspend fun readConfig(): String? = configJson
+        override suspend fun readOverrideConfig(): String? = overrideConfigJson
         override suspend fun writeConfig(configJson: String) {
             this.configJson = configJson
         }

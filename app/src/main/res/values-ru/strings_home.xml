@@ -195,4 +195,10 @@
         <item quantity="other">Истекает через %1$d дня</item>
     </plurals>
     <string name="home_gigabytes">%1$s ГБ</string>
+    <string name="home_server_edited">Изменено локально</string>
+    <string name="home_server_guarded">Защищено от обновлений</string>
+    <string name="home_discard_edited_config_title">Удалить изменения?</string>
+    <string name="home_discard_edited_config_body">Вы изменили активную конфигурацию Xray. Выбор другого сервера удалит эти изменения.</string>
+    <string name="home_discard_edited_config_confirm">Удалить и переключить</string>
+    <string name="home_discard_edited_config_cancel">Продолжить правку</string>
 </resources>

@@ -96,6 +96,13 @@ class SubscriptionFetcher @Inject constructor(
 
     suspend fun fetch(url: String, preferJson: Boolean = false): List<ServerConfig> = fetchWithMetadata(url, preferJson = preferJson).configs
 
+    /**
+     * Re-derives a [ServerConfig] from a single edited JSON config document, so a locally edited
+     * raw config updates its protocol, address, port, transport and security instead of keeping the
+     * values the provider originally shipped. Null when [body] is not a usable JSON config.
+     */
+    internal fun parseJsonConfig(body: String): ServerConfig? = parseJsonSubscription(body).firstOrNull()
+
     suspend fun fetchWithMetadata(
         url: String,
         identity: SubscriptionRequestIdentity = SubscriptionRequestIdentity(),

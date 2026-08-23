@@ -34,6 +34,7 @@ import com.material.xray.core.locale.forAppLanguage
 import com.material.xray.core.locale.localizedString
 import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.core.root.RootShell
+import com.material.xray.core.xray.ActiveConfigOverrideStore
 import com.material.xray.core.xray.StateFile
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.core.xray.TunManager
@@ -103,6 +104,8 @@ class XrayService : VpnService() {
     @Inject lateinit var startupDiagnosticsLogger: StartupDiagnosticsLogger
 
     @Inject lateinit var serverLatencyTester: ServerLatencyTester
+
+    @Inject lateinit var activeConfigOverrideStore: ActiveConfigOverrideStore
 
     private lateinit var connectionManager: ConnectionManager
     private lateinit var connectionLifecycle: ConnectionLifecycle
@@ -882,6 +885,7 @@ class XrayService : VpnService() {
             if (!connectionManager.disconnect(updateState = false, fastCleanup = true)) return false
             if (restoredServerId >= 0) {
                 settingsRepo.compareAndSetLastServerId(restoredServerId, -1)
+                activeConfigOverrideStore.clear()
             }
             connectionStateCoordinator.markDisconnected()
             updateNotification()

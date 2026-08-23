@@ -128,6 +128,7 @@ internal interface ConnectionXrayBinary : XrayProcessBinary {
     suspend fun ensureRootBinaryExtracted(): Boolean
     suspend fun ensureAndroidBinaryAvailable(): Boolean
     suspend fun readConfig(): String?
+    suspend fun readOverrideConfig(): String?
     suspend fun writeConfig(configJson: String)
 }
 
@@ -153,6 +154,8 @@ internal class XrayBinaryConnectionAdapter(
     }
 
     override suspend fun readConfig(): String? = withContext(Dispatchers.IO) { binary.readConfig() }
+
+    override suspend fun readOverrideConfig(): String? = withContext(Dispatchers.IO) { binary.readOverrideConfig() }
 
     override suspend fun writeConfig(configJson: String) {
         withContext(Dispatchers.IO) { binary.writeConfig(configJson) }

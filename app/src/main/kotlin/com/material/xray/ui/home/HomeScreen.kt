@@ -60,7 +60,9 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.NetworkPing
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -488,6 +490,36 @@ fun HomeScreen(
         onDismiss = viewModel::dismissInstallPermissionRationale,
         onConfirm = viewModel::confirmInstallPermissionRationale,
     )
+    DiscardEditedActiveConfigDialogHost(
+        visible = uiState.pendingServerSelection != null,
+        onDismiss = viewModel::dismissDiscardEditedActiveConfig,
+        onConfirm = viewModel::confirmDiscardEditedActiveConfig,
+    )
+}
+
+@Composable
+private fun DiscardEditedActiveConfigDialogHost(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!visible) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_discard_edited_config_title)) },
+        text = { Text(stringResource(R.string.home_discard_edited_config_body)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.home_discard_edited_config_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_discard_edited_config_cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -758,6 +790,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val availableUpdate by viewModel.availableUpdate.collectAsStateWithLifecycle()
     val appUpdateInstallProgress by viewModel.appUpdateInstallProgress.collectAsStateWithLifecycle()
     val showInstallPermissionRationale by viewModel.showInstallPermissionRationale.collectAsStateWithLifecycle()
+    val pendingServerSelection by viewModel.pendingServerSelection.collectAsStateWithLifecycle()
 
     return HomeUiState(
         connectionState = connectionState,
@@ -778,6 +811,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         availableUpdate = availableUpdate,
         appUpdateInstallProgress = appUpdateInstallProgress,
         showInstallPermissionRationale = showInstallPermissionRationale,
+        pendingServerSelection = pendingServerSelection,
     )
 }
 
@@ -839,6 +873,8 @@ private data class HomeUiState(
     val availableUpdate: AppUpdate?,
     val appUpdateInstallProgress: AppUpdateInstallProgress?,
     val showInstallPermissionRationale: Boolean,
+    /** Server awaiting confirmation because switching to it discards an edited active config. */
+    val pendingServerSelection: Long?,
 )
 
 private data class ConnectionUiState(
@@ -1838,12 +1874,24 @@ private fun ServerRow(
             ) {
                 CompactSelectionDot(isSelected = isSelected)
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = server.entity.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = server.entity.name,
+                            modifier = Modifier.weight(1f, fill = false),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (server.entity.edited) {
+                            ServerStateBadge(Icons.Outlined.Edit, R.string.home_server_edited)
+                        }
+                        if (server.entity.guarded) {
+                            ServerStateBadge(Icons.Outlined.Shield, R.string.home_server_guarded)
+                        }
+                    }
                     Text(
                         text = server.endpointSummary,
                         style = MaterialTheme.typography.bodySmall,
@@ -1884,6 +1932,16 @@ private fun ServerRow(
             }
         }
     }
+}
+
+@Composable
+private fun ServerStateBadge(icon: ImageVector, @StringRes descriptionRes: Int) {
+    Icon(
+        imageVector = icon,
+        contentDescription = stringResource(descriptionRes),
+        modifier = Modifier.size(14.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

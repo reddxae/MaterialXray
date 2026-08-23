@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.material.xray.R
 import com.material.xray.core.locale.localizedString
 import com.material.xray.core.network.ServerLatencyTester
+import com.material.xray.core.xray.ActiveConfigOverrideStore
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.SubscriptionFetchException
@@ -138,6 +139,7 @@ class HomeViewModel @Inject constructor(
     private val subscriptionUpdateScheduler: SubscriptionUpdateScheduler,
     private val connectionStateCoordinator: ConnectionStateCoordinator,
     private val connectionRuntimeManager: ConnectionRuntimeManager,
+    private val activeConfigOverrideStore: ActiveConfigOverrideStore,
     alwaysOnVpnState: AlwaysOnVpnState,
     private val routingChangeManager: RoutingChangeManager,
     private val serverLatencyTester: ServerLatencyTester,
@@ -283,6 +285,10 @@ class HomeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     private val _pendingSubscriptionRouting = MutableStateFlow<SubscriptionRoutingData?>(null)
     val pendingSubscriptionRouting: StateFlow<SubscriptionRoutingData?> = _pendingSubscriptionRouting.asStateFlow()
+
+    /** Server the user picked while an edited active config is stored, pending their confirmation. */
+    private val _pendingServerSelection = MutableStateFlow<Long?>(null)
+    val pendingServerSelection: StateFlow<Long?> = _pendingServerSelection.asStateFlow()
     val showInstallPermissionRationale: StateFlow<Boolean> = appUpdateInstaller.installPermissionRationaleRequired
 
     init {
@@ -358,28 +364,52 @@ class HomeViewModel @Inject constructor(
     fun selectServer(serverId: Long) {
         serverSelectionJob?.cancel()
         serverSelectionJob = viewModelScope.launch {
-            val selectionChanged = serverSelectionCoordinator.withSelectionLock {
-                if (serverId == settingsRepo.lastServerId.first()) return@withSelectionLock false
-                val serverEntity = serverRepo.getById(serverId) ?: return@withSelectionLock false
-                runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull() ?: return@withSelectionLock false
-                settingsRepo.setLastServerId(serverId)
-                true
+            // The edited active config was written against the currently selected server, so
+            // moving away from it throws the edit away. Say so before it happens.
+            if (serverId != settingsRepo.lastServerId.first() && activeConfigOverrideStore.exists()) {
+                _pendingServerSelection.value = serverId
+                return@launch
             }
-            if (!selectionChanged) return@launch
+            applyServerSelection(serverId)
+        }
+    }
 
-            delay(SERVER_SELECTION_SETTLE_MILLIS)
-            serverSelectionCoordinator.withSelectionLock {
-                if (serverId != settingsRepo.lastServerId.first()) return@withSelectionLock
-                providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
+    fun confirmDiscardEditedActiveConfig() {
+        val serverId = _pendingServerSelection.value ?: return
+        _pendingServerSelection.value = null
+        serverSelectionJob?.cancel()
+        serverSelectionJob = viewModelScope.launch {
+            activeConfigOverrideStore.clear()
+            applyServerSelection(serverId)
+        }
+    }
 
-                val state = connectionState.value
-                if (state is ConnectionState.Connected ||
-                    state is ConnectionState.ApplyingRoutingChanges ||
-                    state is ConnectionState.Error
-                ) {
-                    routingChangeManager.clearPendingChanges()
-                    XrayService.switchServer(context)
-                }
+    fun dismissDiscardEditedActiveConfig() {
+        _pendingServerSelection.value = null
+    }
+
+    private suspend fun applyServerSelection(serverId: Long) {
+        val selectionChanged = serverSelectionCoordinator.withSelectionLock {
+            if (serverId == settingsRepo.lastServerId.first()) return@withSelectionLock false
+            val serverEntity = serverRepo.getById(serverId) ?: return@withSelectionLock false
+            runCatching { serverRepo.parseConfig(serverEntity) }.getOrNull() ?: return@withSelectionLock false
+            settingsRepo.setLastServerId(serverId)
+            true
+        }
+        if (!selectionChanged) return
+
+        delay(SERVER_SELECTION_SETTLE_MILLIS)
+        serverSelectionCoordinator.withSelectionLock {
+            if (serverId != settingsRepo.lastServerId.first()) return@withSelectionLock
+            providerRoutingCoordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
+
+            val state = connectionState.value
+            if (state is ConnectionState.Connected ||
+                state is ConnectionState.ApplyingRoutingChanges ||
+                state is ConnectionState.Error
+            ) {
+                routingChangeManager.clearPendingChanges()
+                XrayService.switchServer(context)
             }
         }
     }

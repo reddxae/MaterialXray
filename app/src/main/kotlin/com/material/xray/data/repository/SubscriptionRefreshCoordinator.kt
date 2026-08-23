@@ -1,5 +1,6 @@
 package com.material.xray.data.repository
 
+import com.material.xray.core.xray.ActiveConfigOverrideStore
 import com.material.xray.data.db.dao.AppBypassDao
 import com.material.xray.data.db.entity.ServerEntity
 import com.material.xray.data.db.entity.SubscriptionEntity
@@ -23,6 +24,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     private val providerRoutingCoordinator: ProviderRoutingCoordinator,
     private val connectionShutdownManager: ConnectionShutdownManager,
     private val serverSelectionCoordinator: ServerSelectionCoordinator,
+    private val activeConfigOverrideStore: ActiveConfigOverrideStore,
 ) {
     private val operationMutex = Mutex()
 
@@ -69,6 +71,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
                 subscriptionRepository.delete(subscription)
                 if (removedSelectedServerId != null) {
                     settingsRepository.compareAndSetLastServerId(removedSelectedServerId, -1)
+                    activeConfigOverrideStore.clear()
                 }
             }
         }
@@ -146,10 +149,12 @@ class SubscriptionRefreshCoordinator @Inject constructor(
                     connectionShutdownManager.disconnectIfRunning()
                 } finally {
                     settingsRepository.compareAndSetLastServerId(selectedServer.id, -1)
+                    activeConfigOverrideStore.clear()
                 }
             }
             is SelectedServerRefreshOutcome.Replaced -> {
                 settingsRepository.compareAndSetLastServerId(selectedServer.id, outcome.serverId)
+                activeConfigOverrideStore.clear()
             }
         }
     }

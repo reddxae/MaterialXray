@@ -1,6 +1,7 @@
 package com.material.xray.service
 
 import android.content.Context
+import com.material.xray.core.xray.ActiveConfigOverrideStore
 import com.material.xray.data.db.AppDatabase
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.model.ConnectionState
@@ -20,6 +21,7 @@ class DatabaseResetManager @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val routingChangeManager: RoutingChangeManager,
     private val stateCoordinator: ConnectionStateCoordinator,
+    private val activeConfigOverrideStore: ActiveConfigOverrideStore,
 ) {
     suspend fun reset() {
         if (stateCoordinator.state.value.requiresRuntimeDisconnect()) {
@@ -34,6 +36,7 @@ class DatabaseResetManager @Inject constructor(
         withContext(NonCancellable) {
             withContext(Dispatchers.IO) { database.clearAllTables() }
             settingsRepository.setLastServerId(-1)
+            activeConfigOverrideStore.clear()
             routingChangeManager.clearPendingChanges()
         }
     }

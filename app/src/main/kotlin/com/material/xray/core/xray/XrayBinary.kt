@@ -98,15 +98,24 @@ class XrayBinary internal constructor(
         }.getOrNull()
     }
 
-    fun configPath(): String = File(environment.filesDir, "config.json").absolutePath
+    fun configPath(): String = File(environment.filesDir, ACTIVE_CONFIG_FILE).absolutePath
 
     fun readConfig(): String? = File(configPath())
         .takeIf { it.isFile }
         ?.let { config -> runCatching { config.readText() }.getOrNull() }
 
     fun writeConfig(configJson: String) {
-        File(environment.filesDir, "config.json").writeText(configJson)
+        File(environment.filesDir, ACTIVE_CONFIG_FILE).writeText(configJson)
     }
+
+    /**
+     * The config the user edited by hand, used verbatim in place of a generated one. Null when no
+     * override is stored.
+     */
+    fun readOverrideConfig(): String? = File(environment.filesDir, ACTIVE_CONFIG_OVERRIDE_FILE)
+        .takeIf { it.isFile }
+        ?.let { override -> runCatching { override.readText() }.getOrNull() }
+        ?.takeIf { it.isNotBlank() }
 
     private fun extractAsset(assetName: String, targetName: String, executable: Boolean): Boolean = runCatching {
         val target = File(binaryDir, targetName)
@@ -125,6 +134,11 @@ class XrayBinary internal constructor(
 }
 
 private val XRAY_VERSION_REGEX = Regex("^Xray\\s+v?([^\\s]+)")
+
+internal const val ACTIVE_CONFIG_FILE = "config.json"
+
+/** Sibling of [ACTIVE_CONFIG_FILE] holding a hand-edited config that replaces generation. */
+internal const val ACTIVE_CONFIG_OVERRIDE_FILE = "config_override.json"
 
 internal fun parseXrayVersion(output: String): String? = output.lineSequence()
     .mapNotNull { line -> XRAY_VERSION_REGEX.find(line.trim())?.groupValues?.getOrNull(1) }

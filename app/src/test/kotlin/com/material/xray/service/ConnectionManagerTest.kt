@@ -200,7 +200,10 @@ class ConnectionManagerTest {
 
         harness.manager.connect(
             server(),
-            runtimeSettings().copy(rootConnectionBackend = RootConnectionBackend.Tproxy),
+            runtimeSettings().copy(
+                rootConnectionBackend = RootConnectionBackend.Tproxy,
+                tunnelTetheredClients = true,
+            ),
             preparation = ConnectionPreparation.ReusePreparedRuntime,
         )
 
@@ -211,8 +214,10 @@ class ConnectionManagerTest {
         assertEquals(1, harness.tproxyGateway.activateCalls)
         assertEquals(RootConnectionBackend.Tproxy, harness.stateStore.state?.rootConnectionBackend)
         assertEquals("TPROXY", harness.stateStore.state?.tunName)
+        assertEquals("wlan0", harness.stateStore.state?.tproxy?.tetherUpstreamInterface)
         val config = Json.parseToJsonElement(requireNotNull(harness.binary.configJson)).jsonObject
         assertTrue(config.getValue("inbounds").jsonArray.none { it.jsonObject["protocol"]?.jsonPrimitive?.content == "tun" })
+        assertEquals("0.0.0.0", config.getValue("inbounds").jsonArray.single().jsonObject["listen"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -777,6 +782,8 @@ class ConnectionManagerTest {
             appTunRoutes: List<TunManager.AppTunRoute>,
             managedAppRouteCount: Int,
             routeProfileIds: Set<Int>,
+            tunnelTetheredClients: Boolean,
+            bypassLan: Boolean,
         ): TunManager.RoutingResult {
             applyCalls += 1
             lastAllowIpv6 = allowIpv6
@@ -801,12 +808,16 @@ class ConnectionManagerTest {
             outboundMark: Int,
             allowIpv6: Boolean,
             existingState: TproxyRuntimeState?,
+            tetherUpstreamInterface: String?,
+            bypassLan: Boolean,
         ): TproxyTrafficPlan {
             val state = existingState ?: TproxyManager.createRuntimeState(
                 routeTable = routeTable + 200,
                 groups = listOf(Long.MAX_VALUE to "tproxy-in-default"),
                 ports = listOf(48_321),
                 allowIpv6 = allowIpv6,
+                tetherUpstreamInterface = tetherUpstreamInterface,
+                tetherBypassLan = bypassLan,
             )
             return TproxyTrafficPlan(
                 runtimeState = state,
@@ -831,7 +842,7 @@ class ConnectionManagerTest {
             removeGuardCalls += 1
             return true
         }
-        override suspend fun hasGuard(): Boolean = true
+        override suspend fun hasGuard(state: TproxyRuntimeState?): Boolean = true
     }
 
     private class FakeCleanup : ConnectionCleanup {
@@ -951,6 +962,8 @@ class ConnectionManagerTest {
             fwmark: Int,
             routeTable: Int,
             allowIpv6: Boolean,
+            tunnelTetheredClients: Boolean,
+            bypassLan: Boolean,
         ): Boolean {
             lastTunName = tunName
             return false

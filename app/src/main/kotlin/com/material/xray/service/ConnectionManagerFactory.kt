@@ -225,6 +225,8 @@ internal interface TproxyRoutingGateway {
         outboundMark: Int,
         allowIpv6: Boolean,
         existingState: TproxyRuntimeState? = null,
+        tetherUpstreamInterface: String? = null,
+        bypassLan: Boolean = true,
     ): TproxyTrafficPlan
 
     suspend fun installGuard(plan: TproxyTrafficPlan): TunManager.RoutingResult
@@ -232,7 +234,7 @@ internal interface TproxyRoutingGateway {
     suspend fun update(plan: TproxyTrafficPlan, currentSlot: String): TunManager.RoutingResult
     suspend fun verify(state: TproxyRuntimeState): Boolean
     suspend fun removeGuard(): Boolean
-    suspend fun hasGuard(): Boolean
+    suspend fun hasGuard(state: TproxyRuntimeState?): Boolean
 }
 
 internal class TproxyManagerRoutingGateway(
@@ -246,6 +248,8 @@ internal class TproxyManagerRoutingGateway(
         outboundMark: Int,
         allowIpv6: Boolean,
         existingState: TproxyRuntimeState?,
+        tetherUpstreamInterface: String?,
+        bypassLan: Boolean,
     ): TproxyTrafficPlan {
         val inboundTags = if (appRoutingPlan.proxyRoutes.isEmpty()) {
             appRoutingPlan.proxyServerIds.mapIndexed { index, routeKey ->
@@ -262,6 +266,8 @@ internal class TproxyManagerRoutingGateway(
             groups = routeIdentities,
             ports = portAllocator.allocate(routeIdentities.size, allowIpv6),
             allowIpv6 = allowIpv6,
+            tetherUpstreamInterface = tetherUpstreamInterface,
+            tetherBypassLan = bypassLan,
         )
         require(state.groups.map { it.routeKey } == routeIdentities.map { it.first }) {
             "TPROXY traffic group topology changed"
@@ -286,7 +292,7 @@ internal class TproxyManagerRoutingGateway(
     override suspend fun update(plan: TproxyTrafficPlan, currentSlot: String): TunManager.RoutingResult = manager.update(plan, currentSlot)
     override suspend fun verify(state: TproxyRuntimeState): Boolean = manager.verify(state)
     override suspend fun removeGuard(): Boolean = manager.removeGuard()
-    override suspend fun hasGuard(): Boolean = manager.hasGuard()
+    override suspend fun hasGuard(state: TproxyRuntimeState?): Boolean = manager.hasGuard(state)
 
     private companion object {
         const val TPROXY_ROUTE_TABLE_OFFSET = 200

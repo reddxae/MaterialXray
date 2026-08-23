@@ -18,6 +18,8 @@ data class TproxyRuntimeState(
     val outputChainSlot: String,
     val groups: List<TproxyGroupState>,
     val ipv6Enabled: Boolean,
+    val tetherUpstreamInterface: String? = null,
+    val tetherBypassLan: Boolean = true,
 )
 
 @Serializable

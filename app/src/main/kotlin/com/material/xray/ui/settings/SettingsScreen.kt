@@ -196,6 +196,7 @@ private fun SettingsScreenContent(
     val useRootService = settings.useRootService
     val rootConnectionBackend = settings.rootConnectionBackend
     val bypassLan = settings.bypassLan
+    val tunnelTetheredClients = settings.tunnelTetheredClients
     val allowIpv6 = settings.allowIpv6
     val xrayBufferSizeKiB = settings.xrayBufferSizeKiB
     val tunMtu = settings.tunMtu
@@ -358,11 +359,13 @@ private fun SettingsScreenContent(
                         rootServiceActive = rootServiceActive,
                         useRootService = useRootService,
                         rootConnectionBackend = rootConnectionBackend,
+                        tunnelTetheredClients = tunnelTetheredClients,
                         tproxyCompatibility = tproxyCompatibility,
                         autoConnect = autoConnect,
                         oemAutostartGuidance = oemAutostartGuidance,
                         onUseRootServiceChange = viewModel::setUseRootService,
                         onRootConnectionBackendChange = viewModel::setRootConnectionBackend,
+                        onTunnelTetheredClientsChange = viewModel::setTunnelTetheredClients,
                         onRetryTproxyCompatibility = viewModel::retryTproxyCompatibilityCheck,
                         onAutoConnectChange = viewModel::setAutoConnect,
                         onOpenOemAutostartSettings = viewModel::openOemAutostartSettings,
@@ -945,11 +948,13 @@ private fun SettingsServiceSection(
     rootServiceActive: Boolean,
     useRootService: Boolean,
     rootConnectionBackend: RootConnectionBackend,
+    tunnelTetheredClients: Boolean,
     tproxyCompatibility: TproxyCompatibility,
     autoConnect: Boolean,
     oemAutostartGuidance: OemAutostartGuidance,
     onUseRootServiceChange: (Boolean) -> Unit,
     onRootConnectionBackendChange: (RootConnectionBackend) -> Unit,
+    onTunnelTetheredClientsChange: (Boolean) -> Unit,
     onRetryTproxyCompatibility: () -> Unit,
     onAutoConnectChange: (Boolean) -> Unit,
     onOpenOemAutostartSettings: () -> Unit,
@@ -1034,6 +1039,13 @@ private fun SettingsServiceSection(
                     Text(stringResource(R.string.settings_retry_compatibility_check))
                 }
             }
+
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_tunnel_tethered_clients_title),
+                description = stringResource(R.string.settings_tunnel_tethered_clients_description),
+                checked = tunnelTetheredClients,
+                onCheckedChange = onTunnelTetheredClientsChange,
+            )
         }
 
         SettingsSwitchRow(

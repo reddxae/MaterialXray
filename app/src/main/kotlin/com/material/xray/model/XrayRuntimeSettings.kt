@@ -11,6 +11,7 @@ data class XrayRuntimeSettings(
     val logLevel: XrayLogLevel,
     val defaultOutbound: XrayOutbound,
     val bypassLan: Boolean,
+    val tunnelTetheredClients: Boolean = false,
     val allowIpv6: Boolean,
     val routingRules: List<RoutingRule>,
     val xrayBufferSizeKiB: Int = DEFAULT_XRAY_BUFFER_SIZE_KIB,

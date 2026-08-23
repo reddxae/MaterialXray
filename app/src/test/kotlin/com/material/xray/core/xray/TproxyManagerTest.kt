@@ -143,6 +143,16 @@ class TproxyManagerTest {
     }
 
     @Test
+    fun `tether guard verification covers both families and forwarding hooks`() {
+        val command = TproxyManager.guardVerifyCommand(APP_UID, plan(tetherUpstreamInterface = "wlan0").runtimeState)
+
+        assertTrue(command.contains("iptables -t mangle -C OUTPUT -j MXG278b"))
+        assertTrue(command.contains("ip6tables -t mangle -C OUTPUT -j MXG278b"))
+        assertTrue(command.contains("iptables -t filter -C INPUT -j MXG278b"))
+        assertTrue(command.contains("ip6tables -t filter -C FORWARD -j MXG278b"))
+    }
+
+    @Test
     fun `restore guard checks support and retains individual command fallback`() {
         val command = TproxyManager.guardRestoreCommand(plan(), APP_UID)
 
@@ -208,6 +218,54 @@ class TproxyManagerTest {
     }
 
     @Test
+    fun `tether traffic uses base inbound without intercepting upstream or LAN`() {
+        val command = TproxyManager.activationCommand(plan(tetherUpstreamInterface = "wlan0"), APP_UID)
+        val upstreamReturn = command.indexOf("-i wlan0 -j RETURN")
+        val dnsCapture = command.indexOf("--dport 53 -j TPROXY --on-ip 0.0.0.0 --on-port 48321")
+        val lanReturn = command.indexOf("-d 192.168.0.0/16 -j RETURN")
+        val publicCapture = command.indexOf("-p tcp -j TPROXY --on-ip 0.0.0.0 --on-port 48321")
+
+        assertTrue(upstreamReturn in 0..<dnsCapture)
+        assertTrue(dnsCapture < lanReturn)
+        assertTrue(lanReturn < publicCapture)
+        assertTrue(command.contains("ip6tables -t filter -I INPUT 1 -j MXP278b"))
+        assertTrue(command.contains("ip6tables -t filter -I FORWARD 1 -j MXP278b"))
+        assertTrue(command.contains("ip6tables -t filter -A MXP278b -j REJECT --reject-with icmp6-no-route"))
+    }
+
+    @Test
+    fun `tether startup guard blocks public forwarding until activation`() {
+        val command = TproxyManager.guardInstallCommand(plan(tetherUpstreamInterface = "wlan0"), APP_UID)
+
+        assertTrue(command.contains("iptables -t filter -I INPUT 1 -j MXG278b"))
+        assertTrue(command.contains("iptables -t filter -I FORWARD 1 -j MXG278b"))
+        assertTrue(command.contains("iptables -t filter -A MXG278b -i wlan0 -j RETURN"))
+        assertTrue(command.contains("iptables -t filter -A MXG278b -j DROP"))
+    }
+
+    @Test
+    fun `tether traffic does not bypass private destinations when LAN bypass is disabled`() {
+        val command = TproxyManager.activationCommand(
+            plan(tetherUpstreamInterface = "wlan0", tetherBypassLan = false),
+            APP_UID,
+        )
+
+        assertFalse(command.contains("MXP278b -d 192.168.0.0/16 -j RETURN"))
+    }
+
+    @Test
+    fun `tether restore payloads use validated interface without shell quotes`() {
+        val plan = plan(tetherUpstreamInterface = "wlan0")
+        val activation = TproxyManager.activationRestoreCommand(plan, APP_UID)
+        val guard = TproxyManager.guardRestoreCommand(plan, APP_UID)
+
+        assertTrue(activation.contains("-i wlan0 -j RETURN"))
+        assertTrue(guard.contains("-i wlan0 -j RETURN"))
+        assertFalse(activation.contains("-i '\\''wlan0'\\'' -j RETURN"))
+        assertFalse(guard.contains("-i '\\''wlan0'\\'' -j RETURN"))
+    }
+
+    @Test
     fun `health verification covers marks UDP and live listeners`() {
         val command = TproxyManager.verifyCommand(plan().runtimeState, APP_UID)
 
@@ -230,12 +288,18 @@ class TproxyManagerTest {
         assertFalse(command.contains("ip -6 rule show"))
     }
 
-    private fun plan(allowIpv6: Boolean = false): TproxyTrafficPlan {
+    private fun plan(
+        allowIpv6: Boolean = false,
+        tetherUpstreamInterface: String? = null,
+        tetherBypassLan: Boolean = true,
+    ): TproxyTrafficPlan {
         val state = TproxyManager.createRuntimeState(
             routeTable = 300,
             groups = listOf(Long.MAX_VALUE to "tproxy-in-default", 7L to "app-in-7"),
             ports = listOf(48_321, 48_322),
             allowIpv6 = allowIpv6,
+            tetherUpstreamInterface = tetherUpstreamInterface,
+            tetherBypassLan = tetherBypassLan,
         )
         return TproxyTrafficPlan(
             runtimeState = state,

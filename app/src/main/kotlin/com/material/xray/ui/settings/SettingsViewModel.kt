@@ -170,6 +170,11 @@ class SettingsViewModel @Inject constructor(
         settingsRepo.setBypassLan(enabled)
         reloadActiveConnectionIfConnected()
     }
+    fun setTunnelTetheredClients(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == currentSettings().tunnelTetheredClients) return@launch
+        settingsRepo.setTunnelTetheredClients(enabled)
+        reloadActiveConnectionIfConnected()
+    }
     fun setAllowIpv6(enabled: Boolean) = viewModelScope.launch {
         val settings = currentSettings()
         if (enabled == settings.allowIpv6) return@launch

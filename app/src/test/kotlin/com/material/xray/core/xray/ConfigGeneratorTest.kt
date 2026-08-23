@@ -262,6 +262,25 @@ class ConfigGeneratorTest {
     }
 
     @Test
+    fun `IPv4 TPROXY tether inbound accepts forwarded traffic`() {
+        val config = generator.generate(
+            vlessReality,
+            inbounds = listOf(
+                XrayInbound.Tproxy(
+                    48_321,
+                    "tproxy-in-default",
+                    255,
+                    allowIpv6 = false,
+                    acceptNonLoopback = true,
+                ),
+            ),
+        )
+        val inbound = Json.parseToJsonElement(config).jsonObject.getValue("inbounds").jsonArray.single().jsonObject
+
+        assertEquals("0.0.0.0", inbound.getValue("listen").jsonPrimitive.content)
+    }
+
+    @Test
     fun `raw config includes bootstrap DNS hosts for every proxy route`() {
         val rawServer = vlessReality.copy(
             rawConfigJson = """

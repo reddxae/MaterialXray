@@ -183,6 +183,64 @@ class TunManagerTest {
     }
 
     @Test
+    fun `tether routing captures DNS and public traffic while preserving upstream and LAN`() = runTest {
+        val commands = mutableListOf<String>()
+        val manager = TunManager { command ->
+            commands += command
+            successfulCommand()
+        }
+
+        val result = manager.applyRouting(
+            tunName = "xray0",
+            fwmark = 255,
+            routeTable = 100,
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+            tunnelTetheredClients = true,
+        )
+
+        assertTrue(result.success)
+        val command = commands.joinToString("\n")
+        assertTrue(command.contains("fwmark 0x10000000/0x10000000 table 100 prio 11998"))
+        assertTrue(command.contains("iptables -w -t mangle -A MXTP -i 'wlan0' -j RETURN"))
+        assertTrue(command.indexOf("--dport 53 -j MARK") < command.indexOf("-d 192.168.0.0/16 -j RETURN"))
+        assertTrue(command.contains("iptables -w -t nat -A MXTD"))
+        assertTrue(command.contains("--to-destination 198.18.0.1"))
+        assertTrue(command.contains("ip6tables -w -t filter -A MXTF -j REJECT --reject-with icmp6-no-route"))
+        commands.forEach { generated ->
+            assertEquals(0, ProcessBuilder("sh", "-n", "-c", generated).start().waitFor())
+        }
+    }
+
+    @Test
+    fun `tether routing sends private destinations through TUN when LAN bypass is disabled`() = runTest {
+        val commands = mutableListOf<String>()
+        val manager = TunManager { command ->
+            commands += command
+            successfulCommand()
+        }
+
+        val result = manager.applyRouting(
+            tunName = "xray0",
+            fwmark = 255,
+            routeTable = 100,
+            bypassTable = 101,
+            physicalRoute = TunManager.PhysicalRoute("wlan0", "192.0.2.1", "main"),
+            allowIpv6 = false,
+            bypassUids = emptySet(),
+            tunnelTetheredClients = true,
+            bypassLan = false,
+        )
+
+        assertTrue(result.success)
+        val command = commands.joinToString("\n")
+        assertFalse(command.contains("MXTP -d 192.168.0.0/16 -j RETURN"))
+        assertFalse(command.contains("MXTF -d 192.168.0.0/16 -j RETURN"))
+    }
+
+    @Test
     fun `routing guard removal deletes exact rules in bounded batches`() = runTest {
         val commands = mutableListOf<String>()
         var ipv4GuardInstalled = true

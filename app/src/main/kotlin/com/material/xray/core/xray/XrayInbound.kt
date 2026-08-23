@@ -17,10 +17,11 @@ sealed interface XrayInbound {
         override val tag: String,
         val outboundMark: Int,
         val allowIpv6: Boolean,
+        val acceptNonLoopback: Boolean = false,
     ) : XrayInbound
 }
 
 internal fun XrayInbound.toJson(): JsonObject = when (this) {
     is XrayInbound.Tun -> buildTunInbound(name, tag, mtu)
-    is XrayInbound.Tproxy -> buildTproxyInbound(port, tag, outboundMark, allowIpv6)
+    is XrayInbound.Tproxy -> buildTproxyInbound(port, tag, outboundMark, allowIpv6, acceptNonLoopback)
 }

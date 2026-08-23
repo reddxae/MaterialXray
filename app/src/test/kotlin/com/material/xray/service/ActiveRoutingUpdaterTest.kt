@@ -36,13 +36,22 @@ class ActiveRoutingUpdaterTest {
             tunGateway = tunGateway,
         )
 
-        val applied = updater.applyAppRoutingChanges(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE, allowIpv6 = false)
+        val applied = updater.applyAppRoutingChanges(
+            connectedState(),
+            BASE_TUN,
+            FWMARK,
+            ROUTE_TABLE,
+            allowIpv6 = false,
+            tunnelTetheredClients = true,
+            bypassLan = true,
+        )
 
         assertTrue(applied)
         assertFalse(tunGateway.lastAllowIpv6)
         assertEquals(setOf(DIRECT_UID, APP_UID), tunGateway.lastBypassUids)
         assertEquals(plan.tunRoutes, tunGateway.lastAppTunRoutes)
         assertEquals(plan.routeProfileIds, tunGateway.lastRouteProfileIds)
+        assertTrue(tunGateway.lastTunnelTetheredClients)
         assertEquals(1, tunGateway.lastManagedAppRouteCount)
         assertEquals("wlan0", stateStore.state?.physicalInterface)
         assertEquals("10.0.0.1", stateStore.state?.physicalGateway)
@@ -68,7 +77,15 @@ class ActiveRoutingUpdaterTest {
             tunGateway = tunGateway,
         )
 
-        val applied = updater.applyAppRoutingChanges(connectedState(), BASE_TUN, FWMARK, ROUTE_TABLE, allowIpv6 = false)
+        val applied = updater.applyAppRoutingChanges(
+            connectedState(),
+            BASE_TUN,
+            FWMARK,
+            ROUTE_TABLE,
+            allowIpv6 = false,
+            tunnelTetheredClients = false,
+            bypassLan = true,
+        )
 
         assertFalse(applied)
         assertEquals(0, tunGateway.applyRoutingCalls)
@@ -160,6 +177,7 @@ class ActiveRoutingUpdaterTest {
         var lastAppTunRoutes: List<TunManager.AppTunRoute> = emptyList()
         var lastManagedAppRouteCount: Int? = null
         var lastRouteProfileIds: Set<Int> = emptySet()
+        var lastTunnelTetheredClients = false
 
         override suspend fun findAvailableWlanName(): String = "wlan0"
 
@@ -183,6 +201,8 @@ class ActiveRoutingUpdaterTest {
             appTunRoutes: List<TunManager.AppTunRoute>,
             managedAppRouteCount: Int,
             routeProfileIds: Set<Int>,
+            tunnelTetheredClients: Boolean,
+            bypassLan: Boolean,
         ): TunManager.RoutingResult {
             applyRoutingCalls += 1
             lastAllowIpv6 = allowIpv6
@@ -190,6 +210,7 @@ class ActiveRoutingUpdaterTest {
             lastAppTunRoutes = appTunRoutes
             lastManagedAppRouteCount = managedAppRouteCount
             lastRouteProfileIds = routeProfileIds
+            lastTunnelTetheredClients = tunnelTetheredClients
             return routingResult
         }
 

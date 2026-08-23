@@ -123,6 +123,8 @@
     <string name="settings_section_service">Служба</string>
     <string name="settings_use_root_service">Использовать root-доступ</string>
     <string name="settings_root_connection_backend">Способ подключения ядра</string>
+    <string name="settings_tunnel_tethered_clients_title">Туннелировать подключённые устройства</string>
+    <string name="settings_tunnel_tethered_clients_description">Направлять трафик точки доступа Wi-Fi и USB-модема через Xray.</string>
     <string name="settings_tproxy_unsupported">TPROXY не поддерживается на этом устройстве</string>
     <string name="settings_retry_compatibility_check">Повторить проверку совместимости</string>
     <string name="settings_unavailable">Недоступно</string>

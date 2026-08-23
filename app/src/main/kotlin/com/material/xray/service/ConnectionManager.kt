@@ -139,7 +139,12 @@ internal class ConnectionManager(
                     )
                 },
             )
-            val tproxyPreparation = prepareTproxyPlan(rootBackend, appRoutingPlan, runtimeSettings) ?: return
+            val tproxyPreparation = prepareTproxyPlan(
+                rootBackend,
+                appRoutingPlan,
+                runtimeSettings,
+                physicalRouteResult.route,
+            ) ?: return
             val tproxyPlan = tproxyPreparation.plan
             if (hasConfiguredAppRouting(appRoutingPlan)) {
                 logAppRoutingPlan(appRoutingPlan)
@@ -215,6 +220,8 @@ internal class ConnectionManager(
                     bypassTable,
                     physicalRouteResult.route,
                     runtimeSettings.allowIpv6,
+                    runtimeSettings.tunnelTetheredClients,
+                    runtimeSettings.bypassLan,
                     appRoutingPlan,
                     pid,
                     rootBackend,
@@ -341,6 +348,7 @@ internal class ConnectionManager(
         rootBackend: RootConnectionBackend,
         appRoutingPlan: AppRoutingPlan,
         runtimeSettings: XrayRuntimeSettings,
+        physicalRoute: TunManager.PhysicalRoute?,
     ): TproxyPlanPreparation? {
         if (rootBackend != RootConnectionBackend.Tproxy) return TproxyPlanPreparation(null)
         return TproxyPlanPreparation(
@@ -349,6 +357,8 @@ internal class ConnectionManager(
                 routeTable = runtimeSettings.routeTable,
                 outboundMark = runtimeSettings.fwmark,
                 allowIpv6 = runtimeSettings.allowIpv6,
+                tetherUpstreamInterface = physicalRoute?.dev?.takeIf { runtimeSettings.tunnelTetheredClients },
+                bypassLan = runtimeSettings.bypassLan,
             ),
         )
     }
@@ -620,6 +630,7 @@ internal class ConnectionManager(
                                     tag = group.inboundTag,
                                     outboundMark = runtimeSettings.fwmark,
                                     allowIpv6 = runtimeSettings.allowIpv6,
+                                    acceptNonLoopback = tproxyPlan.runtimeState.tetherUpstreamInterface != null,
                                 )
                             },
                         )
@@ -735,6 +746,8 @@ internal class ConnectionManager(
         bypassTable: Int,
         physicalRoute: TunManager.PhysicalRoute?,
         allowIpv6: Boolean,
+        tunnelTetheredClients: Boolean,
+        bypassLan: Boolean,
         appRoutingPlan: AppRoutingPlan,
         pid: Int,
         rootBackend: RootConnectionBackend,
@@ -791,6 +804,8 @@ internal class ConnectionManager(
                 bypassTable,
                 physicalRoute,
                 allowIpv6,
+                tunnelTetheredClients,
+                bypassLan,
                 appRoutingPlan,
             )
         ) {
@@ -883,6 +898,8 @@ internal class ConnectionManager(
         bypassTable: Int,
         physicalRoute: TunManager.PhysicalRoute?,
         allowIpv6: Boolean,
+        tunnelTetheredClients: Boolean,
+        bypassLan: Boolean,
         appRoutingPlan: AppRoutingPlan,
     ): Boolean {
         if (!managesSystemRouting) return true
@@ -909,6 +926,8 @@ internal class ConnectionManager(
                         appTunRoutes = appRoutingPlan.tunRoutes,
                         managedAppRouteCount = appRoutingPlan.tunRoutes.size,
                         routeProfileIds = appRoutingPlan.routeProfileIds,
+                        tunnelTetheredClients = tunnelTetheredClients,
+                        bypassLan = bypassLan,
                     )
                 },
             ),
@@ -1029,6 +1048,8 @@ internal class ConnectionManager(
                 fwmark = runtimeSettings.fwmark,
                 routeTable = runtimeSettings.routeTable,
                 allowIpv6 = runtimeSettings.allowIpv6,
+                tunnelTetheredClients = runtimeSettings.tunnelTetheredClients,
+                bypassLan = runtimeSettings.bypassLan,
             )
         }
 
@@ -1050,6 +1071,8 @@ internal class ConnectionManager(
             outboundMark = runtimeSettings.fwmark,
             allowIpv6 = runtimeSettings.allowIpv6,
             existingState = tproxyState,
+            tetherUpstreamInterface = tproxyState.tetherUpstreamInterface,
+            bypassLan = tproxyState.tetherBypassLan,
         )
         val result = executeStep(
             ConnectionStep(
@@ -1275,8 +1298,8 @@ internal class ConnectionManager(
 
     suspend fun adoptPersistedTransitionGuard(): Boolean {
         val state = stateStore.read() ?: return false
-        if (state.transitionGuard == null && state.tproxy == null) return false
-        if (!tproxyGateway.hasGuard()) return false
+        val guardState = state.transitionGuard ?: state.tproxy ?: return false
+        if (!tproxyGateway.hasGuard(guardState)) return false
         transitionGuardInstalled = true
         preserveGuardOnFailure = true
         return true

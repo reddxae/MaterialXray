@@ -30,6 +30,8 @@ internal interface ActiveRoutingController {
         fwmark: Int,
         routeTable: Int,
         allowIpv6: Boolean,
+        tunnelTetheredClients: Boolean,
+        bypassLan: Boolean,
     ): Boolean
 
     suspend fun updatePhysicalBypassRoute(
@@ -64,6 +66,8 @@ internal interface TunRoutingGateway {
         appTunRoutes: List<TunManager.AppTunRoute>,
         managedAppRouteCount: Int,
         routeProfileIds: Set<Int>,
+        tunnelTetheredClients: Boolean,
+        bypassLan: Boolean,
     ): TunManager.RoutingResult
 
     suspend fun replacePhysicalBypassRoute(
@@ -116,6 +120,8 @@ internal class TunManagerRoutingGateway(
         appTunRoutes: List<TunManager.AppTunRoute>,
         managedAppRouteCount: Int,
         routeProfileIds: Set<Int>,
+        tunnelTetheredClients: Boolean,
+        bypassLan: Boolean,
     ): TunManager.RoutingResult = tunManager.applyRouting(
         tunName = tunName,
         fwmark = fwmark,
@@ -127,6 +133,8 @@ internal class TunManagerRoutingGateway(
         appTunRoutes = appTunRoutes,
         managedAppRouteCount = managedAppRouteCount,
         routeProfileIds = routeProfileIds,
+        tunnelTetheredClients = tunnelTetheredClients,
+        bypassLan = bypassLan,
     )
 
     override suspend fun replacePhysicalBypassRoute(
@@ -159,6 +167,8 @@ internal class ActiveRoutingUpdater(
         fwmark: Int,
         routeTable: Int,
         allowIpv6: Boolean,
+        tunnelTetheredClients: Boolean,
+        bypassLan: Boolean,
     ): Boolean {
         val startedAt = elapsedRealtime()
         val persistedState = stateStore.read()
@@ -262,6 +272,8 @@ internal class ActiveRoutingUpdater(
                         appTunRoutes = appRoutingPlan.tunRoutes,
                         managedAppRouteCount = persistedState.appProxyServerIds.size,
                         routeProfileIds = appRoutingPlan.routeProfileIds,
+                        tunnelTetheredClients = tunnelTetheredClients,
+                        bypassLan = bypassLan,
                     )
                 },
             ),

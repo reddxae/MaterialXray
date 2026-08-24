@@ -1,5 +1,6 @@
 package com.material.xray
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
@@ -8,6 +9,9 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.material.xray.core.locale.notifyAppLocaleChanged
 import com.material.xray.ui.home.HomeDataState
@@ -24,9 +28,12 @@ class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var settingsDataState: SettingsDataState
 
+    private var pendingSubscriptionLink by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        pendingSubscriptionLink = subscriptionLinkFromDeepLink(intent.dataString)
         notifyAppLocaleChanged()
         val navigationBarStyle = if (
             resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
@@ -50,10 +57,25 @@ class MainActivity : AppCompatActivity() {
         }
         setContent {
             MaterialXrayTheme {
-                MainNavigation()
+                MainNavigation(
+                    pendingSubscriptionLink = pendingSubscriptionLink,
+                    onSubscriptionLinkHandled = { pendingSubscriptionLink = null },
+                )
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        pendingSubscriptionLink = subscriptionLinkFromDeepLink(intent.dataString)
+    }
+}
+
+internal fun subscriptionLinkFromDeepLink(deepLink: String?): String? {
+    val link = deepLink?.takeIf { it.startsWith(SUBSCRIPTION_DEEP_LINK_PREFIX) }
+        ?.removePrefix(SUBSCRIPTION_DEEP_LINK_PREFIX)
+        ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+    return link?.takeIf { it.length > "https://".length }
 }
 
 /**
@@ -63,3 +85,4 @@ class MainActivity : AppCompatActivity() {
 internal fun keepSplashOnScreen(initialDataLoaded: Boolean, elapsedMillis: Long): Boolean = !initialDataLoaded && elapsedMillis < SPLASH_SCREEN_TIMEOUT_MS
 
 internal const val SPLASH_SCREEN_TIMEOUT_MS = 2_000L
+private const val SUBSCRIPTION_DEEP_LINK_PREFIX = "mxray://add/"

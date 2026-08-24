@@ -29,8 +29,20 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="false"
-            android:theme="@style/Theme.MaterialXray.Splash" />
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.MaterialXray.Splash">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="add"
+                    android:scheme="mxray" />
+            </intent-filter>
+        </activity>
 
         <activity-alias
             android:name=".DefaultLauncherAlias"

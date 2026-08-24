@@ -49,7 +49,10 @@ import com.material.xray.ui.routing.RoutingScreen
 import com.material.xray.ui.settings.SettingsScreen
 
 @Composable
-fun MainNavigation() {
+fun MainNavigation(
+    pendingSubscriptionLink: String?,
+    onSubscriptionLinkHandled: () -> Unit,
+) {
     val viewModel: MainNavigationViewModel = hiltViewModel()
     val navController = rememberNavController()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -87,6 +90,16 @@ fun MainNavigation() {
 
     LaunchedEffect(showAdvancedOptions, currentRoute) {
         if (!showAdvancedOptions && currentRoute == Screen.Logs.route) {
+            navController.navigate(Screen.Home.route) {
+                popUpTo(navController.graph.startDestinationId) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
+    LaunchedEffect(pendingSubscriptionLink) {
+        if (pendingSubscriptionLink != null && currentRoute != Screen.Home.route) {
             navController.navigate(Screen.Home.route) {
                 popUpTo(navController.graph.startDestinationId) { saveState = true }
                 launchSingleTop = true
@@ -157,6 +170,8 @@ fun MainNavigation() {
                     HomeScreen(
                         showTitleBarLogo = showTitleBarLogo,
                         floatingConnectButton = floatingConnectButton,
+                        pendingSubscriptionLink = pendingSubscriptionLink,
+                        onSubscriptionLinkHandled = onSubscriptionLinkHandled,
                         onOpenServerConfig = { serverId, name ->
                             configViewerRequest = ConfigViewerRequest.Server(serverId, name)
                         },

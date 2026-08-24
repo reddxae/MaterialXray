@@ -169,6 +169,8 @@ import kotlinx.coroutines.flow.StateFlow
 fun HomeScreen(
     showTitleBarLogo: Boolean,
     floatingConnectButton: Boolean,
+    pendingSubscriptionLink: String?,
+    onSubscriptionLinkHandled: () -> Unit,
     onOpenServerConfig: (Long, String) -> Unit,
     onViewRunningConfig: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -179,6 +181,13 @@ fun HomeScreen(
         selectedServer = uiState.selectedServer,
         alwaysOnVpn = uiState.alwaysOnVpn,
     )
+
+    LaunchedEffect(pendingSubscriptionLink) {
+        pendingSubscriptionLink?.let {
+            onSubscriptionLinkHandled()
+            viewModel.addLink(it)
+        }
+    }
 
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }

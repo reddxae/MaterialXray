@@ -441,6 +441,11 @@ class XrayService : VpnService() {
                 launchConnectionCommand { reloadAppRouting() }
             }
             ACTION_RESTORE_STATUS -> {
+                startAsForeground(
+                    localizedString(R.string.app_name),
+                    localizedString(R.string.notification_status_starting),
+                    showDisconnectAction = false,
+                )
                 launchConnectionCommand {
                     if (isRunningAlwaysOnVpn()) {
                         connectAlwaysOnVpn()

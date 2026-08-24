@@ -2,6 +2,8 @@ package com.material.xray.ui.home
 
 import com.material.xray.model.PingMethod
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HomeLatencySortingTest {
@@ -41,15 +43,14 @@ class HomeLatencySortingTest {
 
     @Test
     fun `shows an error when the only latency result is unavailable`() {
-        assertEquals(true, latencyShowsError(ServerLatencyState(latencyMs = -1)))
-        assertEquals(false, latencyShowsError(ServerLatencyState(latencyMs = 34)))
-        assertEquals(false, latencyShowsError(ServerLatencyState(latencyMs = LATENCY_TESTING)))
+        assertTrue(latencyShowsError(ServerLatencyState(latencyMs = -1)))
+        assertFalse(latencyShowsError(ServerLatencyState(latencyMs = 34)))
+        assertFalse(latencyShowsError(ServerLatencyState(latencyMs = LATENCY_TESTING)))
     }
 
     @Test
     fun `uses only httping availability for the dual result error`() {
-        assertEquals(
-            false,
+        assertFalse(
             latencyShowsError(
                 ServerLatencyState(
                     latencyMs = 132,
@@ -58,8 +59,7 @@ class HomeLatencySortingTest {
                 ),
             ),
         )
-        assertEquals(
-            true,
+        assertTrue(
             latencyShowsError(
                 ServerLatencyState(
                     latencyMs = -1,

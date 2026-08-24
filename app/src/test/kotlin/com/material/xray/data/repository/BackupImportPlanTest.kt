@@ -25,7 +25,13 @@ class BackupImportPlanTest {
                     key = "server-9",
                     subscriptionKey = "subscription-4",
                     subscriptionUrl = "https://example.com/sub",
-                    config = serverConfig(),
+                    config = ServerConfig(
+                        protocol = Protocol.VLESS,
+                        name = "Server",
+                        address = "example.com",
+                        port = 443,
+                        password = "uuid",
+                    ),
                 ),
             ),
             bypassedApps = emptyList(),
@@ -96,12 +102,4 @@ class BackupImportPlanTest {
             ),
         )
     }
-
-    private fun serverConfig() = ServerConfig(
-        protocol = Protocol.VLESS,
-        name = "Server",
-        address = "example.com",
-        port = 443,
-        password = "uuid",
-    )
 }

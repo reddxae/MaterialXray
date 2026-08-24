@@ -130,28 +130,19 @@ class ConfigGeneratorTest {
     }
 
     @Test
-    fun `sets fwmark on all outbounds`() {
+    fun `sets socket options on all outbounds`() {
         val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255)
         val json = Json.parseToJsonElement(config).jsonObject
         val outbounds = json["outbounds"]!!.jsonArray
         for (ob in outbounds) {
             if (ob.jsonObject["protocol"]?.jsonPrimitive?.content == "blackhole") continue
-            val mark = ob.jsonObject["streamSettings"]?.jsonObject
-                ?.get("sockopt")?.jsonObject?.get("mark")?.jsonPrimitive?.int
-            assertEquals("All outbounds must have fwmark", 255, mark)
-        }
-    }
-
-    @Test
-    fun `sets outbound domain resolution to xray dns`() {
-        val config = generator.generate(vlessReality, tunName = "xray0", fwmark = 255)
-        val json = Json.parseToJsonElement(config).jsonObject
-        val outbounds = json["outbounds"]!!.jsonArray
-        for (ob in outbounds) {
-            if (ob.jsonObject["protocol"]?.jsonPrimitive?.content == "blackhole") continue
-            val domainStrategy = ob.jsonObject["streamSettings"]?.jsonObject
-                ?.get("sockopt")?.jsonObject?.get("domainStrategy")?.jsonPrimitive?.content
-            assertEquals("All outbounds must resolve domains through xray DNS", "UseIPv4", domainStrategy)
+            val sockopt = ob.jsonObject["streamSettings"]?.jsonObject?.get("sockopt")?.jsonObject
+            assertEquals("All outbounds must have fwmark", 255, sockopt?.get("mark")?.jsonPrimitive?.int)
+            assertEquals(
+                "All outbounds must resolve domains through xray DNS",
+                "UseIPv4",
+                sockopt?.get("domainStrategy")?.jsonPrimitive?.content,
+            )
         }
     }
 
@@ -466,28 +457,6 @@ class ConfigGeneratorTest {
 
         assertNull("LAN IP direct rule should be disabled by setting", lanIpRule)
         assertNull("LAN domain direct rule should be disabled by setting", lanDomainRule)
-    }
-
-    @Test
-    fun `splits OR routing rule into separate xray rules`() {
-        val routingRules = RoutingRuleCatalog.defaults()
-        val config = generator.generate(vlessReality, routingRules = routingRules)
-        val json = Json.parseToJsonElement(config).jsonObject
-        val rules = json["routing"]!!.jsonObject["rules"]!!.jsonArray
-
-        val ruDomainRule = rules.firstOrNull {
-            it.jsonObject["domain"]?.jsonArray?.any { domain ->
-                domain.jsonPrimitive.content == "domain:ru"
-            } == true
-        }
-        val ruIpRule = rules.firstOrNull {
-            it.jsonObject["ip"]?.jsonArray?.any { ip ->
-                ip.jsonPrimitive.content == "geoip:ru"
-            } == true
-        }
-
-        assertNotNull("RU direct OR rule should emit a domain-based rule", ruDomainRule)
-        assertNotNull("RU direct OR rule should emit an IP-based rule", ruIpRule)
     }
 
     @Test

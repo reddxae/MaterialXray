@@ -10,22 +10,17 @@ class TproxyBackendDemotionTest {
 
     @Test
     fun `a kernel that cannot run TPROXY demotes the stored backend to TUN`() {
-        assertTrue(
-            shouldDemoteTproxyBackend(
-                TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.TproxyIpv4Unavailable),
-                RootConnectionBackend.Tproxy,
-            ),
-        )
-    }
-
-    @Test
-    fun `an IPv6-only gap still demotes because TPROXY cannot serve the stored selection`() {
-        assertTrue(
-            shouldDemoteTproxyBackend(
-                TproxyCompatibility.Unsupported(TproxyCompatibility.Reason.TproxyIpv6Unavailable),
-                RootConnectionBackend.Tproxy,
-            ),
-        )
+        listOf(
+            TproxyCompatibility.Reason.TproxyIpv4Unavailable,
+            TproxyCompatibility.Reason.TproxyIpv6Unavailable,
+        ).forEach { reason ->
+            assertTrue(
+                shouldDemoteTproxyBackend(
+                    TproxyCompatibility.Unsupported(reason),
+                    RootConnectionBackend.Tproxy,
+                ),
+            )
+        }
     }
 
     @Test

@@ -6,12 +6,12 @@ import org.junit.Test
 class NftablesManagerTest {
     @Test
     fun `cleanup tolerates a missing nft binary`() {
-        assertEquals(0, executeWithoutPath(nftablesRemovalCommand()))
-    }
+        val exitCode = ProcessBuilder(
+            "/bin/sh",
+            "-c",
+            "PATH=/nonexistent; ${nftablesRemovalCommand()}",
+        ).start().waitFor()
 
-    private fun executeWithoutPath(command: String): Int = ProcessBuilder(
-        "/bin/sh",
-        "-c",
-        "PATH=/nonexistent; $command",
-    ).start().waitFor()
+        assertEquals(0, exitCode)
+    }
 }

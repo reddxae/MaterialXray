@@ -28,17 +28,7 @@ class AppRoutingPlannerTest {
         val defaultServer = server("Default", "198.51.100.1")
         val serverSpecificConfig = server("Server route", "203.0.113.7")
         val serverRepository = ServerRepository(
-            FakeServerDao(
-                ServerEntity(
-                    id = SERVER_ID,
-                    subscriptionId = 1,
-                    name = serverSpecificConfig.name,
-                    protocol = serverSpecificConfig.protocol.name,
-                    address = serverSpecificConfig.address,
-                    port = serverSpecificConfig.port,
-                    configJson = Json.encodeToString(serverSpecificConfig),
-                ),
-            ),
+            FakeServerDao(serverEntity(SERVER_ID, serverSpecificConfig)),
         )
         val planner = AppRoutingPlanner(
             appBypassDao = FakeAppBypassDao(

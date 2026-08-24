@@ -117,15 +117,11 @@ class TunManagerTest {
     }
 
     @Test
-    fun `IPv6 route uses TUN when IPv6 is allowed`() {
+    fun `IPv6 route follows the IPv6 setting`() {
         assertEquals(
             "ip -6 route replace default dev wlan1a1 table 110",
             TunManager.ipv6TunRouteCommand("wlan1a1", 110, allowIpv6 = true),
         )
-    }
-
-    @Test
-    fun `IPv6 route fails closed when IPv6 is disabled`() {
         assertEquals(
             "ip -6 route replace unreachable default table 110",
             TunManager.ipv6TunRouteCommand("wlan1a1", 110, allowIpv6 = false),

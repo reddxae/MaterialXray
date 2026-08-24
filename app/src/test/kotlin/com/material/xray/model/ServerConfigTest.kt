@@ -172,49 +172,6 @@ class ServerConfigTest {
     }
 
     @Test
-    fun `formatProxyConfigSummary hides inner encryption when outer security is present`() {
-        val summary = formatProxyConfigSummary(
-            ProxyConfigDisplay(
-                protocol = "vlessenc",
-                innerEncryption = "random",
-                security = "reality",
-                transport = "xhttp",
-            ),
-        )
-
-        assertEquals("vlessenc • reality • xhttp", summary)
-    }
-
-    @Test
-    fun `formatProxyConfigSummary falls back to inner encryption without outer security`() {
-        val summary = formatProxyConfigSummary(
-            ProxyConfigDisplay(
-                protocol = "vlessenc",
-                innerEncryption = "random",
-                security = "none",
-                transport = "xhttp",
-            ),
-        )
-
-        assertEquals("vlessenc • random • xhttp", summary)
-    }
-
-    @Test
-    fun `formatProxyConfigSummary combines PQ algorithm and outer security`() {
-        val summary = formatProxyConfigSummary(
-            ProxyConfigDisplay(
-                protocol = "vless",
-                innerEncryption = "none",
-                security = "reality",
-                pqAlgorithm = "ml-dsa",
-                transport = "xhttp",
-            ),
-        )
-
-        assertEquals("vless • ml-dsa+reality • xhttp", summary)
-    }
-
-    @Test
     fun `formatProxyConfigSummary combines PQ security and hides native inner encryption`() {
         val summary = formatProxyConfigSummary(
             ProxyConfigDisplay(

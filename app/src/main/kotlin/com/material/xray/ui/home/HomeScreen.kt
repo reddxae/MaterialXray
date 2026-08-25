@@ -28,6 +28,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,17 +41,20 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -63,6 +67,7 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.NetworkPing
 import androidx.compose.material.icons.outlined.Shield
+import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -91,20 +96,27 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LookaheadScope
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
@@ -112,7 +124,10 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
@@ -129,6 +144,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -192,6 +208,7 @@ fun HomeScreen(
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
     var keepQrScannerDialog by remember { mutableStateOf(false) }
+    var showReorderDialog by remember { mutableStateOf(false) }
     var editingSubscriptionId by rememberSaveable { mutableStateOf<Long?>(null) }
     val editingSubscription = uiState.subscriptions?.find { it.id == editingSubscriptionId }
     // Drop a parked edit id once the loaded list no longer contains it, so a later subscription
@@ -402,6 +419,7 @@ fun HomeScreen(
                             selectedServerId = uiState.selectedServerId,
                             defaultPingMethod = uiState.defaultPingMethod,
                             canApplyRouting = manualRouting.appRouting != null || manualRouting.routing != null,
+                            canReorder = subscriptions.size > 1,
                             onDelete = {
                                 if (servers.isEmpty()) {
                                     viewModel.deleteSubscription(subscription)
@@ -410,6 +428,7 @@ fun HomeScreen(
                                 }
                             },
                             onEdit = { editingSubscriptionId = subscription.id },
+                            onReorder = { showReorderDialog = true },
                             onRefresh = { viewModel.refreshSubscription(subscription) },
                             onTestAll = { viewModel.testSubscriptionLatencies(subscription) },
                             onDefaultPingMethodSelected = { viewModel.setDefaultPingMethod(it) },
@@ -475,6 +494,15 @@ fun HomeScreen(
         onConfirm = { subscription ->
             viewModel.deleteSubscription(subscription)
             removeSubscriptionRequest = null
+        },
+    )
+    ReorderSubscriptionsDialogHost(
+        visible = showReorderDialog,
+        subscriptions = uiState.subscriptions.orEmpty(),
+        onDismiss = { showReorderDialog = false },
+        onConfirm = { subscriptionIds ->
+            viewModel.reorderSubscriptions(subscriptionIds)
+            showReorderDialog = false
         },
     )
     EditSubscriptionDialogHost(
@@ -735,6 +763,165 @@ private fun RemoveSubscriptionDialogHost(
         onDismiss = onDismiss,
         onConfirm = { onConfirm(subscription) },
     )
+}
+
+@Composable
+private fun ReorderSubscriptionsDialogHost(
+    visible: Boolean,
+    subscriptions: List<SubscriptionEntity>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<Long>) -> Unit,
+) {
+    if (!visible || subscriptions.size < 2) return
+
+    ReorderSubscriptionsDialog(
+        subscriptions = subscriptions,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
+}
+
+@Composable
+private fun ReorderSubscriptionsDialog(
+    subscriptions: List<SubscriptionEntity>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<Long>) -> Unit,
+) {
+    val order = remember(subscriptions.map { it.id }) { subscriptions.toMutableStateList() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_reorder_subscriptions_title)) },
+        text = {
+            Column {
+                Text(
+                    stringResource(R.string.home_reorder_subscriptions_instructions),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                ReorderableSubscriptionList(order)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(order.map { it.id }) }) {
+                Text(stringResource(R.string.home_action_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_action_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ReorderableSubscriptionList(order: SnapshotStateList<SubscriptionEntity>) {
+    var draggingId by remember { mutableStateOf<Long?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val heights = remember { mutableStateMapOf<Long, Int>() }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 480.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        order.forEach { subscription ->
+            key(subscription.id) {
+                val dragging = subscription.id == draggingId
+                val currentIndex = order.indexOf(subscription)
+                val moveUpLabel = stringResource(R.string.home_move_up)
+                val moveDownLabel = stringResource(R.string.home_move_down)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { heights[subscription.id] = it.size.height }
+                        .zIndex(if (dragging) 1f else 0f)
+                        .graphicsLayer { translationY = if (dragging) dragOffsetY else 0f }
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                        )
+                        .heightIn(min = 52.dp)
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DragIndicator,
+                        contentDescription = stringResource(R.string.home_drag_to_reorder),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .semantics {
+                                customActions = buildList {
+                                    if (currentIndex > 0) {
+                                        add(
+                                            CustomAccessibilityAction(moveUpLabel) {
+                                                order.add(currentIndex - 1, order.removeAt(currentIndex))
+                                                true
+                                            },
+                                        )
+                                    }
+                                    if (currentIndex < order.lastIndex) {
+                                        add(
+                                            CustomAccessibilityAction(moveDownLabel) {
+                                                order.add(currentIndex + 1, order.removeAt(currentIndex))
+                                                true
+                                            },
+                                        )
+                                    }
+                                }
+                            }.pointerInput(subscription.id) {
+                                detectDragGestures(
+                                    onDragStart = {
+                                        draggingId = subscription.id
+                                        dragOffsetY = 0f
+                                    },
+                                    onDragEnd = {
+                                        draggingId = null
+                                        dragOffsetY = 0f
+                                    },
+                                    onDragCancel = {
+                                        draggingId = null
+                                        dragOffsetY = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragOffsetY += dragAmount.y
+                                        val current = order.indexOf(subscription)
+                                        if (dragAmount.y < 0 && current > 0) {
+                                            val above = order[current - 1]
+                                            val height = heights[above.id] ?: 0
+                                            if (-dragOffsetY > height / 2f) {
+                                                order.add(current - 1, order.removeAt(current))
+                                                dragOffsetY += height
+                                            }
+                                        } else if (dragAmount.y > 0 && current < order.lastIndex) {
+                                            val below = order[current + 1]
+                                            val height = heights[below.id] ?: 0
+                                            if (dragOffsetY > height / 2f) {
+                                                order.add(current + 1, order.removeAt(current))
+                                                dragOffsetY -= height
+                                            }
+                                        }
+                                    },
+                                )
+                            },
+                    )
+                    Text(
+                        text = subscription.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1414,8 +1601,10 @@ private fun SubscriptionCard(
     selectedServerId: Long,
     defaultPingMethod: PingMethod,
     canApplyRouting: Boolean,
+    canReorder: Boolean,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
+    onReorder: () -> Unit,
     onRefresh: () -> Unit,
     onTestAll: () -> Unit,
     onDefaultPingMethodSelected: (PingMethod) -> Unit,
@@ -1453,6 +1642,8 @@ private fun SubscriptionCard(
                 onDefaultPingMethodSelected = onDefaultPingMethodSelected,
                 onDelete = onDelete,
                 onEdit = onEdit,
+                canReorder = canReorder,
+                onReorder = onReorder,
                 canApplyRouting = canApplyRouting,
                 onApplyRouting = onApplyRouting,
                 onDescriptionHiddenChange = onDescriptionHiddenChange,
@@ -1589,6 +1780,8 @@ private fun SubscriptionHeader(
     onDefaultPingMethodSelected: (PingMethod) -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
+    canReorder: Boolean,
+    onReorder: () -> Unit,
     canApplyRouting: Boolean,
     onApplyRouting: () -> Unit,
     onDescriptionHiddenChange: (Boolean) -> Unit,
@@ -1678,6 +1871,18 @@ private fun SubscriptionHeader(
                         onEdit()
                     },
                 )
+                if (canReorder) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.home_action_reorder)) },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.SwapVert, contentDescription = null)
+                        },
+                        onClick = {
+                            showMenu = false
+                            onReorder()
+                        },
+                    )
+                }
                 if (supportUrl.isNotEmpty()) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.home_action_support)) },

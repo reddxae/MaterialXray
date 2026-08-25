@@ -544,6 +544,12 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun reorderSubscriptions(subscriptionIds: List<Long>) {
+        viewModelScope.launch {
+            subscriptionRepo.updateSortOrders(subscriptionIds)
+        }
+    }
+
     private suspend fun applySubscriptionRouting(routing: SubscriptionAppRouting) {
         if (subscriptionAppRoutingRepository.apply(routing)) {
             routingChangeManager.markPendingChanges(PendingRoutingChange.APP_ROUTING)

@@ -56,6 +56,26 @@ class DatabaseMigrationChainTest {
         }
     }
 
+    @Test
+    fun subscriptionOrderMigrationKeepsExistingRowsAheadOfNewRows() {
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { connection ->
+            connection.runSql("CREATE TABLE subscriptions (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+            connection.runSql("INSERT INTO subscriptions VALUES (4, 'First'), (9, 'Second')")
+            DatabaseMigrations.sqlByStartVersion.getValue(15).forEach { connection.runSql(it) }
+            connection.runSql(
+                "INSERT INTO subscriptions VALUES (12, 'Third', " +
+                    "(SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM subscriptions))",
+            )
+
+            val names = connection.createStatement().use { statement ->
+                statement.executeQuery("SELECT name FROM subscriptions ORDER BY sortOrder, id").use { rows ->
+                    buildList { while (rows.next()) add(rows.getString("name")) }
+                }
+            }
+            assertEquals(listOf("First", "Second", "Third"), names)
+        }
+    }
+
     /**
      * Room accepts any database default when the entity declares none, so the chain is only
      * required to match a default that the exported schema actually specifies.

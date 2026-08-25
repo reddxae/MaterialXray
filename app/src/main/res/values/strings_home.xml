@@ -22,6 +22,7 @@
     <string name="home_action_always_on">Always on</string>
     <string name="home_action_restart">Restart</string>
     <string name="home_action_edit">Edit</string>
+    <string name="home_action_reorder">Reorder</string>
     <string name="home_action_support">Support</string>
     <string name="home_action_remove">Remove</string>
     <string name="home_action_open">Open</string>
@@ -110,6 +111,11 @@
     <string name="home_subscription_show_description">Show description</string>
     <string name="home_subscription_hide_description">Hide description</string>
     <string name="home_subscription_apply_routing">Apply routing</string>
+    <string name="home_reorder_subscriptions_title">Reorder subscriptions</string>
+    <string name="home_reorder_subscriptions_instructions">Drag subscriptions into the order you want.</string>
+    <string name="home_drag_to_reorder">Drag to reorder</string>
+    <string name="home_move_up">Move up</string>
+    <string name="home_move_down">Move down</string>
     <string name="home_choose_ping_method_title">Choose method</string>
     <string name="home_open_link_title">Open link?</string>
 

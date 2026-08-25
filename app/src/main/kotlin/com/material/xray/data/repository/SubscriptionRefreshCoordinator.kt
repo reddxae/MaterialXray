@@ -51,7 +51,7 @@ class SubscriptionRefreshCoordinator @Inject constructor(
         url: String,
     ): SubscriptionRepository.RefreshResult? = operationMutex.withLock {
         subscriptionRepository.withRefreshLock(sub.id) {
-            val updated = subscriptionRepository.updateBeforeRefresh(sub, name, url)
+            val updated = subscriptionRepository.updateBeforeRefresh(sub, name, url) ?: return@withRefreshLock null
             val prepared = subscriptionRepository.prepareRefresh(updated.id, updated.url) ?: return@withRefreshLock null
             commitRefresh(prepared)
         }

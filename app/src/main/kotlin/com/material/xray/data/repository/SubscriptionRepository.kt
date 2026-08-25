@@ -89,7 +89,7 @@ class SubscriptionRepository @Inject constructor(
             )
         }
 
-        val id = subscriptionDao.insert(
+        val id = subscriptionDao.insertAtEnd(
             SubscriptionEntity(
                 name = trimmedName.ifEmpty { nextFallbackName() },
                 url = trimmedUrl,
@@ -114,7 +114,7 @@ class SubscriptionRepository @Inject constructor(
         val subscriptionName = name.trim()
             .ifEmpty { config.name.trim() }
             .ifEmpty { nextFallbackName() }
-        val id = subscriptionDao.insert(
+        val id = subscriptionDao.insertAtEnd(
             SubscriptionEntity(
                 name = subscriptionName,
                 url = sourceLink,
@@ -207,13 +207,27 @@ class SubscriptionRepository @Inject constructor(
         subscriptionDao.updateDescriptionHidden(subId, hidden)
     }
 
-    internal suspend fun updateBeforeRefresh(sub: SubscriptionEntity, name: String, url: String): SubscriptionEntity {
-        val updated = sub.copy(
+    suspend fun updateSortOrders(subscriptionIds: List<Long>) {
+        subscriptionDao.updateSortOrders(subscriptionIds)
+    }
+
+    internal suspend fun updateBeforeRefresh(
+        sub: SubscriptionEntity,
+        name: String,
+        url: String,
+    ): SubscriptionEntity? = database.withTransaction {
+        val current = subscriptionDao.getById(sub.id) ?: return@withTransaction null
+        val updated = current.copy(
             name = name.trim().ifEmpty { nextFallbackName(excludingId = sub.id) },
             url = url.trim(),
+            preferJson = sub.preferJson,
+            autoUpdateIntervalHours = sub.autoUpdateIntervalHours,
+            userAgentMode = sub.userAgentMode,
+            customUserAgent = sub.customUserAgent,
+            customHeaders = sub.customHeaders,
         )
         subscriptionDao.update(updated)
-        return updated
+        updated
     }
 
     private suspend fun SubscriptionEntity.applyFetchedData(fetched: FetchedSubscription): SubscriptionEntity {

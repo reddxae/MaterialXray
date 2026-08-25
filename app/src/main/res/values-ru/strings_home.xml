@@ -22,6 +22,7 @@
     <string name="home_action_always_on">Всегда включено</string>
     <string name="home_action_restart">Перезапустить</string>
     <string name="home_action_edit">Изменить</string>
+    <string name="home_action_reorder">Изменить порядок</string>
     <string name="home_action_support">Поддержка</string>
     <string name="home_action_remove">Удалить</string>
     <string name="home_action_open">Открыть</string>
@@ -111,6 +112,11 @@
     <string name="home_subscription_show_description">Показать описание</string>
     <string name="home_subscription_hide_description">Скрыть описание</string>
     <string name="home_subscription_apply_routing">Применить маршрутизацию</string>
+    <string name="home_reorder_subscriptions_title">Порядок подписок</string>
+    <string name="home_reorder_subscriptions_instructions">Перетащите подписки в нужном порядке.</string>
+    <string name="home_drag_to_reorder">Перетащить для изменения порядка</string>
+    <string name="home_move_up">Переместить вверх</string>
+    <string name="home_move_down">Переместить вниз</string>
     <string name="home_choose_ping_method_title">Выберите способ</string>
     <string name="home_open_link_title">Открыть ссылку?</string>
 

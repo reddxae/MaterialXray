@@ -107,6 +107,10 @@ internal object DatabaseMigrations {
             "ALTER TABLE servers ADD COLUMN edited INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE servers ADD COLUMN guarded INTEGER NOT NULL DEFAULT 0",
         ),
+        15 to listOf(
+            "ALTER TABLE subscriptions ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0",
+            "UPDATE subscriptions SET sortOrder = id",
+        ),
     )
 
     val all: Array<Migration> = sqlByStartVersion.entries

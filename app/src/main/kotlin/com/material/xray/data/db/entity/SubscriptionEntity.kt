@@ -29,4 +29,5 @@ data class SubscriptionEntity(
     val appRoutingPackages: String? = null,
     val appRoutingMode: String? = null,
     val providerRouting: String? = null,
+    val sortOrder: Int = 0,
 )

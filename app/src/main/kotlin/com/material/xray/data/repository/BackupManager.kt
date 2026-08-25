@@ -169,7 +169,7 @@ class BackupManager @Inject constructor(
             appBypassDao.deleteAll()
             subscriptionDao.deleteAll()
 
-            val subscriptionIdByKey = plan.subscriptions.associate { planned ->
+            val subscriptionIdByKey = plan.subscriptions.withIndex().associate { (sortOrder, planned) ->
                 planned.key to subscriptionDao.insert(
                     SubscriptionEntity(
                         name = planned.value.name,
@@ -180,6 +180,7 @@ class BackupManager @Inject constructor(
                         userAgentMode = planned.value.userAgentMode,
                         customUserAgent = planned.value.customUserAgent,
                         customHeaders = planned.value.customHeaders,
+                        sortOrder = sortOrder,
                     ).withSubscriptionMetadata(planned.value.metadata)
                         .withSubscriptionAppRouting(planned.value.appRouting)
                         .withSubscriptionRouting(planned.value.routing),

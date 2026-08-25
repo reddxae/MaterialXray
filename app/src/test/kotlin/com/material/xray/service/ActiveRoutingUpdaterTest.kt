@@ -187,6 +187,7 @@ class ActiveRoutingUpdaterTest {
             tunName: String,
             addressCidr: String,
             ipv6AddressCidr: String?,
+            processId: Int?,
             isProcessAlive: suspend () -> Boolean,
         ): TunManager.TunSetupResult = TunManager.TunSetupResult(success = isProcessAlive())
 
@@ -203,6 +204,7 @@ class ActiveRoutingUpdaterTest {
             routeProfileIds: Set<Int>,
             tunnelTetheredClients: Boolean,
             bypassLan: Boolean,
+            cleanExistingState: Boolean,
         ): TunManager.RoutingResult {
             applyRoutingCalls += 1
             lastAllowIpv6 = allowIpv6

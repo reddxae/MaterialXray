@@ -67,9 +67,9 @@ class TunManagerTest {
         )
 
         assertTrue(result.success)
-        assertEquals(3, commands.size)
-        assertTrue(commands[1].contains("ip -6 addr replace 'fd10:10:14::1/64' dev 'wlan1' nodad"))
-        assertEquals("ip -6 addr show dev 'wlan1'", commands[2])
+        assertEquals(2, commands.size)
+        assertTrue(commands[0].contains("ip -6 addr replace 'fd10:10:14::1/64' dev 'wlan1' nodad"))
+        assertEquals("ip -6 addr show dev 'wlan1'", commands[1])
     }
 
     @Test
@@ -83,8 +83,8 @@ class TunManagerTest {
         val result = manager.configureTun(tunName = "wlan1")
 
         assertTrue(result.success)
-        assertEquals(2, commands.size)
-        assertTrue("ip -6" !in commands[1])
+        assertEquals(1, commands.size)
+        assertTrue("ip -6" !in commands[0])
     }
 
     @Test
@@ -106,6 +106,23 @@ class TunManagerTest {
 
         assertFalse(result.success)
         assertTrue(result.error.orEmpty().contains(TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR))
+    }
+
+    @Test
+    fun `TUN setup stops waiting when Xray exits`() = runTest {
+        var processChecks = 0
+        val manager = TunManager {
+            RootShell.Result(124, "", "")
+        }
+
+        val result = manager.configureTun(tunName = "wlan1") {
+            processChecks++
+            false
+        }
+
+        assertFalse(result.success)
+        assertTrue(result.processExited)
+        assertEquals(1, processChecks)
     }
 
     @Test
@@ -148,31 +165,22 @@ class TunManagerTest {
         )
 
         assertTrue(result.success)
-        assertEquals(9, commands.size)
-        assertEquals(
-            "ip route replace unreachable default table 102 && ip -6 route replace unreachable default table 102",
-            commands[0],
-        )
-        assertTrue(commands[1].contains("rule add iif lo uidrange 10000-10000 table 102 prio 11999"))
-        assertTrue(commands[1].contains("rule add iif lo uidrange 10002-99999 table 102 prio 11999"))
-        assertTrue(commands[1].contains("| ip -batch -"))
-        assertTrue(commands[2].contains("rule add iif lo uidrange 10000-10000 table 102 prio 11999"))
-        assertTrue(commands[2].contains("rule add iif lo uidrange 10002-99999 table 102 prio 11999"))
-        assertTrue(commands[2].contains("| ip -6 -batch -"))
-        assertTrue(commands[3].contains("ip -6 route replace unreachable default table 100"))
-        assertTrue(commands[3].contains("ip -6 route replace unreachable default table 110"))
-        assertTrue(commands[4].contains("rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
-        assertTrue(commands[4].contains("rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
-        assertTrue(commands[4].contains("| ip -batch -"))
-        assertTrue(commands[5].contains("rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
-        assertTrue(commands[5].contains("rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
-        assertTrue(commands[5].contains("| ip -6 -batch -"))
-        assertEquals("ip rule show table 102", commands[6])
-        assertEquals("ip -6 rule show table 102", commands[7])
-        assertTrue(commands[8].contains("ip route flush table 102"))
-        assertTrue(commands[8].contains("ip -6 route flush table 102"))
-        assertTrue(commands[3].contains("if ip route show table 100"))
-        assertTrue(commands[3].contains("if ip -6 route show table 100"))
+        assertTrue(commands.any { it.contains("iptables-save") && it.contains("*MXTP*") })
+        assertEquals(4, commands.size)
+        assertTrue(commands[0].contains("route replace unreachable default table 102"))
+        assertTrue(commands[0].contains("rule add iif lo uidrange 10000-10000 table 102 prio 11999"))
+        assertTrue(commands[0].contains("rule add iif lo uidrange 10002-99999 table 102 prio 11999"))
+        assertTrue(commands[0].contains("| ip -batch -"))
+        assertTrue(commands[0].contains("| ip -6 -batch -"))
+        assertTrue(commands[1].contains("ip route flush table 100"))
+        assertTrue(commands[1].contains("ip -6 route flush table 100"))
+        assertTrue(commands[2].contains("route replace unreachable default table 100"))
+        assertTrue(commands[2].contains("route replace unreachable default table 110"))
+        assertTrue(commands[2].contains("rule add iif lo uidrange 10000-10000 table 100 prio 12010"))
+        assertTrue(commands[2].contains("rule add iif lo uidrange 10002-10002 table 110 prio 12000"))
+        assertTrue(commands[3].contains("rule del iif lo uidrange 10000-10000 table 102 prio 11999"))
+        assertTrue(commands[3].contains("v4_remaining=\$(ip rule show table 102)"))
+        assertTrue(commands[3].contains("v6_remaining=\$(ip -6 rule show table 102)"))
         commands.forEach { command ->
             assertEquals(0, ProcessBuilder("sh", "-n", "-c", command).start().waitFor())
         }
@@ -239,32 +247,9 @@ class TunManagerTest {
     @Test
     fun `routing guard removal deletes exact rules in bounded batches`() = runTest {
         val commands = mutableListOf<String>()
-        var ipv4GuardInstalled = true
-        var ipv6GuardInstalled = true
-        val guardRules = (10_000..10_128).joinToString("\n") { uid ->
-            "11999:\tfrom all iif lo uidrange $uid-$uid lookup 102"
-        }
         val manager = TunManager { command ->
             commands += command
-            when {
-                command == "ip rule show table 102" -> successfulCommand(
-                    if (ipv4GuardInstalled) guardRules else "",
-                )
-                command == "ip -6 rule show table 102" -> successfulCommand(
-                    if (ipv6GuardInstalled) guardRules else "",
-                )
-                command.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
-                    command.contains("| ip -6 -force -batch -") -> {
-                    ipv6GuardInstalled = false
-                    successfulCommand()
-                }
-                command.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
-                    command.contains("| ip -force -batch -") -> {
-                    ipv4GuardInstalled = false
-                    successfulCommand()
-                }
-                else -> successfulCommand()
-            }
+            successfulCommand()
         }
 
         val result = manager.applyRouting(
@@ -278,23 +263,11 @@ class TunManagerTest {
         )
 
         assertTrue(result.success)
-        assertTrue(
-            commands.any {
-                it.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
-                    it.contains("| ip -force -batch -")
-            },
-        )
-        assertTrue(
-            commands.any {
-                it.contains("rule del pref 11999 from all iif lo uidrange 10000-10000 lookup 102") &&
-                    it.contains("| ip -6 -force -batch -")
-            },
-        )
-        val deletionBatches = commands.filter { it.contains("rule del pref 11999") }
-        assertEquals(4, deletionBatches.size)
-        assertTrue(deletionBatches.all { it.contains("-force") })
-        assertTrue(deletionBatches.all { command -> Regex("rule del pref 11999").findAll(command).count() <= 128 })
-        assertEquals(258, deletionBatches.sumOf { command -> Regex("rule del pref 11999").findAll(command).count() })
+        val removal = commands.single { it.contains("remaining=\$(ip rule show table 102") }
+        assertTrue(removal.contains("rule del iif lo uidrange 10000-99999 table 102 prio 11999"))
+        assertTrue(removal.contains("ip -force -batch"))
+        assertTrue(removal.contains("ip -6 -force -batch"))
+        assertTrue(removal.contains("*'11999:'*) false"))
         commands.forEach { command ->
             assertEquals(0, ProcessBuilder("sh", "-n", "-c", command).start().waitFor())
         }
@@ -303,12 +276,12 @@ class TunManagerTest {
     @Test
     fun `routing guard removal retries and fails closed when guards remain`() = runTest {
         val commands = mutableListOf<String>()
-        val guardRule = "11999:\tfrom all iif lo uidrange 10000-99999 lookup 102"
         val manager = TunManager { command ->
             commands += command
-            when (command) {
-                "ip rule show table 102", "ip -6 rule show table 102" -> successfulCommand(guardRule)
-                else -> successfulCommand()
+            if (command.contains("remaining=\$(ip rule show table 102")) {
+                RootShell.Result(1, "", "guard remains")
+            } else {
+                successfulCommand()
             }
         }
 
@@ -323,9 +296,8 @@ class TunManagerTest {
         )
 
         assertFalse(result.success)
-        assertTrue(result.error.orEmpty().contains("guard removal verification failed"))
-        assertEquals(4, commands.count { it.contains("rule del pref 11999") })
-        assertFalse(commands.any { it.contains("route flush table 102") })
+        assertTrue(result.error.orEmpty().contains("guard removal"))
+        assertEquals(1, commands.count { it.contains("remaining=\$(ip rule show table 102") })
     }
 
     @Test
@@ -333,7 +305,7 @@ class TunManagerTest {
         val commands = mutableListOf<String>()
         val manager = TunManager { command ->
             commands += command
-            if (command == "ip rule show table 102") {
+            if (command.contains("remaining=\$(ip rule show table 102")) {
                 RootShell.Result(1, "", "inspection failed")
             } else {
                 successfulCommand()
@@ -352,8 +324,7 @@ class TunManagerTest {
 
         assertFalse(result.success)
         assertTrue(result.error.orEmpty().contains("inspection failed"))
-        assertFalse(commands.any { it.contains("rule del pref 11999") })
-        assertFalse(commands.any { it.contains("route flush table 102") })
+        assertTrue(commands.any { it.contains("rule del iif lo uidrange") })
     }
 
     @Test
@@ -382,25 +353,15 @@ class TunManagerTest {
         )
 
         assertTrue(result.success)
-        assertFalse(commands.any { it.contains("rule del pref 11999") })
+        assertFalse(commands.any { it.contains("lookup 999") })
     }
 
     @Test
     fun `routing guard removal recognizes named kernel route tables`() = runTest {
         val commands = mutableListOf<String>()
-        var guardInstalled = true
         val manager = TunManager { command ->
             commands += command
-            when {
-                command == "ip rule show table 253" || command == "ip -6 rule show table 253" -> successfulCommand(
-                    if (guardInstalled) "11999:\tfrom all iif lo uidrange 10000-99999 lookup default" else "",
-                )
-                command.contains("rule del pref 11999") -> {
-                    guardInstalled = false
-                    successfulCommand()
-                }
-                else -> successfulCommand()
-            }
+            successfulCommand()
         }
 
         val result = manager.applyRouting(
@@ -414,7 +375,7 @@ class TunManagerTest {
         )
 
         assertTrue(result.success)
-        assertTrue(commands.any { it.contains("rule del pref 11999") && it.contains("lookup default") })
+        assertTrue(commands.any { it.contains("rule del iif lo uidrange") && it.contains("table 253") })
     }
 
     @Test
@@ -442,7 +403,7 @@ class TunManagerTest {
         val commands = mutableListOf<String>()
         val manager = TunManager { command ->
             commands += command
-            if (commands.size == 5) RootShell.Result(1, "", "rule failed") else successfulCommand()
+            if (commands.size == 3) RootShell.Result(1, "", "rule failed") else successfulCommand()
         }
 
         val result = manager.applyRouting(
@@ -456,11 +417,10 @@ class TunManagerTest {
         )
 
         assertFalse(result.success)
-        assertEquals(5, commands.size)
-        assertTrue(commands[0].contains("ip route replace unreachable default table 102"))
-        assertTrue(commands[0].contains("ip -6 route replace unreachable default table 102"))
-        assertTrue(commands[1].contains("table 102 prio 11999"))
-        assertTrue(commands[2].contains("table 102 prio 11999"))
+        assertEquals(3, commands.size)
+        assertTrue(commands[0].contains("route replace unreachable default table 102"))
+        assertTrue(commands[0].contains("table 102 prio 11999"))
+        assertTrue(commands[0].contains("ip -6 -batch"))
         assertFalse(commands.any { it == "ip rule show table 102" })
     }
 
@@ -487,7 +447,7 @@ class TunManagerTest {
         )
 
         assertFalse(result.success)
-        assertEquals(4, commands.size)
+        assertEquals(2, commands.size)
         assertFalse(commands.any { it == "ip rule show table 102" })
     }
 
@@ -511,10 +471,8 @@ class TunManagerTest {
 
         assertFalse(result.success)
         assertEquals(1, commands.size)
-        assertEquals(
-            "ip route replace unreachable default table 102 && ip -6 route replace unreachable default table 102",
-            commands.single(),
-        )
+        assertTrue(commands.single().contains("route replace unreachable default table 102"))
+        assertTrue(commands.single().contains("table 102 prio 11999"))
     }
 
     @Test

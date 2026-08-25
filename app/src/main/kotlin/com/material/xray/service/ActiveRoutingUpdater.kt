@@ -52,6 +52,7 @@ internal interface TunRoutingGateway {
         tunName: String,
         addressCidr: String,
         ipv6AddressCidr: String?,
+        processId: Int? = null,
         isProcessAlive: suspend () -> Boolean,
     ): TunManager.TunSetupResult
 
@@ -68,6 +69,7 @@ internal interface TunRoutingGateway {
         routeProfileIds: Set<Int>,
         tunnelTetheredClients: Boolean,
         bypassLan: Boolean,
+        cleanExistingState: Boolean = true,
     ): TunManager.RoutingResult
 
     suspend fun replacePhysicalBypassRoute(
@@ -101,11 +103,13 @@ internal class TunManagerRoutingGateway(
         tunName: String,
         addressCidr: String,
         ipv6AddressCidr: String?,
+        processId: Int?,
         isProcessAlive: suspend () -> Boolean,
     ): TunManager.TunSetupResult = tunManager.configureTun(
         tunName = tunName,
         addressCidr = addressCidr,
         ipv6AddressCidr = ipv6AddressCidr,
+        processId = processId,
         isProcessAlive = isProcessAlive,
     )
 
@@ -122,6 +126,7 @@ internal class TunManagerRoutingGateway(
         routeProfileIds: Set<Int>,
         tunnelTetheredClients: Boolean,
         bypassLan: Boolean,
+        cleanExistingState: Boolean,
     ): TunManager.RoutingResult = tunManager.applyRouting(
         tunName = tunName,
         fwmark = fwmark,
@@ -135,6 +140,7 @@ internal class TunManagerRoutingGateway(
         routeProfileIds = routeProfileIds,
         tunnelTetheredClients = tunnelTetheredClients,
         bypassLan = bypassLan,
+        cleanExistingState = cleanExistingState,
     )
 
     override suspend fun replacePhysicalBypassRoute(
@@ -224,6 +230,7 @@ internal class ActiveRoutingUpdater(
                         tunName = tunName,
                         addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
                         ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR.takeIf { allowIpv6 },
+                        processId = connectedState.corePid,
                     ) { processProbe.isAlive(connectedState.corePid) }
                 },
             ),
@@ -244,6 +251,7 @@ internal class ActiveRoutingUpdater(
                             tunName = route.tunName,
                             addressCidr = TunManager.appTunAddressCidr(index + 1),
                             ipv6AddressCidr = TunManager.appTunIpv6AddressCidr(index + 1).takeIf { allowIpv6 },
+                            processId = connectedState.corePid,
                         ) { processProbe.isAlive(connectedState.corePid) }
                     },
                 ),

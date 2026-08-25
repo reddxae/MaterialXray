@@ -14,8 +14,8 @@ class TproxyManagerTest {
 
         val command = TproxyManager.activationCommand(plan, APP_UID)
 
-        assertTrue(command.indexOf("ip route replace local") < command.indexOf("-I OUTPUT 1"))
-        assertTrue(command.indexOf("-I PREROUTING 1") < command.indexOf("-I OUTPUT 1"))
+        assertTrue(command.indexOf("ip route replace local") < command.indexOf("-I OUTPUT 2"))
+        assertTrue(command.indexOf("-I PREROUTING 1") < command.indexOf("-I OUTPUT 2"))
         assertTrue(command.contains("--mark 0xa000000/0xf000000"))
         assertTrue(command.contains("--tproxy-mark 0xa000001/0xffffffff"))
         assertTrue(command.contains("--on-ip 127.0.0.1"))
@@ -27,6 +27,7 @@ class TproxyManagerTest {
         val command = TproxyManager.activationCommand(plan(), APP_UID)
 
         assertFalse(command.contains("MXG278b"))
+        assertTrue(command.contains("-I OUTPUT 2 -j MXO278b"))
     }
 
     @Test
@@ -164,6 +165,19 @@ class TproxyManagerTest {
     }
 
     @Test
+    fun `non tether guard setup removes stale tether hooks`() {
+        val restore = TproxyManager.guardRestoreCommand(plan(), APP_UID)
+        val fallback = TproxyManager.guardInstallCommand(plan(), APP_UID)
+
+        for (command in listOf(restore, fallback)) {
+            assertTrue(command.contains("iptables -t filter -D INPUT -j MXG278b"))
+            assertTrue(command.contains("iptables -t filter -D FORWARD -j MXG278b"))
+            assertTrue(command.contains("ip6tables -t filter -D INPUT -j MXG278b"))
+            assertTrue(command.contains("ip6tables -t filter -D FORWARD -j MXG278b"))
+        }
+    }
+
+    @Test
     fun `failed guard fallback removes partial guards from both families`() = runTest {
         val commands = mutableListOf<String>()
         val manager = TproxyManager(APP_UID) { command ->
@@ -270,21 +284,23 @@ class TproxyManagerTest {
         val command = TproxyManager.verifyCommand(plan().runtimeState, APP_UID)
 
         assertTrue(command.contains("--set-xmark 0xa000001/0xffffffff"))
-        assertTrue(command.contains("-p udp -m mark --mark 0xa000001/0xffffffff"))
-        assertTrue(command.contains("-d 127.0.0.0/8 -p udp --dport 48321 -j DROP"))
+        assertTrue(command.contains("-p udp -m mark --mark 0xa000001"))
+        assertTrue(command.contains("-d 127.0.0.0/8 -p udp -m udp --dport 48321 -j DROP"))
         assertTrue(
             command.contains(
-                "iptables -t mangle -C MXOA278b -p udp --dport 53 " +
+                "has_v4 '-A MXOA278b -p udp -m udp --dport 53 " +
                     "-j MARK --set-xmark 0xa000001/0xffffffff",
             ),
         )
         assertTrue(command.contains("ss -lnu"))
         assertEquals(1, command.split("ss -lnt").size - 1)
         assertEquals(1, command.split("ss -lnu").size - 1)
-        assertEquals(1, command.split("iptables -t mangle -S MXOA278b").size - 1)
-        assertTrue(command.contains("ip6tables -t filter -C OUTPUT"))
+        assertEquals(2, command.split("iptables -t mangle -S").size - 1)
+        assertTrue(command.contains("v4_slot_rules=\$(iptables -t mangle -S MXOA278b)"))
+        assertTrue(command.contains("has_v6 '-A OUTPUT"))
         assertTrue(command.contains("--reject-with icmp6-no-route"))
-        assertFalse(command.contains("ip6tables -t mangle -C OUTPUT"))
+        assertTrue(command.contains("v6_slot_rules=\$(ip6tables -t filter -S MXOA278b)"))
+        assertFalse(command.contains("ip6tables -t mangle -S"))
         assertFalse(command.contains("ip -6 rule show"))
     }
 

@@ -1,6 +1,7 @@
 package com.material.xray.core.xray
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.DnsResolver
 import android.os.Build
 import android.os.CancellationSignal
@@ -10,6 +11,7 @@ import com.material.xray.model.ServerConfig
 import java.net.IDN
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlin.random.Random
@@ -42,6 +44,7 @@ class ServerAddressResolver(
     )
 
     private val directExecutor = Executor { it.run() }
+    private val successfulLookups = ConcurrentHashMap<String, CachedLookup>()
 
     suspend fun resolve(server: ServerConfig, allowIpv6: Boolean = false): Result = withContext(Dispatchers.IO) {
         if (server.rawConfigJson.isNotBlank()) {
@@ -113,7 +116,12 @@ class ServerAddressResolver(
     }
 
     private suspend fun resolveHost(host: String, allowIpv6: Boolean): List<String> {
-        val candidates = hostLookup?.invoke(host) ?: systemLookup(host)
+        val now = System.nanoTime()
+        val cacheKey = "${context?.getSystemService(ConnectivityManager::class.java)?.activeNetwork?.networkHandle ?: 0}:$host"
+        val cached = successfulLookups[cacheKey]?.takeIf { now - it.createdAtNanos < CACHE_TTL_NANOS }
+        val candidates = cached?.addresses ?: (hostLookup?.invoke(host) ?: systemLookup(host)).also { addresses ->
+            if (addresses.isNotEmpty()) successfulLookups[cacheKey] = CachedLookup(addresses, now)
+        }
         return candidates.distinct().filter { allowIpv6 || !isIpv6Address(it) }
     }
 
@@ -201,9 +209,12 @@ class ServerAddressResolver(
     }.getOrDefault(emptyList())
 
     private companion object {
+        const val CACHE_TTL_NANOS = 60_000_000_000L
         const val RESOLVE_TIMEOUT_MS = 2000L
         val ipv4Pattern = Regex("""\d{1,3}(?:\.\d{1,3}){3}""")
     }
+
+    private data class CachedLookup(val addresses: List<String>, val createdAtNanos: Long)
 }
 
 internal suspend fun dnsLookupWithFallback(

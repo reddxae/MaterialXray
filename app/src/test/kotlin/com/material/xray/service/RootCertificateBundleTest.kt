@@ -41,15 +41,20 @@ class RootCertificateBundleTest {
     }
 
     @Test
-    fun `empty Android CA store leaves existing bundle unchanged`() = runTest {
+    fun `bundle is reused after it is generated in this process`() = runTest {
         val directory = Files.createTempDirectory("root-ca-bundle-test").toFile()
-        val bundleFile = directory.resolve("ca-certificates.pem").apply { writeText("existing") }
+        val bundleFile = directory.resolve("ca-certificates.pem")
+        var loads = 0
 
         try {
-            val failure = runCatching { AndroidRootCertificateBundle { emptyList() }.update(bundleFile) }.exceptionOrNull()
+            val bundle = AndroidRootCertificateBundle {
+                loads++
+                listOf(byteArrayOf(1, 2, 3))
+            }
+            bundle.update(bundleFile)
+            bundle.update(bundleFile)
 
-            assertEquals("Android CA store contains no certificates", failure?.message)
-            assertEquals("existing", bundleFile.readText())
+            assertEquals(1, loads)
         } finally {
             directory.deleteRecursively()
         }

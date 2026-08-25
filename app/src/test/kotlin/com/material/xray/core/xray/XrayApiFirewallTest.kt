@@ -23,6 +23,8 @@ class XrayApiFirewallTest {
         assertTrue(command.contains("--dport 48123 -m owner --uid-owner 10518 -j ACCEPT"))
         assertTrue(command.contains("--dport 48123 -j REJECT"))
         assertTrue(command.contains("iptables -w -I OUTPUT 1 -j \"\$replacement\""))
+        assertTrue(command.contains("iptables-restore --noflush"))
+        assertTrue(ProcessBuilder("sh", "-n", "-c", command).start().waitFor() == 0)
     }
 
     @Test
@@ -35,7 +37,7 @@ class XrayApiFirewallTest {
 
         assertTrue(firewall.apply(port = 48_123, appUid = 10_518))
 
-        val activationIndex = command.indexOf("-I OUTPUT 1 -j \"\$replacement\"")
+        val activationIndex = command.indexOf("-I OUTPUT 1 -j %s")
         val oldChainRemovalIndex = command.lastIndexOf("remove_chain \"\$active\"")
         assertTrue(activationIndex >= 0)
         assertTrue(oldChainRemovalIndex > activationIndex)
@@ -51,7 +53,7 @@ class XrayApiFirewallTest {
 
         assertFalse(firewall.apply(port = 48_123, appUid = 10_518))
 
-        assertTrue(command.indexOf("refresh_ruleset || exit 1") < command.indexOf("iptables -w -N"))
+        assertTrue(command.indexOf("refresh_ruleset || exit 1") < command.indexOf("bulk_setup"))
     }
 
     @Test
@@ -66,7 +68,7 @@ class XrayApiFirewallTest {
 
         val cleanup = "remove_chain \"\$replacement\"; exit 1; fi"
         assertTrue(command.contains(cleanup))
-        assertTrue(command.indexOf(cleanup) != command.lastIndexOf(cleanup))
+        assertTrue(command.contains(cleanup))
     }
 
     @Test

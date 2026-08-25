@@ -146,6 +146,21 @@ class ServerAddressResolverTest {
         assertEquals(listOf("192.0.2.1"), result)
     }
 
+    @Test
+    fun `successful host lookups are reused`() = runTest {
+        var lookups = 0
+        val resolver = ServerAddressResolver(hostLookup = {
+            lookups++
+            listOf("192.0.2.1")
+        })
+        val server = rawServer("one.example")
+
+        resolver.resolve(server)
+        resolver.resolve(server)
+
+        assertEquals(1, lookups)
+    }
+
     private fun rawServer(vararg addresses: String): ServerConfig = ServerConfig(
         protocol = Protocol.RAW,
         name = "Raw",

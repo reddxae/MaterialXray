@@ -39,6 +39,11 @@ class OemAutostartManager @Inject constructor(
 
     suspend fun grantWithRoot(force: Boolean = false): Boolean {
         if (!isXiaomiManufacturer(Build.MANUFACTURER)) return false
+        if (!force && readXiaomiAutostartMode(context) == AppOpsManager.MODE_ALLOWED) {
+            preferences.edit().putBoolean(KEY_ROOT_GRANT_SUCCEEDED, true).apply()
+            _guidance.value = readGuidance(granted = true)
+            return true
+        }
         if (!force &&
             preferences.getBoolean(KEY_ROOT_GRANT_ATTEMPTED, false) &&
             !preferences.getBoolean(KEY_ROOT_GRANT_SUCCEEDED, false)

@@ -7,6 +7,7 @@ import java.nio.file.StandardCopyOption
 import java.security.KeyStore
 import java.security.cert.X509Certificate
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -17,10 +18,13 @@ internal fun interface RootCertificateBundle {
 internal class AndroidRootCertificateBundle(
     private val loadCertificates: () -> List<ByteArray> = ::loadAndroidCaCertificates,
 ) : RootCertificateBundle {
+    private val generatedInProcess = AtomicBoolean()
+
     // Enumerating the Android CA store and rewriting the bundle happens on every root connect, so
     // it must not run on whichever thread issued the connection command.
     override suspend fun update(file: File) {
         withContext(Dispatchers.IO) {
+            if (generatedInProcess.get() && file.isFile && file.length() > 0L) return@withContext
             val certificates = loadCertificates()
             require(certificates.isNotEmpty()) { "Android CA store contains no certificates" }
 
@@ -42,6 +46,7 @@ internal class AndroidRootCertificateBundle(
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING,
                 )
+                generatedInProcess.set(true)
             } finally {
                 temporaryFile.delete()
             }

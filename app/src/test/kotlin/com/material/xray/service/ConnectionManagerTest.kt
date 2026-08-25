@@ -270,6 +270,23 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `TPROXY readiness failure rolls back routing and startup guard`() = runTest {
+        val harness = Harness().apply { apiClients.sysStats = null }
+
+        harness.manager.connect(
+            server(),
+            runtimeSettings().copy(rootConnectionBackend = RootConnectionBackend.Tproxy),
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
+        )
+
+        assertEquals(1, harness.tproxyGateway.activateCalls)
+        assertEquals(1, harness.cleanup.cleanCalls)
+        assertEquals(1, harness.tproxyGateway.removeGuardCalls)
+        assertFalse(harness.manager.hasTransitionGuard)
+        assertTrue(harness.stateCoordinator.state.value is ConnectionState.Error)
+    }
+
+    @Test
     fun `raw connection propagates bootstrap hosts into proxied default DNS`() = runTest {
         val rawServer = server().copy(
             protocol = Protocol.RAW,
@@ -373,6 +390,20 @@ class ConnectionManagerTest {
 
         assertTrue(harness.stateCoordinator.state.value is ConnectionState.Connected)
         assertEquals(4, harness.apiClients.sysStatsQueries)
+    }
+
+    @Test
+    fun `connection rolls back when Xray exits after becoming API ready`() = runTest {
+        val harness = Harness().apply { rootProcess.alive = false }
+
+        harness.manager.connect(server(), runtimeSettings(), preparation = ConnectionPreparation.ReusePreparedRuntime)
+
+        assertEquals(1, harness.tunGateway.applyCalls)
+        assertEquals(1, harness.cleanup.cleanCalls)
+        assertEquals(
+            ConnectionState.Error(harness.environment.message(R.string.connection_error_xray_crashed)),
+            harness.stateCoordinator.state.value,
+        )
     }
 
     @Test
@@ -766,6 +797,7 @@ class ConnectionManagerTest {
             tunName: String,
             addressCidr: String,
             ipv6AddressCidr: String?,
+            processId: Int?,
             isProcessAlive: suspend () -> Boolean,
         ): TunManager.TunSetupResult {
             configureCalls += 1
@@ -786,6 +818,7 @@ class ConnectionManagerTest {
             routeProfileIds: Set<Int>,
             tunnelTetheredClients: Boolean,
             bypassLan: Boolean,
+            cleanExistingState: Boolean,
         ): TunManager.RoutingResult {
             applyCalls += 1
             lastAllowIpv6 = allowIpv6
@@ -896,6 +929,7 @@ class ConnectionManagerTest {
     private class FakeRootProcess : RootXrayProcessController {
         var startCalls = 0
         var crashReason = "process failed"
+        var alive = true
 
         override suspend fun prepareLogFile() = Unit
 
@@ -904,7 +938,7 @@ class ConnectionManagerTest {
             return 42
         }
 
-        override suspend fun isAlive(pid: Int): Boolean = true
+        override suspend fun isAlive(pid: Int): Boolean = alive
         override suspend fun kill(pid: Int, signal: Int): Boolean = true
         override suspend fun readResidentMemoryMb(pid: Int): Long = 1
         override suspend fun readCrashReason(lines: Int): String = crashReason

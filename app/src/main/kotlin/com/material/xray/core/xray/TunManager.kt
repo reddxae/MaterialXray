@@ -4,7 +4,6 @@ import com.material.xray.core.app.appUidRangeForProfile
 import com.material.xray.core.app.isApplicationUid
 import com.material.xray.core.app.profileIdForUid
 import com.material.xray.core.root.RootShell
-import kotlinx.coroutines.delay
 
 class TunManager internal constructor(
     private val executeCommand: suspend (String) -> RootShell.Result,
@@ -46,26 +45,9 @@ class TunManager internal constructor(
         tunName: String,
         addressCidr: String = DEFAULT_TUN_ADDRESS_CIDR,
         ipv6AddressCidr: String? = null,
+        processId: Int? = null,
         isProcessAlive: suspend () -> Boolean = { true },
     ): TunSetupResult {
-        var attempts = 0
-        while (attempts < TUN_WAIT_ATTEMPTS) {
-            val result = executeCommand("ip link show $tunName 2>/dev/null")
-            if (result.isSuccess && result.output.contains(tunName)) break
-            if (!isProcessAlive()) {
-                return TunSetupResult(success = false, processExited = true)
-            }
-            delay(TUN_WAIT_POLL_INTERVAL_MS)
-            attempts++
-        }
-        if (attempts >= TUN_WAIT_ATTEMPTS) {
-            return if (isProcessAlive()) {
-                TunSetupResult(success = false, error = "TUN interface $tunName did not come up within timeout")
-            } else {
-                TunSetupResult(success = false, processExited = true)
-            }
-        }
-
         val quotedTunName = shellQuote(tunName)
         val upCommand = buildList {
             ipv6AddressCidr?.let {
@@ -78,9 +60,28 @@ class TunManager internal constructor(
             }
             add("ip link set $quotedTunName up")
         }.joinToString(" && ")
-        val upResult = executeCommand(upCommand)
-        if (!upResult.isSuccess) {
-            return TunSetupResult(success = false, error = upResult.toCommandError(upCommand))
+        if (processId != null) {
+            val setupCommand = "i=0; while [ \$i -lt $TUN_WAIT_ATTEMPTS ]; do " +
+                "kill -0 $processId 2>/dev/null || exit $TUN_PROCESS_EXIT_CODE; " +
+                "if ip link show $quotedTunName >/dev/null 2>&1; then $upCommand; exit \$?; fi; " +
+                "sleep ${TUN_WAIT_POLL_INTERVAL_MS / 1_000.0}; i=\$((i + 1)); done; " +
+                "exit $TUN_WAIT_TIMEOUT_EXIT_CODE"
+            val result = executeCommand(setupCommand)
+            when {
+                result.isSuccess -> Unit
+                result.exitCode == TUN_PROCESS_EXIT_CODE -> return TunSetupResult(success = false, processExited = true)
+                result.exitCode == TUN_WAIT_TIMEOUT_EXIT_CODE -> {
+                    return if (isProcessAlive()) {
+                        TunSetupResult(success = false, error = "TUN interface $tunName did not come up within timeout")
+                    } else {
+                        TunSetupResult(success = false, processExited = true)
+                    }
+                }
+                else -> return TunSetupResult(success = false, error = result.toCommandError(upCommand))
+            }
+        } else {
+            val waitResult = waitForTunInChunks(quotedTunName, upCommand, isProcessAlive)
+            if (waitResult != null) return waitResult
         }
 
         if (ipv6AddressCidr != null) {
@@ -102,6 +103,34 @@ class TunManager internal constructor(
         }
 
         return TunSetupResult(success = true)
+    }
+
+    private suspend fun waitForTunInChunks(
+        quotedTunName: String,
+        upCommand: String,
+        isProcessAlive: suspend () -> Boolean,
+    ): TunSetupResult? {
+        var configured = false
+        repeat(TUN_WAIT_ATTEMPTS / TUN_WAIT_CHUNK_ATTEMPTS) {
+            if (configured) return@repeat
+            val setupCommand = "i=0; while [ \$i -lt $TUN_WAIT_CHUNK_ATTEMPTS ]; do " +
+                "if ip link show $quotedTunName >/dev/null 2>&1; then $upCommand; exit \$?; fi; " +
+                "sleep ${TUN_WAIT_POLL_INTERVAL_MS / 1_000.0}; i=\$((i + 1)); done; " +
+                "exit $TUN_WAIT_TIMEOUT_EXIT_CODE"
+            val upResult = executeCommand(setupCommand)
+            if (upResult.isSuccess) {
+                configured = true
+                return@repeat
+            }
+            if (upResult.exitCode != TUN_WAIT_TIMEOUT_EXIT_CODE) {
+                return TunSetupResult(success = false, error = upResult.toCommandError(upCommand))
+            }
+            if (!isProcessAlive()) return TunSetupResult(success = false, processExited = true)
+        }
+        if (!configured) {
+            return TunSetupResult(success = false, error = "TUN interface $quotedTunName did not come up within timeout")
+        }
+        return null
     }
 
     suspend fun detectPhysicalRoute(tunName: String): PhysicalRoute? {
@@ -148,6 +177,7 @@ class TunManager internal constructor(
         routeProfileIds: Set<Int> = setOf(0),
         tunnelTetheredClients: Boolean = false,
         bypassLan: Boolean = true,
+        cleanExistingState: Boolean = true,
     ): RoutingResult {
         val managedAppTables = appRouteTables(routeTable, managedAppRouteCount)
             .plus(appTunRoutes.map { it.routeTable })
@@ -161,32 +191,6 @@ class TunManager internal constructor(
 
         val guardResult = installRoutingUpdateGuard(updateGuardTable, routedProfileIds, bypassUids)
         if (!guardResult.success) return guardResult
-
-        val bypassRoute = physicalBypassRouteCommand(bypassTable, physicalRoute)
-        val bypassRule = "ip rule add fwmark $fwmark table $bypassTable prio 10"
-        val tunRoute = "ip route replace default dev $tunName table $routeTable"
-        val routeTables = listOf(bypassTable, routeTable) + managedAppTables
-        val setupCommands = buildList {
-            add(tetherCleanupCommand(routeTable))
-            add("ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null || true")
-            add(removeManagedRoutingTablesCommand(routeTables, "ip rule"))
-            add(removeManagedRoutingTablesCommand(routeTables, "ip -6 rule"))
-            add(flushRouteTablesCommand(routeTables, "ip route"))
-            add(flushRouteTablesCommand(routeTables, "ip -6 route"))
-            add(bypassRoute)
-            add(bypassRule)
-            add(tunRoute)
-            appTunRoutes.forEach { route ->
-                add("ip route replace default dev ${route.tunName} table ${route.routeTable}")
-            }
-            add(ipv6TunRouteCommand(tunName, routeTable, allowIpv6))
-            appTunRoutes.forEach { route ->
-                add(ipv6TunRouteCommand(route.tunName, route.routeTable, allowIpv6))
-            }
-        }
-        val setupCommand = setupCommands.joinToString(" && ")
-        val setupResult = executeCommand(setupCommand)
-        if (!setupResult.isSuccess) return setupResult.toRoutingError("initial IP routing setup")
 
         val uidRoutingCommands = defaultUidRoutingRuleCommands(
             routeTable = routeTable,
@@ -222,8 +226,37 @@ class TunManager internal constructor(
             ipv6UidRoutingCommands += tetherRoutingRuleCommand(routeTable, ruleCommand = "ip -6 rule")
         }
 
-        val routingResult = executeRoutingCommands(uidRoutingCommands + ipv6UidRoutingCommands)
-        if (!routingResult.success) return routingResult
+        val bypassRoute = physicalBypassRouteCommand(bypassTable, physicalRoute)
+        val routeTables = listOf(bypassTable, routeTable) + managedAppTables
+        if (cleanExistingState) {
+            val setupCommands = buildList {
+                add(tetherCleanupCommand())
+                add("ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null || true")
+                add(removeManagedRoutingTablesCommand(routeTables, "ip rule"))
+                add(removeManagedRoutingTablesCommand(routeTables, "ip -6 rule"))
+                add(flushRouteTablesCommand(routeTables, "ip route"))
+                add(flushRouteTablesCommand(routeTables, "ip -6 route"))
+            }.joinToString(" && ")
+            val cleanupResult = executeCommand(setupCommands)
+            if (!cleanupResult.isSuccess) return cleanupResult.toRoutingError("stale IP routing cleanup")
+        }
+        val ipv4Setup = buildList {
+            add(bypassRoute.removePrefix("ip "))
+            add("rule add fwmark $fwmark table $bypassTable prio 10")
+            add("route replace default dev $tunName table $routeTable")
+            appTunRoutes.forEach { route -> add("route replace default dev ${route.tunName} table ${route.routeTable}") }
+            addAll(uidRoutingCommands.map { it.removePrefix("ip ") })
+        }
+        val ipv6Setup = buildList {
+            add(ipv6TunRouteCommand(tunName, routeTable, allowIpv6).removePrefix("ip -6 "))
+            appTunRoutes.forEach { route ->
+                add(ipv6TunRouteCommand(route.tunName, route.routeTable, allowIpv6).removePrefix("ip -6 "))
+            }
+            addAll(ipv6UidRoutingCommands.map { it.removePrefix("ip -6 ") })
+        }
+        val setupCommand = ipBatchCommand(ipv4Setup, ipv6 = false) + " && " + ipBatchCommand(ipv6Setup, ipv6 = true)
+        val setupResult = executeCommand(setupCommand)
+        if (!setupResult.isSuccess) return setupResult.toRoutingError("IP routing setup")
 
         if (tunnelTetheredClients) {
             val tetherCommand = tetherSetupCommand(tunName, physicalRoute.dev, allowIpv6, bypassLan)
@@ -231,7 +264,7 @@ class TunManager internal constructor(
             if (!tetherResult.isSuccess) return tetherResult.toRoutingError("tether routing setup")
         }
 
-        return removeRoutingUpdateGuard(updateGuardTable)
+        return removeRoutingUpdateGuard(updateGuardTable, routedProfileIds, bypassUids)
     }
 
     suspend fun replacePhysicalBypassRoute(
@@ -271,7 +304,7 @@ class TunManager internal constructor(
             }
         }
         val commands = listOf(
-            tetherCleanupCommand(routeTable),
+            tetherCleanupCommand(),
             "ip rule del fwmark $fwmark table main prio 10 2>/dev/null || true",
             "ip rule del fwmark $fwmark table $bypassTable prio 10 2>/dev/null || true",
             "ip rule del fwmark $routeMark table $routeTable prio 20 2>/dev/null || true",
@@ -473,34 +506,32 @@ class TunManager internal constructor(
         }
     }
 
-    private fun tetherCleanupCommand(routeTable: Int): String {
-        val verificationCommands = mutableListOf<String>()
-        return buildList {
-            for (ruleCommand in listOf("ip rule", "ip -6 rule")) {
-                add(
-                    "while $ruleCommand del fwmark $TETHER_MARK_HEX/$TETHER_MARK_HEX table $routeTable " +
-                        "prio $TETHER_RULE_PRIORITY 2>/dev/null; do :; done",
-                )
-            }
-            for (tool in listOf("iptables -w", "ip6tables -w")) {
-                add("while $tool -t mangle -D PREROUTING -j $TETHER_PREROUTING_CHAIN 2>/dev/null; do :; done")
-                add("$tool -t mangle -F $TETHER_PREROUTING_CHAIN 2>/dev/null || true")
-                add("$tool -t mangle -X $TETHER_PREROUTING_CHAIN 2>/dev/null || true")
-                add("while $tool -t nat -D PREROUTING -j $TETHER_DNS_CHAIN 2>/dev/null; do :; done")
-                add("$tool -t nat -F $TETHER_DNS_CHAIN 2>/dev/null || true")
-                add("$tool -t nat -X $TETHER_DNS_CHAIN 2>/dev/null || true")
-                add("while $tool -t filter -D INPUT -j $TETHER_FORWARD_CHAIN 2>/dev/null; do :; done")
-                add("while $tool -t filter -D FORWARD -j $TETHER_FORWARD_CHAIN 2>/dev/null; do :; done")
-                add("$tool -t filter -F $TETHER_FORWARD_CHAIN 2>/dev/null || true")
-                add("$tool -t filter -X $TETHER_FORWARD_CHAIN 2>/dev/null || true")
-                verificationCommands += "! $tool -t mangle -C PREROUTING -j $TETHER_PREROUTING_CHAIN 2>/dev/null"
-                verificationCommands += "! $tool -t nat -C PREROUTING -j $TETHER_DNS_CHAIN 2>/dev/null"
-                verificationCommands += "! $tool -t filter -C INPUT -j $TETHER_FORWARD_CHAIN 2>/dev/null"
-                verificationCommands += "! $tool -t filter -C FORWARD -j $TETHER_FORWARD_CHAIN 2>/dev/null"
-            }
-            add(verificationCommands.joinToString(" && "))
-        }.joinToString("; ")
-    }
+    private fun tetherCleanupCommand(): String = buildList {
+        for (tool in listOf("iptables -w", "ip6tables -w")) {
+            val saveTool = tool.substringBefore(' ') + "-save"
+            val cleanup = listOf(
+                "while $tool -t mangle -D PREROUTING -j $TETHER_PREROUTING_CHAIN 2>/dev/null; do :; done",
+                "$tool -t mangle -F $TETHER_PREROUTING_CHAIN 2>/dev/null || true",
+                "$tool -t mangle -X $TETHER_PREROUTING_CHAIN 2>/dev/null || true",
+                "while $tool -t nat -D PREROUTING -j $TETHER_DNS_CHAIN 2>/dev/null; do :; done",
+                "$tool -t nat -F $TETHER_DNS_CHAIN 2>/dev/null || true",
+                "$tool -t nat -X $TETHER_DNS_CHAIN 2>/dev/null || true",
+                "while $tool -t filter -D INPUT -j $TETHER_FORWARD_CHAIN 2>/dev/null; do :; done",
+                "while $tool -t filter -D FORWARD -j $TETHER_FORWARD_CHAIN 2>/dev/null; do :; done",
+                "$tool -t filter -F $TETHER_FORWARD_CHAIN 2>/dev/null || true",
+                "$tool -t filter -X $TETHER_FORWARD_CHAIN 2>/dev/null || true",
+                "! $tool -t mangle -C PREROUTING -j $TETHER_PREROUTING_CHAIN 2>/dev/null",
+                "! $tool -t nat -C PREROUTING -j $TETHER_DNS_CHAIN 2>/dev/null",
+                "! $tool -t filter -C INPUT -j $TETHER_FORWARD_CHAIN 2>/dev/null",
+                "! $tool -t filter -C FORWARD -j $TETHER_FORWARD_CHAIN 2>/dev/null",
+            ).joinToString("; ")
+            add(
+                "if rules=\$($saveTool 2>/dev/null); then " +
+                    "case \"\$rules\" in *$TETHER_PREROUTING_CHAIN*|*$TETHER_DNS_CHAIN*|" +
+                    "*$TETHER_FORWARD_CHAIN*) $cleanup;; esac; else $cleanup; fi",
+            )
+        }
+    }.joinToString("; ")
 
     private fun physicalBypassRouteCommand(
         bypassTable: Int,
@@ -526,25 +557,20 @@ class TunManager internal constructor(
             commands.filter { it.startsWith(IPV4_RULE_COMMAND_PREFIX) },
             commands.filter { it.startsWith(IPV6_RULE_COMMAND_PREFIX) },
         )
-        var firstFailure: RoutingResult? = null
-        for (group in commandGroups) {
-            if (group.isEmpty()) continue
-            for (chunk in group.chunked(IP_RULE_BATCH_SIZE)) {
-                val command = ipRuleBatchCommand(chunk, force)
-                val result = executeCommand(command)
-                if (!result.isSuccess) {
-                    firstFailure = firstFailure ?: result.toRoutingError(command)
-                    if (!continueOnFailure) return firstFailure
-                }
-            }
+        val batches = commandGroups.flatMap { group ->
+            group.chunked(IP_RULE_BATCH_SIZE).map { chunk -> ipRuleBatchCommand(chunk, force) }
         }
-        return firstFailure ?: RoutingResult(success = true)
+        val command = if (continueOnFailure) {
+            "status=0; ${batches.joinToString("; ") { batch -> "( $batch ) || status=1" }}; exit \$status"
+        } else {
+            batches.joinToString(" && ")
+        }
+        val result = executeCommand(command)
+        return if (result.isSuccess) RoutingResult(success = true) else result.toRoutingError(command)
     }
 
-    private fun flushRouteTablesCommand(routeTables: List<Int>, routeCommand: String): String = routeTables.distinct().joinToString(" && ") { table ->
-        "if $routeCommand show table $table >/dev/null 2>&1; then " +
-            "$routeCommand flush table $table 2>/dev/null; fi"
-    }
+    private fun flushRouteTablesCommand(routeTables: List<Int>, routeCommand: String): String = routeTables.distinct()
+        .joinToString(" && ") { table -> "$routeCommand flush table $table 2>/dev/null" }
 
     private fun removeManagedRoutingTablesCommand(routeTables: List<Int>, ruleCommand: String): String {
         val tables = routeTables.distinct().joinToString(" ")
@@ -568,90 +594,43 @@ class TunManager internal constructor(
         bypassUids: Set<Int>,
     ): RoutingResult {
         // Root mode requires both families so a policy update can never leak over IPv6.
-        val routeCommand = "ip route replace unreachable default table $guardTable && " +
-            "ip -6 route replace unreachable default table $guardTable"
-        val routeResult = executeCommand(routeCommand)
-        if (!routeResult.isSuccess) return routeResult.toRoutingError(routeCommand)
-
-        return executeRoutingCommands(
-            updateGuardRuleCommands(guardTable, profileIds, bypassUids, "ip rule", operation = "add") +
-                updateGuardRuleCommands(guardTable, profileIds, bypassUids, "ip -6 rule", operation = "add"),
-        )
+        val ipv4 = listOf("route replace unreachable default table $guardTable") +
+            updateGuardRuleCommands(guardTable, profileIds, bypassUids, "ip rule", operation = "add")
+                .map { it.removePrefix("ip ") }
+        val ipv6 = listOf("route replace unreachable default table $guardTable") +
+            updateGuardRuleCommands(guardTable, profileIds, bypassUids, "ip -6 rule", operation = "add")
+                .map { it.removePrefix("ip -6 ") }
+        val command = ipBatchCommand(ipv4, ipv6 = false) + " && " + ipBatchCommand(ipv6, ipv6 = true)
+        val result = executeCommand(command)
+        return if (result.isSuccess) RoutingResult(success = true) else result.toRoutingError("routing update guard setup")
     }
 
-    private suspend fun removeRoutingUpdateGuard(guardTable: Int): RoutingResult {
-        var lastDeletionError: String? = null
-        repeat(ROUTING_UPDATE_GUARD_REMOVAL_ATTEMPTS) {
-            val inspection = inspectRoutingUpdateGuard(guardTable)
-            inspection.failure?.let { return it }
-            if (inspection.deletionCommands.isEmpty()) return flushRoutingUpdateGuardTable(guardTable)
-
-            val deletionResult = executeRoutingCommands(
-                commands = inspection.deletionCommands,
-                force = true,
-                continueOnFailure = true,
-            )
-            if (!deletionResult.success) lastDeletionError = deletionResult.error
-        }
-
-        val verification = inspectRoutingUpdateGuard(guardTable)
-        verification.failure?.let { return it }
-        if (verification.deletionCommands.isNotEmpty()) {
-            val details = listOfNotNull(
-                "remaining rule: ${verification.guardRules.first().trim()}",
-                lastDeletionError,
-            ).joinToString(" | ")
-            return RoutingResult(success = false, error = "routing update guard removal verification failed: $details")
-        }
-        return flushRoutingUpdateGuardTable(guardTable)
-    }
-
-    private suspend fun inspectRoutingUpdateGuard(guardTable: Int): RoutingUpdateGuardInspection {
-        val guardRules = mutableListOf<String>()
-        val deletionCommands = mutableListOf<String>()
-        for (ruleCommand in listOf("ip rule", "ip -6 rule")) {
-            val inspectionCommand = "$ruleCommand show table $guardTable"
-            val inspectionResult = executeCommand(inspectionCommand)
-            if (!inspectionResult.isSuccess) {
-                return RoutingUpdateGuardInspection(failure = inspectionResult.toRoutingError(inspectionCommand))
-            }
-            guardRules += inspectionResult.output.lineSequence().filter { line ->
-                line.isRoutingUpdateGuardRule(guardTable)
-            }
-            deletionCommands += routingUpdateGuardDeletionCommands(
-                output = inspectionResult.output,
-                ruleCommand = ruleCommand,
-                guardTable = guardTable,
-            )
-        }
-        return RoutingUpdateGuardInspection(
-            guardRules = guardRules,
-            deletionCommands = deletionCommands,
-        )
-    }
-
-    private suspend fun flushRoutingUpdateGuardTable(guardTable: Int): RoutingResult {
+    private suspend fun removeRoutingUpdateGuard(
+        guardTable: Int,
+        profileIds: Set<Int>,
+        bypassUids: Set<Int>,
+    ): RoutingResult {
         val flushCommand = listOf(
             flushRouteTablesCommand(listOf(guardTable), "ip route"),
             flushRouteTablesCommand(listOf(guardTable), "ip -6 route"),
         ).joinToString(" && ")
-        val flushResult = executeCommand(flushCommand)
-        return if (flushResult.isSuccess) RoutingResult(success = true) else flushResult.toRoutingError(flushCommand)
+        val ipv4Deletion = updateGuardRuleCommands(guardTable, profileIds, bypassUids, "ip rule", operation = "del")
+            .map { it.removePrefix("ip ") }
+        val ipv6Deletion = updateGuardRuleCommands(guardTable, profileIds, bypassUids, "ip -6 rule", operation = "del")
+            .map { it.removePrefix("ip -6 ") }
+        val command = buildString {
+            append(ipBatchCommand(ipv4Deletion, ipv6 = false, force = true))
+            append(" && ")
+            append(ipBatchCommand(ipv6Deletion, ipv6 = true, force = true))
+            append(" && v4_remaining=\$(ip rule show table $guardTable) ")
+            append("&& v6_remaining=\$(ip -6 rule show table $guardTable) ")
+            append("&& remaining=\"\$v4_remaining\n\$v6_remaining\" ")
+            append("&& case \"\$remaining\" in *'$UPDATE_GUARD_PRIORITY:'*) false;; *) true;; esac && ")
+            append(flushCommand)
+        }
+        val result = executeCommand(command)
+        return if (result.isSuccess) RoutingResult(success = true) else result.toRoutingError("routing update guard removal")
     }
-
-    private fun routingUpdateGuardDeletionCommands(
-        output: String,
-        ruleCommand: String,
-        guardTable: Int,
-    ): List<String> = output.lineSequence().mapNotNull { line ->
-        if (!line.isRoutingUpdateGuardRule(guardTable)) return@mapNotNull null
-        val rule = line.substringAfter(':', missingDelimiterValue = "").trim()
-        rule.takeIf { it.isNotEmpty() }
-            ?.let { "$ruleCommand del pref $UPDATE_GUARD_PRIORITY $it" }
-    }.toList()
-
-    private fun String.isRoutingUpdateGuardRule(guardTable: Int): Boolean = substringBefore(':').trim().toIntOrNull() == UPDATE_GUARD_PRIORITY &&
-        referencesAnyLookupTable(setOf(guardTable))
 
     private fun updateGuardRuleCommands(
         guardTable: Int,
@@ -672,6 +651,13 @@ class TunManager internal constructor(
         val commandPrefix = if (ipv6) "ip -6 " else "ip "
         val batchLines = commands.map { command -> command.removePrefix(commandPrefix) }
         val arguments = batchLines.joinToString(" ") { line -> shellQuote(line) }
+        val ipCommand = if (ipv6) "ip -6" else "ip"
+        val forceOption = if (force) " -force" else ""
+        return "printf '%s\\n' $arguments | $ipCommand$forceOption -batch -"
+    }
+
+    private fun ipBatchCommand(commands: List<String>, ipv6: Boolean, force: Boolean = false): String {
+        val arguments = commands.joinToString(" ") { line -> shellQuote(line) }
         val ipCommand = if (ipv6) "ip -6" else "ip"
         val forceOption = if (force) " -force" else ""
         return "printf '%s\\n' $arguments | $ipCommand$forceOption -batch -"
@@ -721,12 +707,6 @@ class TunManager internal constructor(
         }
     }
 
-    private data class RoutingUpdateGuardInspection(
-        val guardRules: List<String> = emptyList(),
-        val deletionCommands: List<String> = emptyList(),
-        val failure: RoutingResult? = null,
-    )
-
     companion object {
         private const val APP_ROUTE_TABLE_OFFSET = 10
         private const val UPDATE_GUARD_ROUTE_TABLE_OFFSET = 2
@@ -741,10 +721,11 @@ class TunManager internal constructor(
         private const val TETHER_FORWARD_CHAIN = "MXTF"
         private const val TETHER_DNS_IPV4 = "198.18.0.1"
         private const val TETHER_DNS_IPV6 = "2001:db8::1"
-        private const val ROUTING_UPDATE_GUARD_REMOVAL_ATTEMPTS = 2
         private const val IPV4_RULE_COMMAND_PREFIX = "ip rule "
         private const val IPV6_RULE_COMMAND_PREFIX = "ip -6 rule "
         private const val IP_RULE_BATCH_SIZE = 128
+        private const val TUN_WAIT_TIMEOUT_EXIT_CODE = 124
+        private const val TUN_PROCESS_EXIT_CODE = 125
         private val NAMED_ROUTE_TABLES = mapOf("default" to 253, "main" to 254, "local" to 255)
         private val IPV4_ALWAYS_BYPASS_CIDRS = listOf(
             "0.0.0.0/8",
@@ -759,6 +740,7 @@ class TunManager internal constructor(
         const val DEFAULT_TUN_ADDRESS_CIDR = "10.0.0.1/30"
         const val DEFAULT_TUN_IPV6_ADDRESS_CIDR = "fd10:10:14::1/64"
         private const val TUN_WAIT_ATTEMPTS = 120
+        private const val TUN_WAIT_CHUNK_ATTEMPTS = 5
         private const val TUN_WAIT_POLL_INTERVAL_MS = 50L
 
         fun appTunName(baseTunName: String, index: Int): String {

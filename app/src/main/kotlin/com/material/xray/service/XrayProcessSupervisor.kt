@@ -108,9 +108,12 @@ internal class XrayProcessSupervisor(
         get() = environment.filesDir.resolve(XRAY_LOG_FILE_NAME).absolutePath
 
     override suspend fun prepareLogFile() {
-        commandRunner.execute("rm -f $logFile")
-        withContext(Dispatchers.IO) {
-            FileOutputStream(environment.filesDir.resolve(XRAY_LOG_FILE_NAME), false).use { }
+        val file = environment.filesDir.resolve(XRAY_LOG_FILE_NAME)
+        runCatching {
+            withContext(Dispatchers.IO) { FileOutputStream(file, false).use { } }
+        }.getOrElse {
+            commandRunner.execute("rm -f $logFile")
+            withContext(Dispatchers.IO) { FileOutputStream(file, false).use { } }
         }
     }
 

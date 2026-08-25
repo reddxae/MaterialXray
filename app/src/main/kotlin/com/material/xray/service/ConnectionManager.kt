@@ -19,6 +19,8 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
@@ -83,6 +85,8 @@ internal class ConnectionManager(
 
     @Volatile private var rootRuntimeKnownClean = false
 
+    private var rootRoutingKnownCleanForConnect = false
+
     // Root is the only runtime that installs routing outside the process; the rootless runtime
     // gets it from Android's VpnService.
     val isUsingRootRuntime: Boolean
@@ -98,6 +102,7 @@ internal class ConnectionManager(
         preparation: ConnectionPreparation = ConnectionPreparation.Full,
     ) {
         stateCoordinator.startConnection(transitionState)
+        rootRoutingKnownCleanForConnect = false
         val connectStartedAt = environment.elapsedRealtime()
         val fwmark = runtimeSettings.fwmark
         val routeTable = runtimeSettings.routeTable
@@ -276,6 +281,7 @@ internal class ConnectionManager(
         val customTunName = configuredTunName.trim()
         val persistedKnownCleanState = strategy.managesSystemRouting && cleanup.consumeKnownCleanState()
         val canReuseKnownCleanState = rootRuntimeKnownClean || persistedKnownCleanState
+        rootRoutingKnownCleanForConnect = strategy.managesSystemRouting && canReuseKnownCleanState && !transitionGuardInstalled
         if (strategy.managesSystemRouting) rootRuntimeKnownClean = false
         if (preparation.cleansPreviousState && strategy.managesSystemRouting) {
             if (canReuseKnownCleanState && !transitionGuardInstalled) {
@@ -771,6 +777,7 @@ internal class ConnectionManager(
                         tunName = tunName,
                         addressCidr = TunManager.DEFAULT_TUN_ADDRESS_CIDR,
                         ipv6AddressCidr = TunManager.DEFAULT_TUN_IPV6_ADDRESS_CIDR.takeIf { allowIpv6 },
+                        processId = pid,
                     ) { isProcessAlive(pid) }
                 },
             ),
@@ -799,65 +806,75 @@ internal class ConnectionManager(
         tproxyPlan: TproxyTrafficPlan?,
     ): Boolean {
         if (rootBackend == RootConnectionBackend.Tproxy && tproxyPlan != null) {
-            if (!waitForXrayApiReady(pid)) return false
-            val routingResult = executeStep(
-                ConnectionStep(
-                    "TPROXY routing setup",
-                    ConnectionProgress.ConfiguringRouting,
-                    isSuccessful = { it.success },
-                    action = { tproxyGateway.activate(tproxyPlan) },
-                ),
-            )
-            if (!routingResult.success) {
-                diagnostics.logTproxyDiagnostics("tproxy-activation-failure", tproxyPlan.runtimeState, pid)
-                failRouting(routingResult)
-                return false
+            return coroutineScope {
+                val apiReadiness = async { measureXrayApiReadiness(pid) }
+                val routingResult = executeStep(
+                    ConnectionStep(
+                        "TPROXY routing setup",
+                        ConnectionProgress.ConfiguringRouting,
+                        isSuccessful = { it.success },
+                        action = { tproxyGateway.activate(tproxyPlan) },
+                    ),
+                )
+                if (!routingResult.success) {
+                    apiReadiness.cancel()
+                    diagnostics.logTproxyDiagnostics("tproxy-activation-failure", tproxyPlan.runtimeState, pid)
+                    failRouting(routingResult)
+                    return@coroutineScope false
+                }
+                if (!finishXrayApiReadiness(apiReadiness.await())) return@coroutineScope false
+                val healthy = executeStep(
+                    ConnectionStep(
+                        "TPROXY routing verification",
+                        ConnectionProgress.ConfiguringRouting,
+                        isSuccessful = { it },
+                        action = { tproxyGateway.verify(tproxyPlan.runtimeState) },
+                    ),
+                )
+                if (!healthy) {
+                    diagnostics.logTproxyDiagnostics("tproxy-health-failure", tproxyPlan.runtimeState, pid)
+                    fail(environment.localizedString(R.string.connection_error_tproxy_health_check))
+                    return@coroutineScope false
+                }
+                if (!ensureProcessAliveAfterSetup(pid)) return@coroutineScope false
+                log.append(LogSource.APP, "TPROXY routing applied")
+                finishTransitionGuard()
             }
-            val healthy = executeStep(
-                ConnectionStep(
-                    "TPROXY routing verification",
-                    ConnectionProgress.ConfiguringRouting,
-                    isSuccessful = { it },
-                    action = { tproxyGateway.verify(tproxyPlan.runtimeState) },
-                ),
-            )
-            if (!healthy) {
-                diagnostics.logTproxyDiagnostics("tproxy-health-failure", tproxyPlan.runtimeState, pid)
-                fail(environment.localizedString(R.string.connection_error_tproxy_health_check))
-                return false
-            }
-            log.append(LogSource.APP, "TPROXY routing applied")
-            return finishTransitionGuard()
         }
-        if (
-            !waitForRootTun(
-                managesSystemRouting = managesSystemRouting,
+        if (!managesSystemRouting) return waitForXrayApiReady(pid) && finishTransitionGuard()
+        return coroutineScope {
+            val apiReadiness = async { measureXrayApiReadiness(pid) }
+            val routingReady = waitForRootTun(
+                managesSystemRouting = true,
                 tunName = tunName,
                 allowIpv6 = allowIpv6,
                 pid = pid,
-            )
-        ) {
-            return false
+            ) &&
+                waitForAppTuns(
+                    appRoutingPlan = appRoutingPlan,
+                    allowIpv6 = allowIpv6,
+                    pid = pid,
+                ) &&
+                applyRootRouting(
+                    managesSystemRouting = true,
+                    tunName = tunName,
+                    fwmark = fwmark,
+                    routeTable = routeTable,
+                    bypassTable = bypassTable,
+                    physicalRoute = physicalRoute,
+                    allowIpv6 = allowIpv6,
+                    tunnelTetheredClients = tunnelTetheredClients,
+                    bypassLan = bypassLan,
+                    appRoutingPlan = appRoutingPlan,
+                )
+            if (!routingReady) {
+                apiReadiness.cancel()
+                return@coroutineScope false
+            }
+            finishXrayApiReadiness(apiReadiness.await()) &&
+                ensureProcessAliveAfterSetup(pid) &&
+                finishTransitionGuard()
         }
-        if (!waitForAppTuns(appRoutingPlan = appRoutingPlan, allowIpv6 = allowIpv6, pid = pid)) return false
-        if (
-            !applyRootRouting(
-                managesSystemRouting,
-                tunName,
-                fwmark,
-                routeTable,
-                bypassTable,
-                physicalRoute,
-                allowIpv6,
-                tunnelTetheredClients,
-                bypassLan,
-                appRoutingPlan,
-            )
-        ) {
-            return false
-        }
-        if (!waitForXrayApiReady(pid)) return false
-        return finishTransitionGuard()
     }
 
     private suspend fun finishTransitionGuard(): Boolean {
@@ -904,6 +921,7 @@ internal class ConnectionManager(
                             tunName = route.tunName,
                             addressCidr = TunManager.appTunAddressCidr(index + 1),
                             ipv6AddressCidr = TunManager.appTunIpv6AddressCidr(index + 1).takeIf { allowIpv6 },
+                            processId = pid,
                         ) { isProcessAlive(pid) }
                     },
                 ),
@@ -973,6 +991,7 @@ internal class ConnectionManager(
                         routeProfileIds = appRoutingPlan.routeProfileIds,
                         tunnelTetheredClients = tunnelTetheredClients,
                         bypassLan = bypassLan,
+                        cleanExistingState = !rootRoutingKnownCleanForConnect,
                     )
                 },
             ),
@@ -990,29 +1009,44 @@ internal class ConnectionManager(
         return true
     }
 
-    private suspend fun waitForXrayApiReady(pid: Int): Boolean = executeStep(
+    private suspend fun waitForXrayApiReady(pid: Int): Boolean = finishXrayApiReadiness(measureXrayApiReadiness(pid))
+
+    private suspend fun measureXrayApiReadiness(pid: Int): XrayApiReadiness = executeStep(
         ConnectionStep(
             "Xray API readiness",
             ConnectionProgress.WaitingForCore,
-            isSuccessful = { it },
-            action = { awaitXrayApiReady(pid) },
+            isSuccessful = { it == XrayApiReadiness.Ready },
+            action = { probeXrayApiReadiness(pid) },
         ),
     )
 
-    private suspend fun awaitXrayApiReady(pid: Int): Boolean {
+    private suspend fun probeXrayApiReadiness(pid: Int): XrayApiReadiness {
         val deadline = environment.elapsedRealtime() + XRAY_API_READY_TIMEOUT_MS
         do {
-            if (!isProcessAlive(pid)) {
-                fail(environment.localizedString(R.string.connection_error_xray_crashed, readCrashReason()))
-                return false
-            }
-            if (readXraySysStats() != null) return true
+            if (readXraySysStats() != null) return XrayApiReadiness.Ready
+            if (!isProcessAlive(pid)) return XrayApiReadiness.ProcessExited
             val remainingMs = deadline - environment.elapsedRealtime()
             if (remainingMs <= 0) break
             delay(minOf(XRAY_API_READY_RETRY_DELAY_MS, remainingMs))
         } while (true)
+        return XrayApiReadiness.TimedOut
+    }
 
-        fail(environment.localizedString(R.string.connection_error_xray_api_not_ready))
+    private suspend fun finishXrayApiReadiness(readiness: XrayApiReadiness): Boolean = when (readiness) {
+        XrayApiReadiness.Ready -> true
+        XrayApiReadiness.ProcessExited -> {
+            fail(environment.localizedString(R.string.connection_error_xray_crashed, readCrashReason()))
+            false
+        }
+        XrayApiReadiness.TimedOut -> {
+            fail(environment.localizedString(R.string.connection_error_xray_api_not_ready))
+            false
+        }
+    }
+
+    private suspend fun ensureProcessAliveAfterSetup(pid: Int): Boolean {
+        if (isProcessAlive(pid)) return true
+        fail(environment.localizedString(R.string.connection_error_xray_crashed, readCrashReason()))
         return false
     }
 
@@ -1069,6 +1103,8 @@ internal class ConnectionManager(
         val success: Boolean,
         val route: TunManager.PhysicalRoute?,
     )
+
+    private enum class XrayApiReadiness { Ready, ProcessExited, TimedOut }
 
     suspend fun applyAppRoutingChanges(
         connectedState: ConnectionState.Connected,

@@ -372,6 +372,9 @@ class ConnectionManagerFactory @Inject constructor(
     private val stateCoordinator: ConnectionStateCoordinator,
     private val log: LogBuffer,
 ) {
+    private val serverAddressResolver by lazy { ServerAddressResolver(context) }
+    private val rootCertificateBundle by lazy { AndroidRootCertificateBundle() }
+
     internal fun create(): ConnectionManager {
         val environment = AndroidConnectionEnvironment(context)
         val xrayBinary = XrayBinaryConnectionAdapter(XrayBinary(context))
@@ -383,12 +386,11 @@ class ConnectionManagerFactory @Inject constructor(
             appUid = environment.appUid,
         )
         val stateStore = StateFileRoutingStateStore(StateFile(context))
-        val serverAddressResolver = ServerAddressResolver(context)
         val rootProcess = XrayProcessSupervisor(
             environment = runtimeEnvironment,
             commandRunner = RootShellCommandRunner(shell),
             xrayBinary = xrayBinary,
-            certificateBundle = AndroidRootCertificateBundle(),
+            certificateBundle = rootCertificateBundle,
             log = log,
         )
         val userProcess = UserXrayProcessSupervisor(

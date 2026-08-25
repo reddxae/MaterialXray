@@ -1,6 +1,7 @@
 package com.material.xray.core.root
 
 import android.os.Process as AndroidProcess
+import android.util.Log
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
 import java.util.concurrent.LinkedBlockingQueue
@@ -88,7 +89,16 @@ class RootShell(
                     return@withInterruptibleLock Result(-1, "", "Init network namespace is not accessible")
                 }
                 try {
-                    executeInternal(command, resolvedNamespace, timeoutMs)
+                    val startedAt = System.nanoTime()
+                    executeInternal(command, resolvedNamespace, timeoutMs).also { result ->
+                        val elapsedMs = (System.nanoTime() - startedAt) / NANOS_PER_MILLI
+                        if (elapsedMs >= SLOW_COMMAND_LOG_THRESHOLD_MS) {
+                            Log.d(LOG_TAG, "Root command took $elapsedMs ms: ${command.lineSequence().first().take(160)}")
+                        }
+                        if (!result.isSuccess) {
+                            Log.d(LOG_TAG, "Root command failed (${result.exitCode}): ${result.error.ifBlank { result.output }.take(500)}")
+                        }
+                    }
                 } catch (error: InterruptedException) {
                     closeInternal()
                     throw error
@@ -309,6 +319,8 @@ class RootShell(
     }
 
     private companion object {
+        const val LOG_TAG = "MXray.root"
+        const val SLOW_COMMAND_LOG_THRESHOLD_MS = 100L
         const val DEFAULT_COMMAND_TIMEOUT_MS = 10_000L
         const val NANOS_PER_MILLI = 1_000_000L
     }

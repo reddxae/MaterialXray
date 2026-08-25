@@ -60,6 +60,8 @@ import com.material.xray.model.XrayRuntimeSettings
 import com.material.xray.model.primaryBalancerTag
 import com.material.xray.model.proxyOutboundCount
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.FileDescriptor
+import java.io.PrintWriter
 import java.text.NumberFormat
 import java.util.Locale
 import javax.inject.Inject
@@ -110,6 +112,7 @@ class XrayService : VpnService() {
     private lateinit var connectionManager: ConnectionManager
     private lateinit var connectionLifecycle: ConnectionLifecycle
     private lateinit var healthWatchdog: XrayHealthWatchdog
+    private lateinit var xrayLogStreamer: XrayLogStreamer
     private val stepExecutor by lazy {
         ConnectionStepExecutor(
             elapsedRealtime = SystemClock::elapsedRealtime,
@@ -204,6 +207,7 @@ class XrayService : VpnService() {
         )
 
         screenInteractive = getSystemService(PowerManager::class.java).isInteractive
+        xrayLogStreamer = XrayLogStreamer(filesDir.resolve(XRAY_LOG_FILE_NAME), logBuffer).also { it.start(scope) }
         connectionManager = connectionManagerFactory.create()
         connectionLifecycle = ConnectionLifecycle(
             scope = scope,
@@ -498,6 +502,7 @@ class XrayService : VpnService() {
         processRecoveryJob?.cancel()
         stopBalancerSelectionTracker()
         stopProcessWatchdog()
+        if (::xrayLogStreamer.isInitialized) xrayLogStreamer.close()
         val rootManagedTunnel = ::connectionManager.isInitialized &&
             (connectionManager.isUsingRootRuntime || connectionStateCoordinator.state.value.describesRootManagedTunnel())
         if (::connectionManager.isInitialized) connectionManager.prepareForServiceDestruction()
@@ -511,6 +516,13 @@ class XrayService : VpnService() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = super.onBind(intent)
+
+    override fun dump(fd: FileDescriptor, writer: PrintWriter, args: Array<out String>) {
+        writer.println("state=${connectionStateCoordinator.state.value}")
+        writer.println("rootRuntime=${::connectionManager.isInitialized && connectionManager.isUsingRootRuntime}")
+        writer.println("--- logs ---")
+        writer.print(logBuffer.formatAll())
+    }
 
     private fun launchConnectionCommand(block: suspend () -> Unit) {
         connectionLifecycle.launch(block)

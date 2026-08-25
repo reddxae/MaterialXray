@@ -36,6 +36,8 @@ import com.material.xray.core.network.ServerLatencyTester
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.xray.ActiveConfigOverrideStore
 import com.material.xray.core.xray.StateFile
+import com.material.xray.core.xray.TproxyCompatibility
+import com.material.xray.core.xray.TproxyCompatibilityDetector
 import com.material.xray.core.xray.TunInterfaceDetector
 import com.material.xray.core.xray.TunManager
 import com.material.xray.core.xray.XrayState
@@ -106,6 +108,8 @@ class XrayService : VpnService() {
     @Inject lateinit var startupDiagnosticsLogger: StartupDiagnosticsLogger
 
     @Inject lateinit var serverLatencyTester: ServerLatencyTester
+
+    @Inject lateinit var tproxyCompatibilityDetector: TproxyCompatibilityDetector
 
     @Inject lateinit var activeConfigOverrideStore: ActiveConfigOverrideStore
 
@@ -656,12 +660,29 @@ class XrayService : VpnService() {
             )
             connectionStateCoordinator.emitEvent(ConnectionEvent.RootUnavailableFallback)
         }
-        val effectiveRuntimeSettings = if (
-            shouldUseRootService(runtimeSettings.useRootService, rootServiceAvailable, forceVpnService)
-        ) {
+        val useRootService = shouldUseRootService(runtimeSettings.useRootService, rootServiceAvailable, forceVpnService)
+        val baseRuntimeSettings = if (useRootService) {
             runtimeSettings
         } else {
             runtimeSettings.copy(useRootService = false, tunName = ROOTLESS_TUN_NAME)
+        }
+        val tproxyCompatibility = if (
+            useRootService && runtimeSettings.rootConnectionBackend == RootConnectionBackend.Tproxy
+        ) {
+            tproxyCompatibilityDetector.detect()
+        } else {
+            TproxyCompatibility.Unknown
+        }
+        val effectiveRuntimeSettings = baseRuntimeSettings.copy(
+            allowIpv6 = effectiveTproxyIpv6(
+                requested = baseRuntimeSettings.allowIpv6,
+                useRootService = baseRuntimeSettings.useRootService,
+                backend = baseRuntimeSettings.rootConnectionBackend,
+                compatibility = tproxyCompatibility,
+            ),
+        )
+        if (baseRuntimeSettings.allowIpv6 && !effectiveRuntimeSettings.allowIpv6) {
+            logBuffer.append(LogSource.APP, "TPROXY IPv6 is unavailable; using IPv4-only TPROXY")
         }
         val rootlessNetworkPlan = if (effectiveRuntimeSettings.useRootService) {
             null
@@ -2317,6 +2338,19 @@ internal fun shouldUseRootService(
     available: Boolean,
     alwaysOnVpn: Boolean,
 ): Boolean = requested && available && !alwaysOnVpn
+
+internal fun effectiveTproxyIpv6(
+    requested: Boolean,
+    useRootService: Boolean,
+    backend: RootConnectionBackend,
+    compatibility: TproxyCompatibility,
+): Boolean = requested &&
+    !(
+        useRootService &&
+            backend == RootConnectionBackend.Tproxy &&
+            compatibility is TproxyCompatibility.Supported &&
+            !compatibility.ipv6
+        )
 
 internal fun isRuntimeVersionCompatible(recordedVersionCode: Long?, currentVersionCode: Long): Boolean = recordedVersionCode == currentVersionCode
 

@@ -1,6 +1,8 @@
 package com.material.xray.service
 
+import com.material.xray.core.xray.TproxyCompatibility
 import com.material.xray.core.xray.XrayState
+import com.material.xray.model.RootConnectionBackend
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,6 +27,26 @@ class XrayServiceModeTest {
                 requested = true,
                 available = true,
                 alwaysOnVpn = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `root TPROXY falls back to IPv4 when dual stack is unavailable`() {
+        assertFalse(
+            effectiveTproxyIpv6(
+                requested = true,
+                useRootService = true,
+                backend = RootConnectionBackend.Tproxy,
+                compatibility = TproxyCompatibility.Supported(ipv6 = false),
+            ),
+        )
+        assertTrue(
+            effectiveTproxyIpv6(
+                requested = true,
+                useRootService = false,
+                backend = RootConnectionBackend.Tproxy,
+                compatibility = TproxyCompatibility.Supported(ipv6 = false),
             ),
         )
     }

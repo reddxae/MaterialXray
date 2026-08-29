@@ -1582,21 +1582,23 @@ class XrayService : VpnService() {
             return@runConnectionCommand NetworkRetargetResult.Retry
         }
 
-        val androidNetworkChanged = previousNetwork != null &&
-            currentNetwork != null &&
-            !previousNetwork.sameNetwork(currentNetwork)
         val physicalRouteChanged = !currentRoute.matches(latestState)
         if (shouldWaitForMatchingPhysicalNetwork(reason, attempt, previousNetwork, currentNetwork, currentRoute)) {
             return@runConnectionCommand NetworkRetargetResult.Retry
         }
 
-        if (!androidNetworkChanged && !physicalRouteChanged) {
+        if (!physicalRouteChanged) {
             activePhysicalNetwork = currentNetwork ?: previousNetwork
             updateNotification()
             return@runConnectionCommand NetworkRetargetResult.Done
         }
 
-        if (androidNetworkChanged || currentRoute.dev != latestState.physicalInterface) {
+        if (
+            shouldReconnectForNetworkChange(
+                previousInterface = latestState.physicalInterface,
+                currentInterface = currentRoute.dev,
+            )
+        ) {
             logBuffer.append(
                 LogSource.APP,
                 "Network changed ($reason): ${describeNetworkChange(previousNetwork, currentNetwork)}, " +
@@ -2361,6 +2363,11 @@ internal fun shouldVerifyRootRoute(
     networkChanged: Boolean,
     networkCallbacksAvailable: Boolean,
 ): Boolean = passiveHealthMonitoringEnabled || networkChanged || !networkCallbacksAvailable
+
+internal fun shouldReconnectForNetworkChange(
+    previousInterface: String,
+    currentInterface: String,
+): Boolean = currentInterface != previousInterface
 
 internal fun selectRestoredPhysicalRoute(
     state: XrayState,

@@ -92,6 +92,22 @@ class XrayServiceModeTest {
     }
 
     @Test
+    fun `new Android network on same physical interface keeps core running`() {
+        assertFalse(
+            shouldReconnectForNetworkChange(
+                previousInterface = "wlan0",
+                currentInterface = "wlan0",
+            ),
+        )
+        assertTrue(
+            shouldReconnectForNetworkChange(
+                previousInterface = "wlan0",
+                currentInterface = "rmnet0",
+            ),
+        )
+    }
+
+    @Test
     fun `runtime restoration requires the same app version`() {
         assertTrue(isRuntimeVersionCompatible(recordedVersionCode = 600, currentVersionCode = 600))
         assertFalse(isRuntimeVersionCompatible(recordedVersionCode = 599, currentVersionCode = 600))

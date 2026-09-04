@@ -2,12 +2,29 @@ package com.material.xray.service
 
 import com.material.xray.core.xray.TproxyCompatibility
 import com.material.xray.core.xray.XrayState
+import com.material.xray.model.PingMethod
 import com.material.xray.model.RootConnectionBackend
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XrayServiceModeTest {
+
+    @Test
+    fun `ordinary active ping uses end-to-end HTTP probing`() {
+        assertEquals(
+            PingMethod.Httping,
+            activePingMethod(hasEditedRuntimeConfig = false, proxyOutboundCount = null),
+        )
+    }
+
+    @Test
+    fun `edited and multi-outbound configs do not probe a potentially different server`() {
+        assertNull(activePingMethod(hasEditedRuntimeConfig = true, proxyOutboundCount = null))
+        assertNull(activePingMethod(hasEditedRuntimeConfig = false, proxyOutboundCount = 2))
+    }
 
     @Test
     fun `always-on VPN forces Android VpnService when root service is available`() {

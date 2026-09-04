@@ -190,7 +190,10 @@ class ConfigGenerator {
 
         val patched = original.toMutableMap()
         patched["inbounds"] = buildJsonArray { effectiveInbounds.forEach { add(it.toJson()) } }
-        patched["api"] = buildStatsApi(xrayApiEndpoint)
+        patched["api"] = buildStatsApi(
+            endpoint = xrayApiEndpoint,
+            enableObservatory = original["observatory"] is JsonObject || original["burstObservatory"] is JsonObject,
+        )
         return json.encodeToString(JsonObject.serializer(), JsonObject(patched))
     }
 

@@ -55,6 +55,7 @@ import com.material.xray.model.ConnectionState
 import com.material.xray.model.NotificationField
 import com.material.xray.model.NotificationSettings
 import com.material.xray.model.NotificationStyle
+import com.material.xray.model.PingMethod
 import com.material.xray.model.RootConnectionBackend
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SessionTrafficMetrics
@@ -1112,8 +1113,8 @@ class XrayService : VpnService() {
      * Keeps a single round-trip measurement for whatever the tunnel is using, shared by the
      * connection banner and the notification so neither probes the endpoint on its own.
      *
-     * It runs far slower than the metrics poll: a reading costs a bare TCP connect the server sees,
-     * and at the metrics cadence that would be a connect every second.
+     * It runs far slower than the metrics poll because a reading starts a short-lived Xray process
+     * and performs the same end-to-end HTTP check as the server list.
      */
     private fun updatePingTracker() {
         val wanted = notificationSettings.needsPingProbe || connectionStateCoordinator.activePingSubscribers.value > 0
@@ -1153,20 +1154,25 @@ class XrayService : VpnService() {
         pingJob = null
     }
 
-    /**
-     * A balancer reports the delay its observatory measured for the outbound it picked, which beats
-     * probing an endpoint it may not be using. A config with several proxy outbounds reports
-     * nothing at all, because its recorded address is only the first outbound that was parsed and a
-     * probe of it would be labelled as the connection's own latency.
-     */
+    /** Balancers use their own observer; ordinary servers repeat the server-list health check. */
     private suspend fun measureActivePing(): Int? {
         val config = activeConfig ?: return null
         val balancerTag = config.primaryBalancerTag()
         if (balancerTag != null) {
             return connectionManager.readBalancerSelection(balancerTag)?.latencyMs?.toInt()
         }
-        if (config.proxyOutboundCount() != null) return null
-        return serverLatencyTester.measureTcping(config).takeIf { it >= 0 }
+        val method = activePingMethod(
+            hasEditedRuntimeConfig = activeConfigOverrideStore.exists(),
+            proxyOutboundCount = config.proxyOutboundCount(),
+        ) ?: return null
+        return serverLatencyTester.measure(
+            server = config,
+            method = method,
+            probeUrl = settingsRepo.latencyCheckUrl.first(),
+            dnsServers = settingsRepo.dnsServers.first(),
+            domesticDnsServers = settingsRepo.domesticDnsServers.first(),
+            allowIpv6 = settingsRepo.allowIpv6.first(),
+        ).latencyMs.takeIf { it >= 0 }
     }
 
     private fun startProcessWatchdog(state: ConnectionState.Connected) {
@@ -2340,6 +2346,11 @@ internal fun shouldUseRootService(
     available: Boolean,
     alwaysOnVpn: Boolean,
 ): Boolean = requested && available && !alwaysOnVpn
+
+internal fun activePingMethod(
+    hasEditedRuntimeConfig: Boolean,
+    proxyOutboundCount: Int?,
+): PingMethod? = PingMethod.Httping.takeUnless { hasEditedRuntimeConfig || proxyOutboundCount != null }
 
 internal fun effectiveTproxyIpv6(
     requested: Boolean,

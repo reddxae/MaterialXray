@@ -68,6 +68,19 @@ class ActiveConfigRuntimeIdentityTest {
     }
 
     @Test
+    fun `an edited config exposes its existing observatory on the current api`() {
+        val patched = generator.applyRuntimeIdentity(
+            configJson = """{ "observatory": { "subjectSelector": ["proxy"] }, "outbounds": [] }""",
+            tunName = "xray0",
+        ).parse()
+
+        assertEquals(
+            listOf("StatsService", "RoutingService", "ObservatoryService"),
+            patched.getValue("api").jsonObject.getValue("services").jsonArray.map { it.jsonPrimitive.content },
+        )
+    }
+
+    @Test
     fun `inbounds are rebuilt for the tun this connect actually created`() {
         val edited = """
             {

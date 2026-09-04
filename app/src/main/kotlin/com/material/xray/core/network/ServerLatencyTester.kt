@@ -145,20 +145,6 @@ class ServerLatencyTester @Inject constructor(
         } ?: LatencyProbeResult(latencyMs = -1, method = method)
     }
 
-    /**
-     * TCP connect time to the server endpoint, without the probe URL and DNS arguments the full
-     * [measure] entry point needs but tcping ignores. Returns -1 when the endpoint is unreachable.
-     *
-     * A single attempt, unlike the best-of-two the server list runs: this is meant for a repeating
-     * live readout, where halving the bare connects the endpoint sees matters more than shaving an
-     * outlier off any one reading.
-     */
-    suspend fun measureTcping(server: ServerConfig): Int = withContext(Dispatchers.IO) {
-        withTimeoutOrNull(TEST_TIMEOUT_MS) {
-            measureTcpConnect(server.address, server.port, attempts = 1)
-        } ?: -1
-    }
-
     private suspend fun resolveServerForProbe(server: ServerConfig, allowIpv6: Boolean): ServerConfig? {
         if (server.rawConfigJson.isNotBlank()) return server
 

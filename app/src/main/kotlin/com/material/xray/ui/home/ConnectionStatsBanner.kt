@@ -1,5 +1,6 @@
 package com.material.xray.ui.home
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,35 +67,46 @@ internal fun ConnectionStatsBanner(
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (activeBalancerServer != null) {
-                ActiveServerRow(title = activeBalancerServer.title)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            AnimatedContent(
+                targetState = activeBalancerServer?.title,
+                label = "activeBalancerServer",
+            ) { title ->
+                if (title != null) {
+                    Column(
+                        modifier = Modifier.padding(bottom = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        ActiveServerRow(title = title)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    }
+                }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCell(
-                    icon = Icons.Outlined.Bolt,
-                    label = stringResource(R.string.home_stats_ping),
-                    value = ping?.let { stringResource(R.string.home_stats_ping_value, it) },
-                    modifier = Modifier.weight(1f),
-                )
-                StatCell(
-                    icon = Icons.Outlined.ArrowDownward,
-                    label = stringResource(R.string.home_stats_download),
-                    value = traffic?.let { formatRate(it.downlinkBps, locale) },
-                    modifier = Modifier.weight(1f),
-                )
-                StatCell(
-                    icon = Icons.Outlined.ArrowUpward,
-                    label = stringResource(R.string.home_stats_upload),
-                    value = traffic?.let { formatRate(it.uplinkBps, locale) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatCell(
+                        icon = Icons.Outlined.Bolt,
+                        label = stringResource(R.string.home_stats_ping),
+                        value = ping?.let { stringResource(R.string.home_stats_ping_value, it) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatCell(
+                        icon = Icons.Outlined.ArrowDownward,
+                        label = stringResource(R.string.home_stats_download),
+                        value = traffic?.let { formatRate(it.downlinkBps, locale) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatCell(
+                        icon = Icons.Outlined.ArrowUpward,
+                        label = stringResource(R.string.home_stats_upload),
+                        value = traffic?.let { formatRate(it.uplinkBps, locale) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
 
-            SessionTotalsRow(traffic = traffic, locale = locale)
+                SessionTotalsRow(traffic = traffic, locale = locale)
+            }
         }
     }
 }

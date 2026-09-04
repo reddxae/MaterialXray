@@ -1232,7 +1232,7 @@ private fun ConnectionPanel(
             }
         }
 
-        AnimatedVisibility(visible = isConnected) {
+        AnimatedVisibility(visible = connectionState.showsConnectionStats()) {
             ConnectionStatsBanner(
                 activeBalancerServer = activeBalancerServer,
                 pingMs = pingMs,
@@ -1244,6 +1244,9 @@ private fun ConnectionPanel(
         Spacer(modifier = Modifier.height(10.dp))
     }
 }
+
+internal fun ConnectionState.showsConnectionStats(): Boolean = this is ConnectionState.Connected ||
+    this == ConnectionState.ApplyingRoutingChanges
 
 /**
  * Compact alternative to the large power button, anchored in the corner of the home screen.

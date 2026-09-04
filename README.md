@@ -1,132 +1,153 @@
-# Material Xray
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="app/src/main/res/drawable-xxxhdpi/ic_launcher_material_foreground.png">
+    <img src="app/src/main/res/drawable-xxxhdpi/ic_launcher_default_foreground.png" alt="Material Xray logo" width="144" height="144">
+  </picture>
+</p>
 
-Material Xray is an Android proxy client. It runs xray-core with a native TUN inbound, manages the process lifecycle, and routes device traffic through the selected outbound server using root-managed policy routing or Android `VpnService`.
+<h1 align="center">Material Xray</h1>
+
+<p align="center">An Android proxy client powered by Xray-core, with a Material Design 3 interface.</p>
+
+<p align="center">
+  <a href="https://github.com/AetherMagee/MaterialXray/releases/latest">Download APK</a> &middot;
+  <a href="https://github.com/AetherMagee/MaterialXray/releases">Release notes</a> &middot;
+  <a href="https://github.com/AetherMagee/MaterialXray/issues">Report an issue</a>
+</p>
+
+## Get started
+
+You'll need Android 9 or newer on an arm64 device, plus a proxy server or subscription of your own. Material Xray is a client, not a service that provides servers.
+
+1. Download the APK from the [latest release](https://github.com/AetherMagee/MaterialXray/releases/latest) and install it. Android may ask you to allow installation from your browser or file manager.
+2. Open the app and choose **Add new server or subscription**. Paste a link, scan a QR code, or enter it manually.
+3. Select a server and tap **Start**. 
+
+## What you can do
+
+- Keep servers grouped by subscription and test their latency before connecting.
+- Import VLESS, VMess, Trojan, Shadowsocks, and Hysteria2 links. HTTP, SOCKS, WireGuard, and raw Xray JSON configurations are also supported.
+- Choose which apps use the proxy, bypass it, or connect through a specific server.
+- Add custom routing rules or apply routing supplied by your subscription provider.
+- See live upload, download, session traffic, and ping on the home screen.
+- Configure DNS, IPv6, and local-network bypass.
+
+Advanced options expose live app and Xray logs, a configuration viewer and editor, and additional connection settings.
+
+## Root or rootless?
+
+| Category | Rootless | Rootful |
+| --- | --- | --- |
+| Detection points | ⚠️ Establishes an Android VPN, which apps can detect through the system's network APIs. | ✅ Configures routing tables to make the tunnel hidden from the apps that bypass it. |
+| Ease of setup | ✅ Approve Android's VPN permission, just like any other VPN app. | ⚠️ Requires superuser access through `su`. KernelSU is preferred. |
+| Android VPN state | ⚠️ Occupies Android's VPN slot, easily detected by other apps. | ✅ Uses root-managed routing instead, allowing it to hide itself and even coexist with other VPNs like Tailscale. |
+| Per-app control | ✅ Choose which apps use the proxy and which bypass it. | ✅ Choose which apps use the proxy and which bypass it + assign different proxy servers to individual apps. |
+| Hotspot and tethering | ⚠️ Does not tunnel tethered clients. | ✅ Can tunnel tethered clients through the proxy. |
+| Always-on VPN | ✅ Supports Android's always-on VPN. | ⚠️ Enabling Android's always-on VPN switches the app to rootless mode. |
+| Auto-connect after reboot | ✅ Supported | ✅ Supported |
+| If Android kills the app process | ⚠️ The proxy process stops too. Always-on VPN can restart the service. | ✅ The proxy process can keep running independently of the app. |
+| Stability | ✅ Traffic is routed by Android, standard and battle-tested. | ⚠️ Rigorously tested but may have rough edges. |
+
+**TL;DR**: Use rootful mode when avoiding VPN detection by other apps is the priority. Use rootless when root is unavailable or you prefer Android's standard VPN integration.
+
+Rootful does not mean undetectable. Apps may use other signals, such as root detection, bad routing policies and weird networking edge-cases. It does not hide another VPN you run alongside it, and coexistence still depends on routing compatibility. If the app falls back to rootless mode, or Android's always-on VPN forces rootless mode, the connection becomes an Android VPN again.
+
+The app is still under active development. Device-specific behavior is possible, especially with root routing and network changes. If something goes wrong, [open an issue](https://github.com/AetherMagee/MaterialXray/issues) with your Android version, device model, service mode, and steps to reproduce it. Remove credentials, subscription URLs, and other private information from any logs or configurations you share.
+
+## Development
 
 This project is AI-assisted.
 
-## Features
+Material Xray is a single-module Kotlin Android app using Jetpack Compose, Hilt, Room, DataStore, and WorkManager. Xray-core handles proxy connections; the app manages subscriptions, configuration, routing, and the service lifecycle.
 
-- Material Design 3 Jetpack Compose UI.
-- Subscription import and refresh for common share-link formats.
-- Server cards grouped by subscription.
-- Per-server latency testing.
-- Per-app bypass list.
-- Foreground Xray service with live app and Xray logs.
-- Root-managed Xray TUN interface.
-- Per-app routing with custom proxy server selection.
-- Policy routing for captured app traffic.
-- Xray outbound binding to the active physical interface.
-- Network-change retargeting for Wi-Fi and cellular switches.
-- Pre-start hostname resolution with randomized A/AAAA selection.
+### Build and install
 
-## Requirements
+Use JDK 21 and the Android SDK. The current build uses Android platform 37.0 and CMake 3.31.6, matching [CI](.github/workflows/ci.yml). Set your SDK path through `ANDROID_HOME` or `sdk.dir` in `local.properties`.
 
-- Android 8 or newer (actually tested on Android 14+). 
-- Root access with `su` for root service mode.
-- Android SDK and a JDK compatible with the Gradle wrapper.
-- A connected Android device or emulator for install/debug flows.
-
-The app includes:
-
-- `app/src/main/assets/xray_arm64` for root service mode.
-- `app/src/main/jniLibs/arm64-v8a/libxray.so` for rootless `VpnService` mode.
-
-Only arm64 is wired up at the moment.
-
-## Build
+Run from the repository root:
 
 ```sh
-./gradlew assembleDebug
+./gradlew :app:assembleDebug
 ```
 
-Build a signed release locally:
+The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. To install it on a connected arm64 device or emulator:
+
+```sh
+./gradlew :app:installDebug
+```
+
+### Checks
+
+Install the Git hook with [prek](https://prek.j178.dev/):
+
+```sh
+prek install
+```
+
+Run tests and assemble the app, then lint and static analysis:
+
+```sh
+./gradlew :app:testDebugUnitTest :app:assembleDebug
+./gradlew :app:lintDebug
+prek run --all-files
+```
+
+Formatting is checked by the hook, not applied by a build. Use `./gradlew :app:ktlintFormat` to fix Kotlin formatting. Device tests require a connected device or emulator and run with `./gradlew :app:connectedDebugAndroidTest`.
+
+### Signed releases
+
+To build a signed release locally, provide your own keystore:
 
 ```sh
 RELEASE_KEYSTORE_PATH=/path/to/release.keystore \
 RELEASE_KEY_ALIAS=your_alias \
 RELEASE_KEY_PASSWORD=your_key_password \
 RELEASE_STORE_PASSWORD=your_store_password \
-./gradlew assembleRelease
+./gradlew :app:assembleRelease
 ```
 
-Run unit tests:
+[CI](.github/workflows/ci.yml) builds a debug APK on pushes and pull requests. The manually triggered [release workflow](.github/workflows/release.yml) signs and publishes a release APK, an Xray corresponding-source archive, and build-provenance attestations.
+
+To verify a release artifact with the GitHub CLI:
 
 ```sh
-./gradlew testDebugUnitTest
+gh attestation verify <filename.apk> --repo AetherMagee/MaterialXray
 ```
 
-Install the repository hooks with [prek](https://prek.j178.dev/):
+Releases before `v0.5.0` do not have attestations.
 
-```sh
-prek install
-```
+### Runtime and native assets
 
-Install the debug build to a connected device:
+Only `arm64-v8a` is currently packaged. Root mode uses `app/src/main/assets/xray_arm64`. Rootless mode uses `app/src/main/jniLibs/arm64-v8a/libxray.so`, launched through the JNI shim in `app/src/main/cpp/xray_launcher.c`.
 
-```sh
-./gradlew installDebug
-```
+The service downloads `geoip.dat` and `geosite.dat` when needed, generates an Xray configuration, and starts the appropriate binary. Routing data defaults to `v2fly/geoip` and `v2fly/domain-list-community` releases; the download URLs are configurable in Settings.
 
-## CI
+In rootful TUN mode, the service manages the tunnel interface and routing. Rootful mode binds outbound connections to the physical network interface to avoid routing loops, watches Wi-Fi and cellular changes, and retargets the connection when needed. Rootless mode passes Android's VPN TUN file descriptor to Xray and excludes Material Xray itself from the VPN to prevent routing loops, relying on Android's network routing rather than the rootful retargeting logic.
 
-GitHub Actions builds `app:assembleDebug` on pushes and pull requests and uploads `app-debug.apk` as a workflow artifact.
-
-The separate, manually dispatched release workflow builds `app:assembleRelease`, signs the APK from CI secrets, and publishes a GitHub Release with the signed APK attached.
-
-## CI Verification
-
-Our GitHub Actions release builds since `v0.5.0` are attested with build provenance. You can verify that a given APK was built by our release workflow - and not modified since - with:
-```sh
-gh attestation verify <filename.apk> --repo reddxae/MaterialXray
-```
-*Note: Releases before v0.5.0 are not attested and will not verify.*
-
-## Runtime Notes
-
-Material Xray downloads `geoip.dat` and `geosite.dat` into the runtime directory when needed, writes an Xray config, starts the correct Xray build for the selected service mode, and then either applies Android policy routing in root service mode or passes the Android `VpnService` TUN fd to Xray in rootless mode.
-
-Xray's own outbound traffic is marked and bound to the detected physical interface so it does not get captured by the TUN route. When Android switches between Wi-Fi and cellular, the service debounces network callbacks, checks the live physical route, and reconnects Xray if the outbound interface changed.
-
-The default TUN interface name is configurable in the app settings. Existing local test devices may have it saved as `wlan2`; the default setting is `xray0`.
-The routing data download URLs are configurable in settings as direct file URLs and default to Loyalsoldier's `v2ray-rules-dat` release downloads.
-
-## Project Layout
-
-```text
-app/src/main/kotlin/com/material/xray/
-  core/root/      Root shell execution
-  core/xray/      Xray binary resolution, config, TUN and routing
-  data/           Room database, repositories, subscription parsing
-  model/          Server and connection state models
-  service/        Foreground Xray service, logs, boot receiver
-  ui/             Compose screens and navigation
-```
-
-## Updating Xray Assets
-
-The repository includes a helper script for downloading Xray releases:
+Update the bundled Xray binaries with:
 
 ```sh
 ./scripts/download-xray.sh
 ```
 
-The script downloads two arm64 builds:
+The script uses the version recorded in `third_party/xray/VERSION`, or accepts an Xray release tag as an argument. It downloads both arm64 builds, verifies the published SHA-256 digests, preserves Xray's license, and records hashes under `third_party/xray/`.
 
-- `Xray-linux-arm64-v8a.zip` -> `app/src/main/assets/xray_arm64` for root service mode.
-- `Xray-android-arm64-v8a.zip` -> `app/src/main/jniLibs/arm64-v8a/libxray.so` for rootless `VpnService` mode.
+### Project layout
 
-The Android binary is stored under `jniLibs` so Android extracts it into the executable native library directory at install time.
-
-The downloader verifies each release archive against Xray's published SHA-256 digest, preserves Xray's license, and records the archive and executable hashes under `third_party/xray/`. Release builds also publish a corresponding-source archive containing Xray-core and its vendored Go modules.
-
-## Status
-
-This is an early implementation. Expect device-specific behavior around Android policy routing, root shell behavior, `VpnService`, and network namespace handling.
+```text
+app/src/main/kotlin/com/material/xray/
+  core/root/      Root shell execution
+  core/xray/      Xray binaries, configuration, TUN, and routing
+  data/           Database, repositories, and subscription parsing
+  model/          Server and connection state models
+  service/        Connection service, logs, and boot receiver
+  ui/             Compose screens and navigation
+```
 
 ## License
 
 Copyright (C) 2026 Material Xray contributors.
 
-Material Xray's original repository material, including its source code, documentation, and artwork, is free software licensed under the [GNU General Public License, version 3 or later](LICENSE). You may redistribute and modify it under those terms. Material Xray is distributed without any warranty; see the license for details.
+Material Xray's original source code, documentation, and artwork are licensed under the [GNU General Public License, version 3 or later](LICENSE), without any warranty.
 
-Third-party components and files derived from other projects remain under their respective licenses. See [Third-Party Notices](THIRD_PARTY_NOTICES.md) for attribution, license details, and corresponding-source information.
+Third-party components and derived files retain their respective licenses. See [Third-Party Notices](THIRD_PARTY_NOTICES.md) for attribution, license details, and corresponding-source information.

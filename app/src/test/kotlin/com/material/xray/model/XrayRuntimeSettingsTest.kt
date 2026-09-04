@@ -8,6 +8,31 @@ import org.junit.Test
 class XrayRuntimeSettingsTest {
 
     @Test
+    fun `profile DNS is opt-in and keeps fallback resolver settings`() {
+        val settings = XrayRuntimeSettings(
+            tunName = "",
+            fwmark = 255,
+            routeTable = 100,
+            useRootService = false,
+            dnsServers = "1.1.1.1",
+            domesticDnsServers = "192.0.2.53",
+            logLevel = XrayLogLevel.None,
+            defaultOutbound = XrayOutbound.Proxy,
+            bypassLan = true,
+            allowIpv6 = false,
+            routingRules = emptyList(),
+        )
+
+        assertFalse(settings.preferProfileDns)
+
+        val enabled = settings.copy(preferProfileDns = true)
+
+        assertTrue(enabled.preferProfileDns)
+        assertEquals(settings.dnsServers, enabled.dnsServers)
+        assertEquals(settings.domesticDnsServers, enabled.domesticDnsServers)
+    }
+
+    @Test
     fun `normalizes xray buffer size`() {
         assertEquals(64, XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB)
         assertEquals(XrayRuntimeSettings.DEFAULT_XRAY_BUFFER_SIZE_KIB, XrayRuntimeSettings.normalizeXrayBufferSizeKiB(null))

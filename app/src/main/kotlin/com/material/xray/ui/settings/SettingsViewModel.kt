@@ -120,6 +120,11 @@ class SettingsViewModel @Inject constructor(
         currentSettings().domesticDnsServers,
         settingsRepo::setDomesticDnsServers,
     )
+    fun setPreferProfileDns(enabled: Boolean) = viewModelScope.launch {
+        if (enabled == currentSettings().preferProfileDns) return@launch
+        settingsRepo.setPreferProfileDns(enabled)
+        reloadActiveConnectionIfConnected()
+    }
     fun setAutoConnect(enabled: Boolean) = viewModelScope.launch {
         settingsRepo.setAutoConnect(enabled)
         if (enabled) {

@@ -88,6 +88,7 @@ internal fun buildRouting(
     defaultRouteTarget: XrayRouteTarget = XrayRouteTarget.Outbound("proxy"),
     allowIpv6: Boolean = false,
     dataInboundTags: List<String> = listOf("tun-in") + appProxyRoutes.map { it.inboundTag },
+    manageDns: Boolean = true,
 ) = buildJsonObject {
     val hasDomesticDomains = directDomains(routingRules, bypassLan).isNotEmpty()
     put("domainStrategy", SubscriptionRouting.normalizeDomainStrategy(domainStrategy))
@@ -97,13 +98,14 @@ internal fun buildRouting(
         buildJsonArray {
             add(dnsRoutingRule(dataInboundTags))
             syntheticDnsAddress?.let { add(syntheticDnsPeerBlockRule(dataInboundTags, it)) }
-            add(dnsOverTlsRoutingRule(dataInboundTags))
+            if (manageDns) add(dnsOverTlsRoutingRule(dataInboundTags))
             // These two rules address the tags buildDns emits, so they have to be decided from the
             // same resolved lists. A stored list that IPv6 filtering empties leaves no tag to route.
-            if (resolveDnsServersForIpv6(dnsServers, allowIpv6).isNotEmpty()) {
+            if (manageDns && resolveDnsServersForIpv6(dnsServers, allowIpv6).isNotEmpty()) {
                 add(defaultDnsRoutingRule(defaultRouteTarget))
             }
             if (
+                manageDns &&
                 hasDomesticDomains &&
                 resolveDnsServersForIpv6(domesticDnsServers, allowIpv6).isNotEmpty()
             ) {

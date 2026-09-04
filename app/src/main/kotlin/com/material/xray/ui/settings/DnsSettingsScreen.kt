@@ -92,6 +92,15 @@ fun DnsSettingsScreen(
                 )
             }
 
+            item(key = "prefer_profile_dns") {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_prefer_profile_dns_title),
+                    description = stringResource(R.string.settings_prefer_profile_dns_description),
+                    checked = settings.preferProfileDns,
+                    onCheckedChange = viewModel::setPreferProfileDns,
+                )
+            }
+
             item(key = "primary") {
                 DnsResolverSection(
                     title = stringResource(R.string.settings_dns_primary_title),

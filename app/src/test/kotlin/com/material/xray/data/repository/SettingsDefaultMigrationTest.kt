@@ -11,6 +11,19 @@ import org.junit.Test
 
 class SettingsDefaultMigrationTest {
     @Test
+    fun `settings migration preserves both profile DNS choices`() = runTest {
+        assertEquals("prefer_profile_dns", SettingsRepository.PREFER_PROFILE_DNS.name)
+
+        for (enabled in listOf(false, true)) {
+            val preferences = mutablePreferencesOf(SettingsRepository.PREFER_PROFILE_DNS to enabled)
+
+            val migrated = SettingsDefaultMigration().migrate(preferences)
+
+            assertEquals(enabled, migrated[SettingsRepository.PREFER_PROFILE_DNS])
+        }
+    }
+
+    @Test
     fun `known previous default is removed so current default can apply`() = runTest {
         val preferences = mutablePreferencesOf(SettingsRepository.XRAY_BUFFER_SIZE_KIB to 512)
         val migration = SettingsDefaultMigration()

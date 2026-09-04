@@ -22,6 +22,7 @@ internal class RawConfigTunInjector(
         fwmark: Int,
         dnsServers: String,
         domesticDnsServers: String,
+        preferProfileDns: Boolean = false,
         syntheticDnsAddress: String? = null,
         bootstrapDnsHosts: Map<String, List<String>> = emptyMap(),
         logLevel: XrayLogLevel,
@@ -39,6 +40,7 @@ internal class RawConfigTunInjector(
         inbounds: List<XrayInbound>? = null,
     ): String {
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
+        val profileDns = (original["dns"] as? JsonObject)?.takeIf { preferProfileDns }
         val effectiveInbounds = inbounds ?: buildList {
             add(XrayInbound.Tun(tunName, "tun-in", tunMtu))
             appProxyRoutes.forEach { route -> add(XrayInbound.Tun(route.tunName, route.inboundTag, tunMtu)) }
@@ -68,13 +70,17 @@ internal class RawConfigTunInjector(
                 defaultOutbound = defaultOutbound,
                 proxyOutbound = proxyOutbound,
                 directOutbound = buildDirectOutbound(fwmark, physicalInterface, allowIpv6),
-                dnsOutbound = buildDnsOutbound(fwmark, physicalInterface, allowIpv6),
+                dnsOutbound = normalizedOutbounds.firstOrNull { outbound ->
+                    profileDns != null &&
+                        outbound["tag"]?.jsonPrimitive?.contentOrNull == "dns-out" &&
+                        outbound["protocol"]?.jsonPrimitive?.contentOrNull == "dns"
+                } ?: buildDnsOutbound(fwmark, physicalInterface, allowIpv6),
                 blockOutbound = buildBlockOutbound(),
                 appProxyOutbounds = appProxyOutbounds,
             ) + unmanagedOutbounds,
         )
         original["log"] = buildLogConfig(logLevel)
-        original["dns"] = buildDns(
+        original["dns"] = profileDns ?: buildDns(
             dnsServers,
             domesticDnsServers,
             bootstrapDnsHosts,
@@ -101,23 +107,29 @@ internal class RawConfigTunInjector(
                 defaultRouteTarget = defaultRouteTarget,
                 allowIpv6 = allowIpv6,
                 dataInboundTags = effectiveInbounds.map { it.tag },
+                manageDns = profileDns == null,
             ),
             raw = rawRouting,
+            profileDnsInboundTags = effectiveInbounds.map { it.tag }.takeIf { profileDns != null },
         )
 
         return json.encodeToString(JsonObject.serializer(), JsonObject(original))
     }
 
-    // The app owns DNS for raw configs, so its resolver rule stays ahead of provider rules that could
-    // capture the resolver endpoint. The rule still inherits a raw catch-all's target when one exists.
-    private fun mergeRouting(generated: JsonObject, raw: JsonObject?): JsonObject {
-        if (raw == null) return generated
-
-        val generatedRules = (generated["rules"] as? JsonArray).orEmpty()
-        val rawRules = (raw["rules"] as? JsonArray).orEmpty()
+    private fun mergeRouting(generated: JsonObject, raw: JsonObject?, profileDnsInboundTags: List<String>?): JsonObject {
+        // Keep MX app rules from capturing the profile resolver's own requests. DNS interception
+        // still feeds Xray's DNS outbound, including the synthetic resolver used by Android VPN.
+        val generatedRules = (generated["rules"] as? JsonArray).orEmpty().map { rule ->
+            if (profileDnsInboundTags == null || "inboundTag" in rule.jsonObject) {
+                rule
+            } else {
+                JsonObject(rule.jsonObject + ("inboundTag" to JsonArray(profileDnsInboundTags.map(::JsonPrimitive))))
+            }
+        }
+        val rawRules = (raw?.get("rules") as? JsonArray).orEmpty()
         return JsonObject(
             generated.toMutableMap().apply {
-                putAll(raw)
+                if (raw != null) putAll(raw)
                 put("rules", JsonArray(generatedRules + rawRules))
             },
         )

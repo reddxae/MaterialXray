@@ -1,6 +1,7 @@
 package com.material.xray.core.xray
 
 import com.material.xray.model.Protocol
+import com.material.xray.model.RoutingRule
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
@@ -19,6 +20,76 @@ class RawConfigTunInjectorTest {
         prettyPrint = true
     }
     private val injector = RawConfigTunInjector(json)
+
+    @Test
+    fun `profile DNS retains resolver options and routing without MX upstream overrides`() {
+        val rawJson = """
+            {
+              "dns": {
+                "tag":"default-dns",
+                "hosts":{"proxy.example":"192.0.2.10"},
+                "queryStrategy":"UseIP",
+                "disableCache":true,
+                "disableFallback":true,
+                "servers":[
+                  "1.1.1.1",
+                  {"address":"https://dns.example/dns-query","domains":["domain:example"],
+                   "tag":"domestic-dns","skipFallback":true,"expectIPs":["192.0.2.0/24"]}
+                ]
+              },
+              "outbounds":[
+                {"tag":"proxy","protocol":"vless","settings":{}},
+                {"tag":"resolver-proxy","protocol":"vless","settings":{}},
+                {"tag":"dns-out","protocol":"dns","settings":{"nonIPQuery":"drop"}}
+              ],
+              "routing":{
+                "rules":[
+                  {"inboundTag":["default-dns","domestic-dns"],"outboundTag":"resolver-proxy"},
+                  {"ip":["1.1.1.1"],"outboundTag":"resolver-proxy"},
+                  {"port":"853","outboundTag":"proxy"},
+                  {"network":"tcp,udp","outboundTag":"proxy"}
+                ]
+              }
+            }
+        """.trimIndent()
+        val raw = json.parseToJsonElement(rawJson).jsonObject
+        val result = injector.inject(
+            rawJson = rawJson,
+            tunName = "xray0",
+            fwmark = 255,
+            dnsServers = "8.8.8.8",
+            domesticDnsServers = "223.5.5.5",
+            preferProfileDns = true,
+            syntheticDnsAddress = "10.10.14.2",
+            bootstrapDnsHosts = mapOf("proxy.example" to listOf("192.0.2.20")),
+            logLevel = XrayLogLevel.Error,
+            defaultOutbound = XrayOutbound.Proxy,
+            bypassLan = true,
+            routingRules = listOf(RoutingRule("all", "All direct", "direct")),
+            appProxyRoutes = emptyList(),
+            physicalInterface = "wlan0",
+        )
+        val root = json.parseToJsonElement(result).jsonObject
+        assertEquals(raw.getValue("dns"), root.getValue("dns"))
+        val rules = root.getValue("routing").jsonObject.getValue("rules").jsonArray.map { it.jsonObject }
+        val rawRules = raw.getValue("routing").jsonObject.getValue("rules").jsonArray
+        assertEquals(rawRules.toList(), rules.takeLast(rawRules.size))
+        val generatedRules = rules.dropLast(rawRules.size)
+        assertTrue(generatedRules.all { it["inboundTag"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == "tun-in" })
+        assertTrue(generatedRules.none { it["port"]?.jsonPrimitive?.content == "853" })
+        assertEquals("53", rules.first().getValue("port").jsonPrimitive.content)
+        assertEquals("dns-out", rules.first().getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("block", rules[1].getValue("outboundTag").jsonPrimitive.content)
+        assertEquals("10.10.14.2", rules[1].getValue("ip").jsonArray.single().jsonPrimitive.content)
+        val dnsOutbound = root.getValue("outbounds").jsonArray.single {
+            it.jsonObject["tag"]?.jsonPrimitive?.content == "dns-out"
+        }.jsonObject
+        assertEquals("drop", dnsOutbound.getValue("settings").jsonObject.getValue("nonIPQuery").jsonPrimitive.content)
+        assertEquals(
+            "255",
+            dnsOutbound.getValue("streamSettings").jsonObject.getValue("sockopt").jsonObject.getValue("mark").jsonPrimitive.content,
+        )
+    }
 
     @Test
     fun `inject replaces provider inbounds with managed tun inbounds`() {

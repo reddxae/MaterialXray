@@ -664,6 +664,7 @@ internal class ConnectionManager(
             fwmark = settings.fwmark.takeIf { config.managesSystemRouting } ?: 0,
             dnsServers = settings.dnsServers,
             domesticDnsServers = settings.domesticDnsServers,
+            preferProfileDns = settings.preferProfileDns,
             syntheticDnsAddress = config.syntheticDnsAddress,
             logLevel = settings.logLevel,
             defaultOutbound = settings.defaultOutbound,

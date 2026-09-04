@@ -14,6 +14,8 @@
     <string name="settings_dns_row_subtitle">Серверы для проксируемых и прямых имён</string>
     <string name="settings_dns_back">Назад</string>
     <string name="settings_dns_intro">Xray сам обрабатывает каждый запрос на порт 53, поэтому имена, идущие через прокси, не разрешаются в сети, к которой вы подключены.</string>
+    <string name="settings_prefer_profile_dns_title">Предпочитать DNS профиля</string>
+    <string name="settings_prefer_profile_dns_description">Использовать DNS из JSON-профиля, если он указан. Иначе использовать настройки DNS ниже.</string>
     <string name="settings_dns_primary_title">Проксируемые домены</string>
     <string name="settings_dns_primary_description">Разрешает все имена, идущие через прокси.</string>
     <string name="settings_dns_direct_title">Прямые домены</string>

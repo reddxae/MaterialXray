@@ -406,6 +406,28 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `raw connection uses profile DNS when runtime preference is enabled`() = runTest {
+        val rawServer = server().copy(
+            protocol = Protocol.RAW,
+            rawConfigJson = """
+                {
+                  "dns":{"servers":["9.9.9.9"],"disableCache":true},
+                  "outbounds":[{"tag":"proxy","protocol":"vless","settings":{}}]
+                }
+            """.trimIndent(),
+        )
+        val harness = Harness()
+        harness.manager.connect(
+            rawServer,
+            runtimeSettings().copy(preferProfileDns = true),
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
+        )
+        val config = Json.parseToJsonElement(requireNotNull(harness.binary.configJson)).jsonObject
+        assertEquals(Json.parseToJsonElement(rawServer.rawConfigJson).jsonObject.getValue("dns"), config.getValue("dns"))
+        assertTrue(harness.stateCoordinator.state.value is ConnectionState.Connected)
+    }
+
+    @Test
     fun `raw connection propagates bootstrap hosts into proxied default DNS`() = runTest {
         val rawServer = server().copy(
             protocol = Protocol.RAW,

@@ -36,6 +36,7 @@ data class SettingsSnapshot(
     val tunName: String,
     val dnsServers: String,
     val domesticDnsServers: String,
+    val preferProfileDns: Boolean,
     val autoConnect: Boolean,
     val useRootService: Boolean,
     val rootConnectionBackend: RootConnectionBackend,
@@ -80,6 +81,7 @@ class SettingsRepository @Inject constructor(
         val TUN_NAME = stringPreferencesKey("tun_name")
         val DNS_SERVERS = stringPreferencesKey("dns_servers")
         val DOMESTIC_DNS_SERVERS = stringPreferencesKey("domestic_dns_servers")
+        val PREFER_PROFILE_DNS = booleanPreferencesKey("prefer_profile_dns")
         val FWMARK = intPreferencesKey("fwmark")
         val ROUTE_TABLE = intPreferencesKey("route_table")
         val XRAY_BUFFER_SIZE_KIB = intPreferencesKey("xray_buffer_size_kib")
@@ -149,6 +151,7 @@ class SettingsRepository @Inject constructor(
     val domesticDnsServers: Flow<String> = store.data.map {
         it[DOMESTIC_DNS_SERVERS] ?: DEFAULT_DOMESTIC_DNS_SERVERS
     }
+    val preferProfileDns: Flow<Boolean> = store.data.map { it[PREFER_PROFILE_DNS] ?: false }
     val fwmark: Flow<Int> = store.data.map { it[FWMARK] ?: 255 }
     val routeTable: Flow<Int> = store.data.map { it[ROUTE_TABLE] ?: 100 }
     val xrayBufferSizeKiB: Flow<Int> = store.data.map { prefs ->
@@ -270,6 +273,7 @@ class SettingsRepository @Inject constructor(
             tunName = prefs[TUN_NAME] ?: DEFAULT_TUN_NAME,
             dnsServers = prefs[DNS_SERVERS] ?: DEFAULT_DNS_SERVERS,
             domesticDnsServers = prefs[DOMESTIC_DNS_SERVERS] ?: DEFAULT_DOMESTIC_DNS_SERVERS,
+            preferProfileDns = prefs[PREFER_PROFILE_DNS] ?: false,
             autoConnect = prefs[AUTO_CONNECT] ?: false,
             useRootService = prefs[USE_ROOT_SERVICE] ?: false,
             rootConnectionBackend = RootConnectionBackend.fromValue(prefs[ROOT_CONNECTION_BACKEND]),
@@ -328,6 +332,7 @@ class SettingsRepository @Inject constructor(
         rootConnectionBackend = rootConnectionBackend.first(),
         dnsServers = dnsServers.first(),
         domesticDnsServers = domesticDnsServers.first(),
+        preferProfileDns = preferProfileDns.first(),
         logLevel = xrayLogLevel.first(),
         defaultOutbound = defaultOutbound.first(),
         bypassLan = bypassLan.first(),
@@ -344,6 +349,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setTunName(name: String) = store.edit { it[TUN_NAME] = name }
     suspend fun setDnsServers(servers: String) = store.edit { it[DNS_SERVERS] = servers }
     suspend fun setDomesticDnsServers(servers: String) = store.edit { it[DOMESTIC_DNS_SERVERS] = servers }
+    suspend fun setPreferProfileDns(enabled: Boolean) = store.edit { it[PREFER_PROFILE_DNS] = enabled }
     suspend fun setXrayBufferSizeKiB(bufferSizeKiB: Int) {
         require(XrayRuntimeSettings.isValidXrayBufferSizeKiB(bufferSizeKiB))
         store.edit { it[XRAY_BUFFER_SIZE_KIB] = bufferSizeKiB }
@@ -521,6 +527,7 @@ class SettingsRepository @Inject constructor(
             map["tun_name"]?.let { prefs[TUN_NAME] = it }
             map["dns_servers"]?.let { prefs[DNS_SERVERS] = it }
             map["domestic_dns_servers"]?.let { prefs[DOMESTIC_DNS_SERVERS] = it }
+            map["prefer_profile_dns"]?.toBooleanStrictOrNull()?.let { prefs[PREFER_PROFILE_DNS] = it }
             map["fwmark"]?.let { prefs[FWMARK] = it.toIntOrNull() ?: 255 }
             map["route_table"]?.let { prefs[ROUTE_TABLE] = it.toIntOrNull() ?: 100 }
             map["xray_buffer_size_kib"]

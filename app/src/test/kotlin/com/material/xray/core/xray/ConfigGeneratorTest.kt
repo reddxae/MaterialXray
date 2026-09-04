@@ -39,6 +39,49 @@ class ConfigGeneratorTest {
     )
 
     @Test
+    fun `profile DNS preference applies only to raw profiles with a DNS object`() {
+        val rawBase = """"outbounds":[{"tag":"proxy","protocol":"vless","settings":{}}]"""
+        for (dns in listOf("{}", """{"servers":["9.9.9.9"]}""")) {
+            val rawServer = vlessReality.copy(rawConfigJson = "{$rawBase,\"dns\":$dns}")
+            val config = Json.parseToJsonElement(generator.generate(rawServer, preferProfileDns = true)).jsonObject
+            assertEquals(Json.parseToJsonElement(dns), config.getValue("dns"))
+            val defaultConfig = Json.parseToJsonElement(generator.generate(rawServer)).jsonObject
+            assertEquals("default-dns", defaultConfig.getValue("dns").jsonObject.getValue("tag").jsonPrimitive.content)
+        }
+        for (dnsField in listOf("", ",\"dns\":null", ",\"dns\":[]", ",\"dns\":\"invalid\"")) {
+            val rawServer = vlessReality.copy(rawConfigJson = "{$rawBase$dnsField}")
+            assertEquals(generator.generate(rawServer), generator.generate(rawServer, preferProfileDns = true))
+        }
+        assertEquals(generator.generate(vlessReality), generator.generate(vlessReality, preferProfileDns = true))
+    }
+
+    @Test
+    fun `profile DNS interception uses the supplied TPROXY inbounds`() {
+        val rawServer = vlessReality.copy(
+            rawConfigJson = """
+                {"dns":{"servers":["9.9.9.9"]},"outbounds":[{"tag":"proxy","protocol":"vless","settings":{}}]}
+            """.trimIndent(),
+        )
+        val config = Json.parseToJsonElement(
+            generator.generate(
+                rawServer,
+                preferProfileDns = true,
+                inbounds = listOf(XrayInbound.Tproxy(48_321, "tproxy-in-default", 255, allowIpv6 = false)),
+            ),
+        ).jsonObject
+        val rules = config.getValue("routing").jsonObject.getValue("rules").jsonArray.map { it.jsonObject }
+        assertEquals("53", rules.first().getValue("port").jsonPrimitive.content)
+        assertEquals("dns-out", rules.first().getValue("outboundTag").jsonPrimitive.content)
+        assertTrue(rules.all { it.getValue("inboundTag").jsonArray.single().jsonPrimitive.content == "tproxy-in-default" })
+        assertEquals(
+            "dns",
+            config.getValue("outbounds").jsonArray.single {
+                it.jsonObject["tag"]?.jsonPrimitive?.content == "dns-out"
+            }.jsonObject.getValue("protocol").jsonPrimitive.content,
+        )
+    }
+
+    @Test
     fun `generates TUN inbound with correct name and MTU`() {
         val config = generator.generate(vlessReality, tunName = "wlan2", fwmark = 255, tunMtu = 1400)
         val json = Json.parseToJsonElement(config).jsonObject

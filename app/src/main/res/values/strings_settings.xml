@@ -14,6 +14,8 @@
     <string name="settings_dns_row_subtitle">Resolvers for proxied and direct names</string>
     <string name="settings_dns_back">Back</string>
     <string name="settings_dns_intro">Xray answers every port 53 query itself, so names routed through the proxy are never looked up on the network you are on.</string>
+    <string name="settings_prefer_profile_dns_title">Prefer profile DNS</string>
+    <string name="settings_prefer_profile_dns_description">Use DNS from the JSON profile when present. Otherwise, use the DNS settings below.</string>
     <string name="settings_dns_primary_title">Proxied domains</string>
     <string name="settings_dns_primary_description">Resolves every name routed through the proxy.</string>
     <string name="settings_dns_direct_title">Direct domains</string>

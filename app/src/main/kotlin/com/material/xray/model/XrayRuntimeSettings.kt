@@ -8,6 +8,7 @@ data class XrayRuntimeSettings(
     val rootConnectionBackend: RootConnectionBackend = RootConnectionBackend.default,
     val dnsServers: String,
     val domesticDnsServers: String,
+    val preferProfileDns: Boolean = false,
     val logLevel: XrayLogLevel,
     val defaultOutbound: XrayOutbound,
     val bypassLan: Boolean,

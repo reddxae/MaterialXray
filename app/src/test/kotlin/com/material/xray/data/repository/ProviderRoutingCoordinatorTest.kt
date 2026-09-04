@@ -104,7 +104,7 @@ class ProviderRoutingCoordinatorTest {
 
         val result = coordinator.refreshSelectedServer(ProviderRoutingActiveUpdate.DEFER)
 
-        assertEquals(ProviderRoutingRefreshResult.Persisted(PendingRoutingChange.XRAY_CONFIG), result)
+        assertEquals(ProviderRoutingRefreshResult.Persisted(PendingRoutingChange.XRAY_ROUTING), result)
         assertEquals(0, appRoutingApplyCalls)
         assertEquals(1, xrayRoutingApplyCalls)
     }

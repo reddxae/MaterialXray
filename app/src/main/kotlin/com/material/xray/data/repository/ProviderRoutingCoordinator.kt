@@ -94,10 +94,10 @@ class ProviderRoutingCoordinator internal constructor(
         val xrayRoutingChanged = selection.xrayRoutingProvided && applyXrayRouting(selection.subscriptionId)
         if (!appRoutingChanged && !xrayRoutingChanged) return ProviderRoutingRefreshResult.Unchanged
 
-        val change = if (xrayRoutingChanged) {
-            PendingRoutingChange.XRAY_CONFIG
-        } else {
-            PendingRoutingChange.APP_ROUTING
+        val change = when {
+            appRoutingChanged && xrayRoutingChanged -> PendingRoutingChange.XRAY_CONFIG
+            xrayRoutingChanged -> PendingRoutingChange.XRAY_ROUTING
+            else -> PendingRoutingChange.APP_ROUTING
         }
         val activeUpdateRequested = activeUpdate == ProviderRoutingActiveUpdate.APPLY_IF_CONNECTED &&
             applyActiveConnectionChange(change)

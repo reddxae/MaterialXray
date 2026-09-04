@@ -360,6 +360,7 @@ internal data class ConnectionManagerDependencies(
     val routingPlanBuilder: RoutingPlanBuilder,
     val activeRouting: ActiveRoutingController,
     val apiClientFactory: ConnectionApiClientFactory,
+    val xrayRoutingUpdater: ConnectionXrayRoutingUpdater,
 )
 
 class ConnectionManagerFactory @Inject constructor(
@@ -430,6 +431,10 @@ class ConnectionManagerFactory @Inject constructor(
                 onProgressFinished = stateCoordinator::endConnectionProgress,
             ),
             apiClientFactory = AndroidConnectionApiClientFactory(),
+            xrayRoutingUpdater = XrayCliRoutingUpdater(
+                binaryPath = { xrayBinary.androidBinaryPath },
+                binDir = environment.binDir,
+            ),
         )
         return ConnectionManager(
             configGenerator = ConfigGenerator(),

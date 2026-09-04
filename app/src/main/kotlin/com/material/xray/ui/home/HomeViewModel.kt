@@ -558,7 +558,7 @@ class HomeViewModel @Inject constructor(
 
     private suspend fun applySubscriptionRouting(routing: SubscriptionRouting) {
         if (subscriptionRoutingRepository.apply(routing)) {
-            routingChangeManager.markPendingChanges(PendingRoutingChange.XRAY_CONFIG)
+            routingChangeManager.markPendingChanges(PendingRoutingChange.XRAY_ROUTING)
         }
     }
 

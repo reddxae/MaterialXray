@@ -25,6 +25,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 @Suppress("LargeClass")
 internal class ConnectionManager(
@@ -48,6 +50,7 @@ internal class ConnectionManager(
     private val appRoutingPlanner = dependencies.routingPlanBuilder
     private val activeRouting = dependencies.activeRouting
     private val apiClientFactory = dependencies.apiClientFactory
+    private val xrayRoutingUpdater = dependencies.xrayRoutingUpdater
     private val stepExecutor = ConnectionStepExecutor(
         elapsedRealtime = environment::elapsedRealtime,
         log = { message -> log.append(LogSource.APP, message) },
@@ -79,6 +82,8 @@ internal class ConnectionManager(
 
     @Volatile private var runtimeState: XrayRuntimeState = XrayRuntimeState.Inactive
 
+    private var activeGeneratedConfig: GeneratedXrayConfig? = null
+
     @Volatile private var transitionGuardInstalled = false
 
     @Volatile private var preserveGuardOnFailure = false
@@ -102,6 +107,7 @@ internal class ConnectionManager(
         preparation: ConnectionPreparation = ConnectionPreparation.Full,
     ) {
         stateCoordinator.startConnection(transitionState)
+        activeGeneratedConfig = null
         rootRoutingKnownCleanForConnect = false
         val connectStartedAt = environment.elapsedRealtime()
         val fwmark = runtimeSettings.fwmark
@@ -176,7 +182,7 @@ internal class ConnectionManager(
                 return
             }
 
-            writeXrayConfig(
+            val generatedConfig = writeXrayConfig(
                 xrayServer,
                 effectiveRuntimeSettings,
                 managesSystemRouting,
@@ -235,6 +241,8 @@ internal class ConnectionManager(
             ) {
                 return
             }
+
+            activeGeneratedConfig = generatedConfig
 
             finishSuccessfulConnection(
                 server = server,
@@ -603,7 +611,7 @@ internal class ConnectionManager(
         xrayApiEndpoint: XrayApiEndpoint,
         tproxyPlan: TproxyTrafficPlan?,
         syntheticDnsAddress: String?,
-    ) {
+    ): GeneratedXrayConfig? {
         val effectiveInbounds = tproxyPlan?.runtimeState?.groups?.map { group ->
             XrayInbound.Tproxy(
                 port = group.port,
@@ -617,38 +625,24 @@ internal class ConnectionManager(
         // A hand-edited config replaces generation wholesale, but not the identifiers this connect
         // just allocated: the API endpoint and the inbounds have to be the current ones or the
         // stats clients talk to nothing and the firewall rule guards the wrong port.
-        if (writeOverriddenXrayConfig(runtimeSettings, appRoutingPlan, xrayApiEndpoint, effectiveInbounds)) return
+        if (writeOverriddenXrayConfig(runtimeSettings, appRoutingPlan, xrayApiEndpoint, effectiveInbounds)) return null
+
+        val generatedConfig = GeneratedXrayConfig(
+            server = xrayServer,
+            runtimeSettings = runtimeSettings,
+            managesSystemRouting = managesSystemRouting,
+            appRoutingPlan = appRoutingPlan,
+            physicalRoute = physicalRoute,
+            xrayApiEndpoint = xrayApiEndpoint,
+            syntheticDnsAddress = syntheticDnsAddress,
+            inbounds = effectiveInbounds,
+        )
 
         val configJson = executeStep(
             ConnectionStep(
                 "Config generation",
                 ConnectionProgress.GeneratingConfiguration,
-                action = {
-                    withContext(Dispatchers.Default) {
-                        configGenerator.generate(
-                            server = xrayServer,
-                            tunName = runtimeSettings.tunName,
-                            fwmark = runtimeSettings.fwmark.takeIf { managesSystemRouting } ?: 0,
-                            dnsServers = runtimeSettings.dnsServers,
-                            domesticDnsServers = runtimeSettings.domesticDnsServers,
-                            syntheticDnsAddress = syntheticDnsAddress,
-                            logLevel = runtimeSettings.logLevel,
-                            defaultOutbound = runtimeSettings.defaultOutbound,
-                            bypassLan = runtimeSettings.bypassLan,
-                            allowIpv6 = runtimeSettings.allowIpv6,
-                            routingRules = runtimeSettings.routingRules,
-                            routingDomainStrategy = runtimeSettings.routingDomainStrategy,
-                            routingDomainMatcher = runtimeSettings.routingDomainMatcher,
-                            routingFallbackOutbound = runtimeSettings.routingFallbackOutbound,
-                            appProxyRoutes = appRoutingPlan.proxyRoutes,
-                            physicalInterface = physicalRoute?.dev,
-                            xrayApiEndpoint = xrayApiEndpoint,
-                            xrayBufferSizeKiB = runtimeSettings.xrayBufferSizeKiB,
-                            tunMtu = runtimeSettings.tunMtu,
-                            inbounds = effectiveInbounds,
-                        )
-                    }
-                },
+                action = { generateXrayConfig(generatedConfig) },
             ),
         )
         executeStep(
@@ -659,6 +653,33 @@ internal class ConnectionManager(
             ),
         )
         log.append(LogSource.APP, "Config written to ${xrayBinary.configPath()} (${configJson.length} chars)")
+        return generatedConfig
+    }
+
+    private suspend fun generateXrayConfig(config: GeneratedXrayConfig): String = withContext(Dispatchers.Default) {
+        val settings = config.runtimeSettings
+        configGenerator.generate(
+            server = config.server,
+            tunName = settings.tunName,
+            fwmark = settings.fwmark.takeIf { config.managesSystemRouting } ?: 0,
+            dnsServers = settings.dnsServers,
+            domesticDnsServers = settings.domesticDnsServers,
+            syntheticDnsAddress = config.syntheticDnsAddress,
+            logLevel = settings.logLevel,
+            defaultOutbound = settings.defaultOutbound,
+            bypassLan = settings.bypassLan,
+            allowIpv6 = settings.allowIpv6,
+            routingRules = settings.routingRules,
+            routingDomainStrategy = settings.routingDomainStrategy,
+            routingDomainMatcher = settings.routingDomainMatcher,
+            routingFallbackOutbound = settings.routingFallbackOutbound,
+            appProxyRoutes = config.appRoutingPlan.proxyRoutes,
+            physicalInterface = config.physicalRoute?.dev,
+            xrayApiEndpoint = config.xrayApiEndpoint,
+            xrayBufferSizeKiB = settings.xrayBufferSizeKiB,
+            tunMtu = settings.tunMtu,
+            inbounds = config.inbounds,
+        )
     }
 
     /**
@@ -1119,6 +1140,78 @@ internal class ConnectionManager(
         ),
     )
 
+    suspend fun applyXrayRoutingChanges(
+        connectedState: ConnectionState.Connected,
+        runtimeSettings: XrayRuntimeSettings,
+    ): Boolean = executeStep(
+        ConnectionStep(
+            label = "Live Xray routing update",
+            progress = ConnectionProgress.ConfiguringRouting,
+            isSuccessful = { it },
+            action = { applyXrayRoutingChangesOnce(connectedState, runtimeSettings) },
+        ),
+    )
+
+    private suspend fun applyXrayRoutingChangesOnce(
+        connectedState: ConnectionState.Connected,
+        runtimeSettings: XrayRuntimeSettings,
+    ): Boolean {
+        val activeRuntime = runtimeState as? XrayRuntimeState.Active ?: return false
+        if (activeRuntime.pid != connectedState.corePid || !isProcessAlive(connectedState.corePid)) return false
+        val currentInputs = activeGeneratedConfig ?: return false
+        val currentConfig = xrayBinary.readConfig()?.toJsonObjectOrNull() ?: return false
+        if (currentInputs.runtimeSettings.routingDomainStrategy != runtimeSettings.routingDomainStrategy) {
+            log.append(LogSource.APP, "Live routing update requires a restart to change domain strategy")
+            return false
+        }
+        val nextInputs = currentInputs.copy(
+            runtimeSettings = currentInputs.runtimeSettings.copy(
+                routingRules = runtimeSettings.routingRules,
+                routingDomainMatcher = runtimeSettings.routingDomainMatcher,
+                routingFallbackOutbound = runtimeSettings.routingFallbackOutbound,
+            ),
+        )
+        val nextConfigJson = try {
+            generateXrayConfig(nextInputs)
+        } catch (error: IllegalArgumentException) {
+            log.append(LogSource.APP, "Live routing update skipped: ${error.message}")
+            return false
+        } catch (error: IllegalStateException) {
+            log.append(LogSource.APP, "Live routing update skipped: ${error.message}")
+            return false
+        } catch (error: SerializationException) {
+            log.append(LogSource.APP, "Live routing update skipped: ${error.message}")
+            return false
+        }
+        val nextConfig = nextConfigJson.toJsonObjectOrNull() ?: return false
+        if (currentConfig.withoutRouting() != nextConfig.withoutRouting()) {
+            log.append(LogSource.APP, "Live routing update requires changes outside Xray routing")
+            return false
+        }
+        val nextRouting = nextConfig["routing"] as? JsonObject ?: return false
+
+        return when (val result = xrayRoutingUpdater.replace(activeRuntime.apiEndpoint, nextRouting)) {
+            XrayRoutingUpdateResult.Applied -> {
+                try {
+                    xrayBinary.writeConfig(nextConfigJson)
+                } catch (error: IOException) {
+                    log.append(LogSource.APP, "Could not persist live routing update: ${error.message}")
+                    return false
+                } catch (error: SecurityException) {
+                    log.append(LogSource.APP, "Could not persist live routing update: ${error.message}")
+                    return false
+                }
+                activeGeneratedConfig = nextInputs
+                log.append(LogSource.APP, "Xray routing updated without restarting the core")
+                true
+            }
+            is XrayRoutingUpdateResult.Failed -> {
+                log.append(LogSource.APP, "Live Xray routing update failed: ${result.reason}")
+                false
+            }
+        }
+    }
+
     private suspend fun applyAppRoutingChangesOnce(
         connectedState: ConnectionState.Connected,
         runtimeSettings: XrayRuntimeSettings,
@@ -1260,7 +1353,9 @@ internal class ConnectionManager(
         val configuredEndpoint = xrayBinary.readConfig()?.let(::parseXrayApiEndpoint)
         val endpoint = when (configuredEndpoint) {
             is XrayApiEndpoint.LoopbackTcp -> configuredEndpoint
-            is XrayApiEndpoint.UnixSocket -> return false
+            is XrayApiEndpoint.FileSystemUnixSocket,
+            is XrayApiEndpoint.UnixSocket,
+            -> return false
             null ->
                 state.xrayApiPort
                     ?.takeIf { it in 1..65_535 }
@@ -1275,6 +1370,7 @@ internal class ConnectionManager(
             apiEndpoint = endpoint,
             physicalRoute = selectPersistedPhysicalRoute(state),
         )
+        activeGeneratedConfig = null
         replaceXrayApiClients(endpoint)
         return true
     }
@@ -1308,6 +1404,7 @@ internal class ConnectionManager(
         rootRuntimeKnownClean = cleaned && strategy?.managesSystemRouting == true && !preserveTproxyGuard
         if (rootRuntimeKnownClean) cleanup.recordKnownCleanState()
         runtimeState = XrayRuntimeState.Inactive
+        activeGeneratedConfig = null
         executeStep(
             ConnectionStep("Close Xray control API", ConnectionProgress.CleaningRuntime) {
                 closeXrayApiClients()
@@ -1399,6 +1496,7 @@ internal class ConnectionManager(
         rootRuntimeKnownClean = cleaned && !preserveTproxyGuard
         if (rootRuntimeKnownClean) cleanup.recordKnownCleanState()
         runtimeState = XrayRuntimeState.Inactive
+        activeGeneratedConfig = null
         if (!cleaned) stateCoordinator.markError(environment.localizedString(R.string.connection_error_cleanup_failed))
         return cleaned
     }
@@ -1431,6 +1529,7 @@ internal class ConnectionManager(
                 }
             }
             runtimeState = XrayRuntimeState.Inactive
+            activeGeneratedConfig = null
         }
         closeXrayApiClients()
         stateCoordinator.markError(finalMessage, retryable)
@@ -1447,6 +1546,7 @@ internal class ConnectionManager(
             cleanupErrors += error
         } finally {
             runtimeState = XrayRuntimeState.Inactive
+            activeGeneratedConfig = null
             if (transitionGuardInstalled && !preserveGuardOnFailure) {
                 try {
                     if (tproxyGateway.removeGuard()) transitionGuardInstalled = false
@@ -1614,6 +1714,23 @@ internal class ConnectionManager(
 
     private suspend fun <T> executeStep(step: ConnectionStep<T>): T = stepExecutor.execute(step)
 }
+
+private data class GeneratedXrayConfig(
+    val server: ServerConfig,
+    val runtimeSettings: XrayRuntimeSettings,
+    val managesSystemRouting: Boolean,
+    val appRoutingPlan: AppRoutingPlan,
+    val physicalRoute: TunManager.PhysicalRoute?,
+    val xrayApiEndpoint: XrayApiEndpoint,
+    val syntheticDnsAddress: String?,
+    val inbounds: List<XrayInbound>?,
+)
+
+private fun String.toJsonObjectOrNull(): JsonObject? = runCatching {
+    Json.parseToJsonElement(this) as? JsonObject
+}.getOrNull()
+
+private fun JsonObject.withoutRouting() = filterKeys { it != "routing" }
 
 private sealed interface XrayRuntimeState {
     val strategy: XrayRuntimeStrategy?

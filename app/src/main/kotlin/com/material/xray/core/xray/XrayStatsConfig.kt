@@ -22,6 +22,7 @@ internal fun buildStatsApi(
     put("tag", XRAY_API_TAG)
     when (endpoint) {
         is XrayApiEndpoint.UnixSocket -> put("listen", "@${endpoint.name}")
+        is XrayApiEndpoint.FileSystemUnixSocket -> put("listen", endpoint.path)
         is XrayApiEndpoint.LoopbackTcp -> put("listen", "$XRAY_API_LOOPBACK_ADDRESS:${endpoint.port}")
     }
     put(
@@ -72,6 +73,7 @@ internal fun parseXrayApiEndpoint(configJson: String): XrayApiEndpoint? = runCat
         listen?.startsWith('@') == true -> listen.drop(1)
             .takeIf { it.isNotBlank() }
             ?.let { XrayApiEndpoint.UnixSocket(it) }
+        listen?.startsWith('/') == true -> XrayApiEndpoint.FileSystemUnixSocket(listen)
         listen?.startsWith("$XRAY_API_LOOPBACK_ADDRESS:") == true ->
             listen
                 .removePrefix("$XRAY_API_LOOPBACK_ADDRESS:")

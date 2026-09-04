@@ -15,6 +15,7 @@ import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.Protocol
 import com.material.xray.model.RootConnectionBackend
+import com.material.xray.model.RoutingRule
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
@@ -192,6 +193,107 @@ class ConnectionManagerTest {
         assertEquals(XrayApiEndpoint.LoopbackTcp(48_123), harness.createdApiEndpoints.single())
         assertEquals(48_123, harness.stateStore.state?.xrayApiPort)
         assertEquals(listOf(48_123 to harness.environment.appUid), harness.rootRuntime.protectedApis)
+    }
+
+    @Test
+    fun `routing-only change replaces live rules and persists generated config`() = runTest {
+        val harness = Harness()
+        val settings = runtimeSettings()
+        harness.manager.connect(server(), settings, preparation = ConnectionPreparation.ReusePreparedRuntime)
+        val connectedState = harness.stateCoordinator.state.value as ConnectionState.Connected
+        val updatedSettings = settings.copy(
+            routingRules = listOf(
+                RoutingRule(
+                    id = "block-ads",
+                    name = "Block ads",
+                    outboundTag = "block",
+                    domains = listOf("geosite:category-ads-all"),
+                ),
+            ),
+        )
+
+        val applied = harness.manager.applyXrayRoutingChanges(connectedState, updatedSettings)
+
+        assertTrue(applied)
+        assertEquals(1, harness.xrayRoutingUpdater.calls)
+        val persistedRouting = Json.parseToJsonElement(requireNotNull(harness.binary.configJson))
+            .jsonObject
+            .getValue("routing")
+            .jsonObject
+        assertEquals(persistedRouting, harness.xrayRoutingUpdater.lastRouting)
+    }
+
+    @Test
+    fun `routing change that also changes DNS declines live update`() = runTest {
+        val harness = Harness()
+        val settings = runtimeSettings()
+        harness.manager.connect(server(), settings, preparation = ConnectionPreparation.ReusePreparedRuntime)
+        val connectedState = harness.stateCoordinator.state.value as ConnectionState.Connected
+        val updatedSettings = settings.copy(
+            routingRules = listOf(
+                RoutingRule(
+                    id = "direct-example",
+                    name = "Direct example",
+                    outboundTag = "direct",
+                    domains = listOf("domain:example.com"),
+                ),
+            ),
+        )
+
+        val applied = harness.manager.applyXrayRoutingChanges(connectedState, updatedSettings)
+
+        assertFalse(applied)
+        assertEquals(0, harness.xrayRoutingUpdater.calls)
+        assertTrue(harness.log.entries.value.any { it.message == "Live routing update requires changes outside Xray routing" })
+    }
+
+    @Test
+    fun `domain strategy change declines live update`() = runTest {
+        val harness = Harness()
+        val settings = runtimeSettings()
+        harness.manager.connect(server(), settings, preparation = ConnectionPreparation.ReusePreparedRuntime)
+        val connectedState = harness.stateCoordinator.state.value as ConnectionState.Connected
+
+        val applied = harness.manager.applyXrayRoutingChanges(
+            connectedState,
+            settings.copy(routingDomainStrategy = "AsIs"),
+        )
+
+        assertFalse(applied)
+        assertEquals(0, harness.xrayRoutingUpdater.calls)
+        assertTrue(
+            harness.log.entries.value.any {
+                it.message == "Live routing update requires a restart to change domain strategy"
+            },
+        )
+    }
+
+    @Test
+    fun `failed live routing command leaves persisted config unchanged`() = runTest {
+        val harness = Harness()
+        val settings = runtimeSettings()
+        harness.manager.connect(server(), settings, preparation = ConnectionPreparation.ReusePreparedRuntime)
+        val connectedState = harness.stateCoordinator.state.value as ConnectionState.Connected
+        val originalConfig = harness.binary.configJson
+        harness.xrayRoutingUpdater.result = XrayRoutingUpdateResult.Failed("API unavailable")
+
+        val applied = harness.manager.applyXrayRoutingChanges(
+            connectedState,
+            settings.copy(
+                routingRules = listOf(
+                    RoutingRule(
+                        id = "block-ads",
+                        name = "Block ads",
+                        outboundTag = "block",
+                        domains = listOf("geosite:category-ads-all"),
+                    ),
+                ),
+            ),
+        )
+
+        assertFalse(applied)
+        assertEquals(originalConfig, harness.binary.configJson)
+        assertTrue(harness.log.entries.value.any { it.message == "Live Xray routing update failed: API unavailable" })
     }
 
     @Test
@@ -677,6 +779,7 @@ class ConnectionManagerTest {
         val stateCoordinator = ConnectionStateCoordinator()
         val log = LogBuffer()
         val apiClients = FakeApiClients()
+        val xrayRoutingUpdater = FakeXrayRoutingUpdater()
         val serverResolver = FakeServerResolver()
         val createdApiEndpoints = mutableListOf<XrayApiEndpoint>()
         val manager = ConnectionManager(
@@ -702,8 +805,24 @@ class ConnectionManagerTest {
                     createdApiEndpoints += endpoint
                     apiClients.clients
                 },
+                xrayRoutingUpdater = xrayRoutingUpdater,
             ),
         )
+    }
+
+    private class FakeXrayRoutingUpdater : ConnectionXrayRoutingUpdater {
+        var calls = 0
+        var lastRouting: kotlinx.serialization.json.JsonObject? = null
+        var result: XrayRoutingUpdateResult = XrayRoutingUpdateResult.Applied
+
+        override suspend fun replace(
+            endpoint: XrayApiEndpoint,
+            routing: kotlinx.serialization.json.JsonObject,
+        ): XrayRoutingUpdateResult {
+            calls += 1
+            lastRouting = routing
+            return result
+        }
     }
 
     private class FakeConnectionEnvironment : ConnectionEnvironment {

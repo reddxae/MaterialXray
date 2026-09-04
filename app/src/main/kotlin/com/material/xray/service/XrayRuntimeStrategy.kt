@@ -141,10 +141,10 @@ internal class VpnServiceXrayRuntimeStrategy(
         tunFd = requireNotNull(vpnInterface) { "A rootless runtime cannot start without a tunnel" }.fd,
     )
 
-    // The core is a child of this process, so a socket in the app's own namespace needs no
-    // firewalling and cannot collide with another app.
-    override fun nextApiEndpoint(environment: ConnectionEnvironment): XrayApiEndpoint = XrayApiEndpoint.UnixSocket(
-        "$XRAY_API_SOCKET_NAME_PREFIX-${environment.processId}-${environment.elapsedRealtime()}",
+    // A private filesystem socket is reachable by both the app's gRPC clients and Xray's own CLI,
+    // which compiles JSON routing rules for live updates. The containing app directory is private.
+    override fun nextApiEndpoint(environment: ConnectionEnvironment): XrayApiEndpoint = XrayApiEndpoint.FileSystemUnixSocket(
+        "${environment.binDir}/$XRAY_API_SOCKET_NAME_PREFIX-${environment.processId}-${environment.elapsedRealtime()}.sock",
     )
 
     override suspend fun isAlive(pid: Int): Boolean = processSupervisor.isAlive(pid)

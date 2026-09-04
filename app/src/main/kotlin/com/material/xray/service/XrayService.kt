@@ -449,6 +449,9 @@ class XrayService : VpnService() {
             ACTION_RELOAD_APP_ROUTING -> {
                 launchConnectionCommand { reloadAppRouting() }
             }
+            ACTION_RELOAD_XRAY_ROUTING -> {
+                launchConnectionCommand { reloadXrayRouting() }
+            }
             ACTION_RESTORE_STATUS -> {
                 startAsForeground(
                     localizedString(R.string.app_name),
@@ -884,6 +887,35 @@ class XrayService : VpnService() {
 
         stopProcessWatchdog()
         logBuffer.append(LogSource.APP, "Restarting Xray to apply app routing topology changes...")
+        return restartRuntime(config, ConnectionState.ApplyingRoutingChanges)
+    }
+
+    private suspend fun reloadXrayRouting(): Boolean = executeStep(
+        ConnectionStep(
+            label = "Apply Xray routing changes",
+            progress = ConnectionProgress.ConfiguringRouting,
+            isSuccessful = { it },
+            action = { reloadXrayRoutingOnce() },
+        ),
+    )
+
+    private suspend fun reloadXrayRoutingOnce(): Boolean {
+        val config = activeConfig ?: return true
+        val connectedState = connectionStateCoordinator.state.value as? ConnectionState.Connected
+            ?: return reloadActiveConnection()
+        val runtimeSettings = settingsRepo.runtimeSettingsSnapshot()
+
+        logBuffer.append(LogSource.APP, "Applying Xray routing changes...")
+        connectionStateCoordinator.markApplyingRoutingChanges()
+        updateNotification()
+
+        if (connectionManager.applyXrayRoutingChanges(connectedState, runtimeSettings)) {
+            connectionStateCoordinator.markConnected(connectedState)
+            return true
+        }
+
+        stopProcessWatchdog()
+        logBuffer.append(LogSource.APP, "Restarting Xray to apply routing changes...")
         return restartRuntime(config, ConnectionState.ApplyingRoutingChanges)
     }
 
@@ -2260,6 +2292,7 @@ class XrayService : VpnService() {
         private const val ACTION_FORCE_DISCONNECT = "com.material.xray.FORCE_DISCONNECT"
         const val ACTION_RELOAD = "com.material.xray.RELOAD"
         const val ACTION_RELOAD_APP_ROUTING = "com.material.xray.RELOAD_APP_ROUTING"
+        const val ACTION_RELOAD_XRAY_ROUTING = "com.material.xray.RELOAD_XRAY_ROUTING"
         const val ACTION_RESTORE_STATUS = "com.material.xray.RESTORE_STATUS"
         const val EXTRA_SERVER_CONFIG = "server_config"
         private const val NETWORK_RETARGET_SETTLE_DELAY_MS = 250L
@@ -2330,6 +2363,12 @@ class XrayService : VpnService() {
         fun reloadAppRouting(context: Context) {
             context.startService(
                 Intent(context, XrayService::class.java).setAction(ACTION_RELOAD_APP_ROUTING),
+            )
+        }
+
+        fun reloadXrayRouting(context: Context) {
+            context.startService(
+                Intent(context, XrayService::class.java).setAction(ACTION_RELOAD_XRAY_ROUTING),
             )
         }
 

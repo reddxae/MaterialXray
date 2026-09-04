@@ -235,7 +235,7 @@ internal interface TproxyRoutingGateway {
     suspend fun installGuard(plan: TproxyTrafficPlan): TunManager.RoutingResult
     suspend fun activate(plan: TproxyTrafficPlan): TunManager.RoutingResult
     suspend fun update(plan: TproxyTrafficPlan, currentSlot: String): TunManager.RoutingResult
-    suspend fun verify(state: TproxyRuntimeState): Boolean
+    suspend fun verify(state: TproxyRuntimeState): TunManager.RoutingResult
     suspend fun removeGuard(): Boolean
     suspend fun hasGuard(state: TproxyRuntimeState?): Boolean
 }
@@ -293,7 +293,7 @@ internal class TproxyManagerRoutingGateway(
     override suspend fun installGuard(plan: TproxyTrafficPlan): TunManager.RoutingResult = manager.installGuard(plan)
     override suspend fun activate(plan: TproxyTrafficPlan): TunManager.RoutingResult = manager.activate(plan)
     override suspend fun update(plan: TproxyTrafficPlan, currentSlot: String): TunManager.RoutingResult = manager.update(plan, currentSlot)
-    override suspend fun verify(state: TproxyRuntimeState): Boolean = manager.verify(state)
+    override suspend fun verify(state: TproxyRuntimeState): TunManager.RoutingResult = manager.verify(state)
     override suspend fun removeGuard(): Boolean = manager.removeGuard()
     override suspend fun hasGuard(state: TproxyRuntimeState?): Boolean = manager.hasGuard(state)
 

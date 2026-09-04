@@ -823,16 +823,17 @@ internal class ConnectionManager(
                     return@coroutineScope false
                 }
                 if (!finishXrayApiReadiness(apiReadiness.await())) return@coroutineScope false
-                val healthy = executeStep(
+                val verification = executeStep(
                     ConnectionStep(
                         "TPROXY routing verification",
                         ConnectionProgress.ConfiguringRouting,
-                        isSuccessful = { it },
+                        isSuccessful = { it.success },
                         action = { tproxyGateway.verify(tproxyPlan.runtimeState) },
                     ),
                 )
-                if (!healthy) {
+                if (!verification.success) {
                     diagnostics.logTproxyDiagnostics("tproxy-health-failure", tproxyPlan.runtimeState, pid)
+                    log.append(LogSource.APP, "ERROR: ${verification.error}")
                     fail(environment.localizedString(R.string.connection_error_tproxy_health_check))
                     return@coroutineScope false
                 }
@@ -1220,7 +1221,7 @@ internal class ConnectionManager(
         val state = stateStore.read() ?: return false
         val tproxyState = state.tproxy
         return if (state.rootConnectionBackend == RootConnectionBackend.Tproxy && tproxyState != null) {
-            tproxyGateway.verify(tproxyState)
+            tproxyGateway.verify(tproxyState).success
         } else {
             tunAvailable
         }
@@ -1484,7 +1485,7 @@ internal class ConnectionManager(
             action = {
                 val tproxyState = state.tproxy
                 if (state.rootConnectionBackend == RootConnectionBackend.Tproxy && tproxyState != null) {
-                    tproxyGateway.verify(tproxyState)
+                    tproxyGateway.verify(tproxyState).success
                 } else {
                     tunAvailable
                 }

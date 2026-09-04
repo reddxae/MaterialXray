@@ -287,6 +287,23 @@ class ConnectionManagerTest {
     }
 
     @Test
+    fun `TPROXY verification failure logs the exact cause after diagnostics`() = runTest {
+        val failure = "TPROXY routing verification failed: missing v4 rule: -A MXP278b -p tcp"
+        val harness = Harness().apply {
+            tproxyGateway.verificationResult = TunManager.RoutingResult(success = false, error = failure)
+        }
+
+        harness.manager.connect(
+            server(),
+            runtimeSettings().copy(rootConnectionBackend = RootConnectionBackend.Tproxy),
+            preparation = ConnectionPreparation.ReusePreparedRuntime,
+        )
+
+        assertEquals(1, harness.diagnostics.tproxyCalls)
+        assertTrue(harness.log.entries.value.any { it.message == "ERROR: $failure" })
+    }
+
+    @Test
     fun `raw connection propagates bootstrap hosts into proxied default DNS`() = runTest {
         val rawServer = server().copy(
             protocol = Protocol.RAW,
@@ -836,6 +853,7 @@ class ConnectionManagerTest {
         var activateCalls = 0
         var removeGuardCalls = 0
         var activationResult = TunManager.RoutingResult(success = true)
+        var verificationResult = TunManager.RoutingResult(success = true)
 
         override fun createPlan(
             appRoutingPlan: AppRoutingPlan,
@@ -872,7 +890,7 @@ class ConnectionManagerTest {
             return activationResult
         }
         override suspend fun update(plan: TproxyTrafficPlan, currentSlot: String) = TunManager.RoutingResult(success = true)
-        override suspend fun verify(state: TproxyRuntimeState): Boolean = true
+        override suspend fun verify(state: TproxyRuntimeState): TunManager.RoutingResult = verificationResult
         override suspend fun removeGuard(): Boolean {
             removeGuardCalls += 1
             return true
@@ -966,9 +984,14 @@ class ConnectionManagerTest {
 
     private class FakeDiagnostics : ConnectionDiagnosticReporter {
         var calls = 0
+        var tproxyCalls = 0
 
         override suspend fun logNamespaceDiagnostics(stage: String, tunName: String?, xrayPid: Int?) {
             calls += 1
+        }
+
+        override suspend fun logTproxyDiagnostics(stage: String, state: TproxyRuntimeState, xrayPid: Int?) {
+            tproxyCalls += 1
         }
     }
 

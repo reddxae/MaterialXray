@@ -2,6 +2,7 @@ package com.material.xray.service
 
 import com.material.xray.core.root.RootShell
 import com.material.xray.core.root.RootShell.NetworkNamespace
+import com.material.xray.core.xray.TproxyManager
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -68,6 +69,25 @@ class ConnectionDiagnosticsTest {
         assertTrue(log.messages().contains("app-tun-failure/current-link: exit=7"))
     }
 
+    @Test
+    fun `logTproxyDiagnostics omits repetitive owner rules from chain output`() = runTest {
+        val runner = FakeDiagnosticCommandRunner(defaultNamespace = NetworkNamespace.INIT)
+
+        ConnectionDiagnostics(runner, LogBuffer(), appUid = 10_123).logTproxyDiagnostics(
+            stage = "tproxy-health-failure",
+            state = TproxyManager.createRuntimeState(
+                routeTable = 300,
+                groups = listOf(Long.MAX_VALUE to "tproxy-in-default"),
+                ports = listOf(48_321),
+                allowIpv6 = false,
+            ),
+            xrayPid = 42,
+        )
+
+        val chainProbe = runner.calls.single { it.label == "tproxy-chains" }.command
+        assertTrue(chainProbe.contains("grep -v -F -- ' -m owner '"))
+    }
+
     private class FakeDiagnosticCommandRunner(
         private val defaultNamespace: NetworkNamespace,
         private val resultForLabel: (String) -> RootShell.Result = { label ->
@@ -86,6 +106,9 @@ class ConnectionDiagnosticsTest {
                 command.contains("ip link show xray0") -> "current-link"
                 command.contains("readlink /proc/") && namespace == NetworkNamespace.INIT -> "init-netns"
                 command.contains("readlink /proc/") -> "current-netns"
+                command.contains("iptables -t mangle -S") -> "tproxy-chains"
+                command.startsWith("ip rule show pref") -> "tproxy-routing"
+                command.contains("ss -lntup") -> "tproxy-listeners"
                 else -> error("Unexpected diagnostic command: $command")
             }
             calls += Call(label, namespace, command)

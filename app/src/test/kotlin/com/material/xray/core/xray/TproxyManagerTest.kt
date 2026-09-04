@@ -304,6 +304,37 @@ class TproxyManagerTest {
         assertFalse(command.contains("ip -6 rule show"))
     }
 
+    @Test
+    fun `tether health verification matches canonical addrtype rule order`() {
+        val command = TproxyManager.verifyCommand(
+            plan(allowIpv6 = true, tetherUpstreamInterface = "wlan0").runtimeState,
+            APP_UID,
+        )
+
+        assertTrue(
+            command.contains(
+                "has_v4 '-A MXOA278b -p tcp -m addrtype --dst-type LOCAL -m tcp --dport 48321 -j DROP'",
+            ),
+        )
+        assertTrue(
+            command.contains(
+                "has_v6 '-A MXOA278b -p udp -m addrtype --dst-type LOCAL -m udp --dport 48321 -j DROP'",
+            ),
+        )
+        assertTrue(
+            command.contains(
+                "has_v4 '-A MXP278b -p tcp -m tcp --dport 53 -j TPROXY --on-port 48321 " +
+                    "--on-ip 0.0.0.0 --tproxy-mark 0xa000001/0xffffffff'",
+            ),
+        )
+        assertTrue(
+            command.contains(
+                "has_v4 '-A MXP278b -p udp -j TPROXY --on-port 48321 --on-ip 0.0.0.0 " +
+                    "--tproxy-mark 0xa000001/0xffffffff'",
+            ),
+        )
+    }
+
     private fun plan(
         allowIpv6: Boolean = false,
         tetherUpstreamInterface: String? = null,

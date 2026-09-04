@@ -90,7 +90,7 @@ internal class ConnectionDiagnostics(
         logCommand(
             "$stage/chains",
             "for chain in MXO$chainSuffix MXOA$chainSuffix MXOB$chainSuffix MXP$chainSuffix MXG$chainSuffix; do " +
-                "iptables -t mangle -S \"\$chain\" 2>/dev/null; done",
+                "iptables -t mangle -S \"\$chain\" 2>/dev/null; done | grep -v -F -- ' -m owner '",
             NetworkNamespace.INIT,
         )
         logCommand(

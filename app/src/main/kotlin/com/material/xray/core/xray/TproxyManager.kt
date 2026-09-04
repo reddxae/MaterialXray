@@ -75,7 +75,10 @@ class TproxyManager internal constructor(
         return execute(updateCommand(plan, appUid, currentSlot, nextSlot), "TPROXY app routing update")
     }
 
-    suspend fun verify(state: TproxyRuntimeState): Boolean = executeCommand(verifyCommand(state, appUid)).isSuccess
+    suspend fun verify(state: TproxyRuntimeState): TunManager.RoutingResult = execute(
+        verifyCommand(state, appUid),
+        "TPROXY routing verification",
+    )
 
     suspend fun remove(state: TproxyRuntimeState?, preserveGuard: Boolean = false): Boolean = executeCommand(cleanupCommand(state, appUid, preserveGuard)).isSuccess
 
@@ -315,8 +318,11 @@ class TproxyManager internal constructor(
                     )
                     commands += hasV4(
                         "${names.slot(state.outputChainSlot)} " +
-                            "${localDestinationMatch("iptables", state.ipv6Enabled || state.tetherUpstreamInterface != null)} " +
-                            "-p $protocol -m $protocol --dport ${group.port} -j DROP",
+                            "${canonicalLocalDestinationMatch(
+                                "iptables",
+                                state.ipv6Enabled || state.tetherUpstreamInterface != null,
+                                protocol,
+                            )} -m $protocol --dport ${group.port} -j DROP",
                     )
                 }
                 commands += "has_port \"\$tcp_listeners\" ${group.port}"
@@ -349,8 +355,9 @@ class TproxyManager internal constructor(
                                 "--tproxy-mark $mark/0xffffffff",
                         )
                         commands += hasV6(
-                            "${names.slot(state.outputChainSlot)} ${localDestinationMatch("ip6tables", state.ipv6Enabled)} " +
-                                "-p $protocol -m $protocol --dport ${group.port} -j DROP",
+                            "${names.slot(state.outputChainSlot)} " +
+                                "${canonicalLocalDestinationMatch("ip6tables", state.ipv6Enabled, protocol)} " +
+                                "-m $protocol --dport ${group.port} -j DROP",
                         )
                     }
                 }
@@ -368,8 +375,8 @@ class TproxyManager internal constructor(
                 commands += hasV4("${names.prerouting} -i $upstream -j RETURN")
                 for (protocol in listOf("tcp", "udp")) {
                     commands += hasV4(
-                        "${names.prerouting} -p $protocol -m $protocol --dport 53 -j TPROXY --on-ip 0.0.0.0 " +
-                            "--on-port $basePort --tproxy-mark $baseMark/0xffffffff",
+                        "${names.prerouting} -p $protocol -m $protocol --dport 53 -j TPROXY --on-port $basePort " +
+                            "--on-ip 0.0.0.0 --tproxy-mark $baseMark/0xffffffff",
                     )
                     commands += hasV4(
                         "${names.prerouting} -p $protocol -j TPROXY --on-port $basePort --on-ip 0.0.0.0 " +
@@ -806,6 +813,15 @@ class TproxyManager internal constructor(
             tool == "ip6tables" -> "-m addrtype --dst-type LOCAL"
             ipv6Enabled -> "-m addrtype --dst-type LOCAL"
             else -> "-d 127.0.0.0/8"
+        }
+
+        private fun canonicalLocalDestinationMatch(tool: String, ipv6Enabled: Boolean, protocol: String): String {
+            val destinationMatch = localDestinationMatch(tool, ipv6Enabled)
+            return if (destinationMatch.startsWith("-m ")) {
+                "-p $protocol $destinationMatch"
+            } else {
+                "$destinationMatch -p $protocol"
+            }
         }
 
         private fun tproxyOnIp(tool: String, ipv6Enabled: Boolean, acceptNonLoopback: Boolean = false): String = when {

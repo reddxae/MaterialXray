@@ -55,6 +55,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -2599,6 +2601,7 @@ private fun AddSubscriptionDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, Boolean, SubscriptionUserAgentMode, String, String) -> Unit,
 ) {
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     var url by rememberSaveable { mutableStateOf("") }
     var preferJson by rememberSaveable { mutableStateOf(true) }
@@ -2614,6 +2617,14 @@ private fun AddSubscriptionDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
             ) {
                 OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text(stringResource(R.string.home_field_url)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text(stringResource(R.string.home_field_name)) },
@@ -2622,27 +2633,40 @@ private fun AddSubscriptionDialog(
                     supportingText = { Text(stringResource(R.string.home_name_from_provider_hint)) },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = url,
-                    onValueChange = { url = it },
-                    label = { Text(stringResource(R.string.home_field_url)) },
-                    singleLine = true,
+                TextButton(
+                    onClick = { advancedExpanded = !advancedExpanded },
                     modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                SubscriptionFetchTypeDropdown(
-                    preferJson = preferJson,
-                    onPreferJsonChange = { preferJson = it },
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                SubscriptionUserAgentSection(
-                    selectedMode = userAgentMode,
-                    customUserAgent = customUserAgent,
-                    customHeaders = customHeaders,
-                    onModeChange = { userAgentMode = it },
-                    onCustomUserAgentChange = { customUserAgent = it },
-                    onCustomHeadersChange = { customHeaders = it },
-                )
+                ) {
+                    Text(
+                        text = stringResource(R.string.home_advanced),
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Start,
+                    )
+                    Icon(
+                        imageVector = if (advancedExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = stringResource(
+                            if (advancedExpanded) R.string.home_collapse_advanced else R.string.home_expand_advanced,
+                        ),
+                    )
+                }
+                AnimatedVisibility(visible = advancedExpanded) {
+                    Column {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SubscriptionFetchTypeDropdown(
+                            preferJson = preferJson,
+                            onPreferJsonChange = { preferJson = it },
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SubscriptionUserAgentSection(
+                            selectedMode = userAgentMode,
+                            customUserAgent = customUserAgent,
+                            customHeaders = customHeaders,
+                            onModeChange = { userAgentMode = it },
+                            onCustomUserAgentChange = { customUserAgent = it },
+                            onCustomHeadersChange = { customHeaders = it },
+                        )
+                    }
+                }
             }
         },
         confirmButton = {

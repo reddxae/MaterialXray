@@ -103,6 +103,9 @@
     <string name="home_allow_camera">Allow camera</string>
     <string name="home_open_app_settings">Open app settings</string>
     <string name="home_add_manually">Add manually</string>
+    <string name="home_advanced">Advanced</string>
+    <string name="home_expand_advanced">Expand advanced options</string>
+    <string name="home_collapse_advanced">Collapse advanced options</string>
     <string name="home_no_servers_in_subscription">No servers in this subscription.</string>
 
     <string name="home_subscription_refresh_content_description">Refresh %1$s</string>

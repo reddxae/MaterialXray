@@ -104,6 +104,9 @@
     <string name="home_allow_camera">Разрешить камеру</string>
     <string name="home_open_app_settings">Открыть настройки приложения</string>
     <string name="home_add_manually">Добавить вручную</string>
+    <string name="home_advanced">Дополнительно</string>
+    <string name="home_expand_advanced">Показать дополнительные параметры</string>
+    <string name="home_collapse_advanced">Скрыть дополнительные параметры</string>
     <string name="home_no_servers_in_subscription">В этой подписке нет серверов.</string>
 
     <string name="home_subscription_refresh_content_description">Обновить %1$s</string>

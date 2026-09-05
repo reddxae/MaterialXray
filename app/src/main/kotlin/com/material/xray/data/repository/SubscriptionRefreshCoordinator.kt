@@ -41,19 +41,23 @@ class SubscriptionRefreshCoordinator @Inject constructor(
     suspend fun refreshSubscription(
         subId: Long,
         url: String,
-    ): SubscriptionRepository.RefreshResult? = operationMutex.withLock {
-        refreshSubscriptionLocked(subId, url)
+    ): SubscriptionRepository.RefreshResult? = subscriptionRepository.withRefreshTracking(subId) {
+        operationMutex.withLock {
+            refreshSubscriptionLocked(subId, url)
+        }
     }
 
     suspend fun updateSubscription(
         sub: SubscriptionEntity,
         name: String,
         url: String,
-    ): SubscriptionRepository.RefreshResult? = operationMutex.withLock {
-        subscriptionRepository.withRefreshLock(sub.id) {
-            val updated = subscriptionRepository.updateBeforeRefresh(sub, name, url) ?: return@withRefreshLock null
-            val prepared = subscriptionRepository.prepareRefresh(updated.id, updated.url) ?: return@withRefreshLock null
-            commitRefresh(prepared)
+    ): SubscriptionRepository.RefreshResult? = subscriptionRepository.withRefreshTracking(sub.id) {
+        operationMutex.withLock {
+            subscriptionRepository.withRefreshLock(sub.id) {
+                val updated = subscriptionRepository.updateBeforeRefresh(sub, name, url) ?: return@withRefreshLock null
+                val prepared = subscriptionRepository.prepareRefresh(updated.id, updated.url) ?: return@withRefreshLock null
+                commitRefresh(prepared)
+            }
         }
     }
 

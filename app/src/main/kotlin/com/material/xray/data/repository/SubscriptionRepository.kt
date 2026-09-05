@@ -21,8 +21,6 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -36,7 +34,8 @@ class SubscriptionRepository @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val shareLinkParser = ShareLinkParser()
-    private val refreshLocks = List(REFRESH_LOCK_COUNT) { Mutex() }
+    private val refreshState = SubscriptionRefreshState()
+    val refreshingSubscriptionIds = refreshState.refreshingIds
 
     fun observeAll(): Flow<List<SubscriptionEntity>> = combine(
         subscriptionDao.observeAll(),
@@ -193,7 +192,9 @@ class SubscriptionRepository @Inject constructor(
 
     internal suspend fun getAllSubscriptions(): List<SubscriptionEntity> = subscriptionDao.getAll()
 
-    internal suspend fun <T> withRefreshLock(subscriptionId: Long, block: suspend () -> T): T = refreshLock(subscriptionId).withLock { block() }
+    internal suspend fun <T> withRefreshLock(subscriptionId: Long, block: suspend () -> T): T = refreshState.withRefreshLock(subscriptionId, block)
+
+    internal suspend fun <T> withRefreshTracking(subscriptionId: Long, block: suspend () -> T): T = refreshState.withRefreshTracking(subscriptionId, block)
 
     suspend fun delete(sub: SubscriptionEntity) {
         subscriptionDao.delete(sub)
@@ -316,12 +317,7 @@ class SubscriptionRepository @Inject constructor(
         .filterValues { it == 1 }
         .keys
 
-    private fun refreshLock(subscriptionId: Long): Mutex = refreshLocks[
-        Math.floorMod(subscriptionId.hashCode(), refreshLocks.size),
-    ]
-
     private companion object {
-        const val REFRESH_LOCK_COUNT = 32
         val FALLBACK_NAME_PATTERN = Regex("""Subscription \d+""")
     }
 }

@@ -106,6 +106,7 @@
     <string name="home_no_servers_in_subscription">No servers in this subscription.</string>
 
     <string name="home_subscription_refresh_content_description">Refresh %1$s</string>
+    <string name="home_subscription_updating_content_description">Updating %1$s</string>
     <string name="home_subscription_test_content_description">Test %1$s with %2$s</string>
     <string name="home_subscription_menu_content_description">Subscription menu</string>
     <string name="home_subscription_show_description">Show description</string>

@@ -279,10 +279,7 @@ class HomeViewModel @Inject constructor(
      */
     private fun liveReadingSharing() = SharingStarted.WhileSubscribed(LIVE_READING_GRACE_MILLIS)
 
-    private val refreshOperations = MutableStateFlow(0)
-    val isRefreshing: StateFlow<Boolean> = refreshOperations
-        .map { it > 0 }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val refreshingSubscriptionIds = subscriptionRepo.refreshingSubscriptionIds
     private val _pendingSubscriptionRouting = MutableStateFlow<SubscriptionRoutingData?>(null)
     val pendingSubscriptionRouting: StateFlow<SubscriptionRoutingData?> = _pendingSubscriptionRouting.asStateFlow()
 
@@ -485,20 +482,18 @@ class HomeViewModel @Inject constructor(
             val hasIntervalChanges = normalizedIntervalHours != sub.autoUpdateIntervalHours
 
             if (hasSubscriptionChanges) {
-                withRefreshTracking {
-                    runSubscriptionOperation {
-                        subscriptionRefreshCoordinator.updateSubscription(
-                            sub.copy(
-                                preferJson = preferJson,
-                                autoUpdateIntervalHours = normalizedIntervalHours,
-                                userAgentMode = userAgentMode.value,
-                                customUserAgent = normalizedCustomUserAgent,
-                                customHeaders = normalizedCustomHeaders,
-                            ),
-                            name,
-                            url,
-                        )
-                    }
+                runSubscriptionOperation {
+                    subscriptionRefreshCoordinator.updateSubscription(
+                        sub.copy(
+                            preferJson = preferJson,
+                            autoUpdateIntervalHours = normalizedIntervalHours,
+                            userAgentMode = userAgentMode.value,
+                            customUserAgent = normalizedCustomUserAgent,
+                            customHeaders = normalizedCustomHeaders,
+                        ),
+                        name,
+                        url,
+                    )
                 }
             } else if (hasIntervalChanges) {
                 subscriptionRepo.setAutoUpdateInterval(sub.id, normalizedIntervalHours)
@@ -512,21 +507,17 @@ class HomeViewModel @Inject constructor(
 
     fun refreshAll() {
         viewModelScope.launch {
-            withRefreshTracking {
-                runSubscriptionOperation {
-                    val result = subscriptionRefreshCoordinator.refreshAll()
-                    reportBatchRefreshFailures(result.failures)
-                }
+            runSubscriptionOperation {
+                val result = subscriptionRefreshCoordinator.refreshAll()
+                reportBatchRefreshFailures(result.failures)
             }
         }
     }
 
     fun refreshSubscription(sub: SubscriptionEntity) {
         viewModelScope.launch {
-            withRefreshTracking {
-                runSubscriptionOperation {
-                    subscriptionRefreshCoordinator.refreshSubscription(sub.id, sub.url)
-                }
+            runSubscriptionOperation {
+                subscriptionRefreshCoordinator.refreshSubscription(sub.id, sub.url)
             }
         }
     }
@@ -713,15 +704,6 @@ class HomeViewModel @Inject constructor(
             }
         }
         return latencyState(primaryMethod, latencyByMethod)
-    }
-
-    private suspend fun withRefreshTracking(block: suspend () -> Unit) {
-        refreshOperations.update { it + 1 }
-        try {
-            block()
-        } finally {
-            refreshOperations.update { current -> (current - 1).coerceAtLeast(0) }
-        }
     }
 
     private suspend fun runSubscriptionOperation(block: suspend () -> Unit) {

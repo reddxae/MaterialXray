@@ -107,6 +107,7 @@
     <string name="home_no_servers_in_subscription">В этой подписке нет серверов.</string>
 
     <string name="home_subscription_refresh_content_description">Обновить %1$s</string>
+    <string name="home_subscription_updating_content_description">Обновление %1$s</string>
     <string name="home_subscription_test_content_description">Проверить %1$s с помощью %2$s</string>
     <string name="home_subscription_menu_content_description">Меню подписки</string>
     <string name="home_subscription_show_description">Показать описание</string>

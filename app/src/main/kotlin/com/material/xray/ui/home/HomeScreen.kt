@@ -126,6 +126,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -377,12 +378,6 @@ fun HomeScreen(
                 }
             }
 
-            if (uiState.isRefreshing) {
-                item {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            }
-
             val errorState = uiState.connectionState as? ConnectionState.Error
             if (errorState != null) {
                 item {
@@ -415,6 +410,7 @@ fun HomeScreen(
                         )
                         SubscriptionCard(
                             subscription = subscription,
+                            isRefreshing = subscription.id in uiState.refreshingSubscriptionIds,
                             servers = servers,
                             selectedServerId = uiState.selectedServerId,
                             defaultPingMethod = uiState.defaultPingMethod,
@@ -978,7 +974,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
     val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
     val serversBySubscription by viewModel.serversBySubscription.collectAsStateWithLifecycle()
-    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val refreshingSubscriptionIds by viewModel.refreshingSubscriptionIds.collectAsStateWithLifecycle()
     val defaultPingMethod by viewModel.defaultPingMethod.collectAsStateWithLifecycle()
     val routingPolicyControl by viewModel.routingPolicyControl.collectAsStateWithLifecycle()
     val providerRoutingAvailability by viewModel.providerRoutingAvailability.collectAsStateWithLifecycle()
@@ -999,7 +995,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         showAdvancedOptions = showAdvancedOptions,
         subscriptions = subscriptions,
         serversBySubscription = serversBySubscription,
-        isRefreshing = isRefreshing,
+        refreshingSubscriptionIds = refreshingSubscriptionIds,
         defaultPingMethod = defaultPingMethod,
         routingPolicyControl = routingPolicyControl,
         providerRoutingAvailability = providerRoutingAvailability,
@@ -1061,7 +1057,7 @@ private data class HomeUiState(
     /** `null` until the home data snapshot has loaded; distinct from a loaded empty list. */
     val subscriptions: List<SubscriptionEntity>?,
     val serversBySubscription: Map<Long, List<ServerListItem>>,
-    val isRefreshing: Boolean,
+    val refreshingSubscriptionIds: Set<Long>,
     val defaultPingMethod: PingMethod,
     val routingPolicyControl: RoutingPolicyControl,
     val providerRoutingAvailability: ProviderRoutingAvailability?,
@@ -1600,6 +1596,7 @@ private fun AddSubscriptionActionButton(
 @Composable
 private fun SubscriptionCard(
     subscription: SubscriptionEntity,
+    isRefreshing: Boolean,
     servers: List<ServerListItem>,
     selectedServerId: Long,
     defaultPingMethod: PingMethod,
@@ -1638,6 +1635,7 @@ private fun SubscriptionCard(
         Column(modifier = Modifier.fillMaxWidth()) {
             SubscriptionHeader(
                 subscription = subscription,
+                isRefreshing = isRefreshing,
                 metadata = metadata,
                 defaultPingMethod = defaultPingMethod,
                 onRefresh = onRefresh,
@@ -1776,6 +1774,7 @@ private fun SubscriptionTrafficUsage(
 @Composable
 private fun SubscriptionHeader(
     subscription: SubscriptionEntity,
+    isRefreshing: Boolean,
     metadata: SubscriptionMetadataUiState,
     defaultPingMethod: PingMethod,
     onRefresh: () -> Unit,
@@ -1827,14 +1826,27 @@ private fun SubscriptionHeader(
                 )
             }
         }
-        IconButton(onClick = onRefresh) {
-            Icon(
-                Icons.Default.Refresh,
-                contentDescription = stringResource(
-                    R.string.home_subscription_refresh_content_description,
+        IconButton(onClick = onRefresh, enabled = !isRefreshing) {
+            if (isRefreshing) {
+                val updatingDescription = stringResource(
+                    R.string.home_subscription_updating_content_description,
                     subscription.name,
-                ),
-            )
+                )
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .semantics { contentDescription = updatingDescription },
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = stringResource(
+                        R.string.home_subscription_refresh_content_description,
+                        subscription.name,
+                    ),
+                )
+            }
         }
         Box(
             modifier = Modifier

@@ -41,6 +41,7 @@ internal class RawConfigTunInjector(
     ): String {
         val original = Json.parseToJsonElement(rawJson).jsonObject.toMutableMap()
         val profileDns = (original["dns"] as? JsonObject)?.takeIf { preferProfileDns }
+            ?.withBootstrapDnsHosts(bootstrapDnsHosts)
         val effectiveInbounds = inbounds ?: buildList {
             add(XrayInbound.Tun(tunName, "tun-in", tunMtu))
             appProxyRoutes.forEach { route -> add(XrayInbound.Tun(route.tunName, route.inboundTag, tunMtu)) }

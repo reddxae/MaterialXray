@@ -6,6 +6,7 @@ import com.material.xray.model.ServerConfig
 import com.material.xray.model.XrayLogLevel
 import com.material.xray.model.XrayOutbound
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -20,6 +21,49 @@ class RawConfigTunInjectorTest {
         prettyPrint = true
     }
     private val injector = RawConfigTunInjector(json)
+
+    @Test
+    fun `provider DNS keeps bootstrap addresses for every balancer endpoint`() {
+        val rawJson = """
+            {
+              "dns":{"servers":["https://1.1.1.1/dns-query"],"queryStrategy":"UseIP"},
+              "outbounds":[
+                {"tag":"proxy","protocol":"vless","settings":{"vnext":[{"address":"one.example"}]}},
+                {"tag":"proxy-2","protocol":"vless","settings":{"vnext":[{"address":"two.example"}]}}
+              ],
+              "routing":{
+                "rules":[{"network":"tcp,udp","balancerTag":"pool"}],
+                "balancers":[{"tag":"pool","selector":["proxy"],"strategy":{"type":"leastLoad"}}]
+              },
+              "burstObservatory":{"subjectSelector":["proxy"]}
+            }
+        """.trimIndent()
+        val server = ServerConfig(
+            name = "Pool",
+            protocol = Protocol.RAW,
+            address = "",
+            port = 0,
+            password = "",
+            rawConfigJson = rawJson,
+            bootstrapDnsHosts = mapOf(
+                "one.example" to listOf("192.0.2.1", "192.0.2.1"),
+                "two.example" to listOf("192.0.2.2", "192.0.2.3"),
+            ),
+        )
+
+        val root = json.parseToJsonElement(ConfigGenerator().generate(server, preferProfileDns = true)).jsonObject
+        val original = json.parseToJsonElement(rawJson).jsonObject
+        val dns = root.getValue("dns").jsonObject
+        val hosts = dns.getValue("hosts").jsonObject
+        assertEquals(listOf("192.0.2.1"), hosts.getValue("one.example").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(listOf("192.0.2.2", "192.0.2.3"), hosts.getValue("two.example").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(original.getValue("dns"), JsonObject(dns - "hosts"))
+        assertEquals(
+            original.getValue("routing").jsonObject.getValue("balancers"),
+            root.getValue("routing").jsonObject.getValue("balancers"),
+        )
+        assertEquals(original.getValue("burstObservatory"), root.getValue("burstObservatory"))
+    }
 
     @Test
     fun `profile DNS retains resolver options and routing without MX upstream overrides`() {

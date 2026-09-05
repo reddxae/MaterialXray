@@ -1,6 +1,6 @@
 package com.material.xray.ui.home
 
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,8 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Hub
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -51,13 +49,19 @@ import kotlinx.coroutines.flow.StateFlow
  */
 @Composable
 internal fun ConnectionStatsBanner(
-    activeBalancerServer: ActiveBalancerServerState?,
+    activeBalancer: ActiveBalancerState?,
     pingMs: StateFlow<Int?>,
     sessionTraffic: StateFlow<SessionTrafficMetrics?>,
     modifier: Modifier = Modifier,
 ) {
     val locale = LocalLocale.current.platformLocale
-    val ping by pingMs.collectAsStateWithLifecycle()
+    val ping = if (activeBalancer == null) {
+        val measuredPing by pingMs.collectAsStateWithLifecycle()
+        measuredPing?.toLong()
+    } else {
+        // Use the same observation as the displayed pool, without starting a second poller.
+        activeBalancer.latencyMs
+    }
     val traffic by sessionTraffic.collectAsStateWithLifecycle()
 
     Surface(
@@ -66,28 +70,17 @@ internal fun ConnectionStatsBanner(
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.animateContentSize().padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            AnimatedContent(
-                targetState = activeBalancerServer?.title,
-                label = "activeBalancerServer",
-            ) { title ->
-                if (title != null) {
-                    Column(
-                        modifier = Modifier.padding(bottom = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        ActiveServerRow(title = title)
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    }
-                }
-            }
+            activeBalancer?.let { BalancerHeader(state = it) }
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatCell(
                         icon = Icons.Outlined.Bolt,
-                        label = stringResource(R.string.home_stats_ping),
+                        label = stringResource(
+                            if ((activeBalancer?.servers?.size ?: 0) > 1) R.string.home_stats_average_ping else R.string.home_stats_ping,
+                        ),
                         value = ping?.let { stringResource(R.string.home_stats_ping_value, it) },
                         modifier = Modifier.weight(1f),
                     )
@@ -108,29 +101,6 @@ internal fun ConnectionStatsBanner(
                 SessionTotalsRow(traffic = traffic, locale = locale)
             }
         }
-    }
-}
-
-@Composable
-private fun ActiveServerRow(title: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Hub,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = stringResource(R.string.home_balancer_active_server, title),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 

@@ -50,6 +50,7 @@ import com.material.xray.data.repository.ProviderRoutingActiveUpdate
 import com.material.xray.data.repository.ProviderRoutingCoordinator
 import com.material.xray.data.repository.ServerRepository
 import com.material.xray.data.repository.SettingsRepository
+import com.material.xray.model.ActiveBalancerSelection
 import com.material.xray.model.ConnectionProgress
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.NotificationField
@@ -1111,7 +1112,9 @@ class XrayService : VpnService() {
         balancerSelectionJob = scope.launch(Dispatchers.IO) {
             while (isActive && connectionStateCoordinator.state.value is ConnectionState.Connected) {
                 val selection = connectionManager.readBalancerSelection(balancerTag)
-                connectionStateCoordinator.updateActiveBalancerSelection(selection)
+                // Null is reserved for the first sample; an empty result keeps the header visible
+                // when the API is unavailable or has no eligible servers.
+                connectionStateCoordinator.updateActiveBalancerSelection(selection ?: ActiveBalancerSelection())
                 delay(BALANCER_SELECTION_POLL_INTERVAL_MS)
             }
         }

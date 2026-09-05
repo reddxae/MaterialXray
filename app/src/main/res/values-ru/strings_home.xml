@@ -48,7 +48,20 @@
     <string name="home_no_server_selected">Сервер не выбран</string>
     <string name="home_select_server_below">Выберите сервер ниже</string>
     <string name="home_selected_server">Выбранный сервер</string>
-    <string name="home_balancer_active_server">%1$s</string>
+    <string name="home_balancer_loading">Проверка серверов&#8230;</string>
+    <string name="home_balancer_unavailable">Сведения о серверах недоступны</string>
+    <string name="home_balancer_pool_description">Выбраны для новых соединений</string>
+    <string name="home_balancer_expand">Показать выбранные серверы</string>
+    <string name="home_balancer_collapse">Скрыть выбранные серверы</string>
+    <string name="home_balancer_expanded">Развёрнуто</string>
+    <string name="home_balancer_collapsed">Свёрнуто</string>
+    <plurals name="home_balancer_server_count">
+        <item quantity="one">Балансировка · %1$d сервер</item>
+        <item quantity="few">Балансировка · %1$d сервера</item>
+        <item quantity="many">Балансировка · %1$d серверов</item>
+        <item quantity="other">Балансировка · %1$d сервера</item>
+    </plurals>
+    <string name="home_stats_average_ping">Ср. пинг</string>
     <string name="home_stats_ping">Пинг</string>
     <string name="home_stats_download">Загрузка</string>
     <string name="home_stats_upload">Отдача</string>

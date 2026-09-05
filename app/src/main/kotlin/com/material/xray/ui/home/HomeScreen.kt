@@ -354,7 +354,7 @@ fun HomeScreen(
                     connectionProgress = uiState.connectionProgress,
                     showProgressDetails = uiState.showAdvancedOptions,
                     selectedServerName = connectionUiState.displayServerName,
-                    activeBalancerServer = uiState.activeBalancerServer,
+                    activeBalancer = uiState.activeBalancer,
                     pingMs = viewModel.activeServerPingMs,
                     sessionTraffic = viewModel.sessionTraffic,
                     buttonColor = connectionUiState.buttonColor,
@@ -970,7 +970,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val connectionProgress by viewModel.connectionProgress.collectAsStateWithLifecycle()
     val alwaysOnVpn by viewModel.alwaysOnVpn.collectAsStateWithLifecycle()
     val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
-    val activeBalancerServer by viewModel.activeBalancerServer.collectAsStateWithLifecycle()
+    val activeBalancer by viewModel.activeBalancer.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
     val useRootService by viewModel.useRootService.collectAsStateWithLifecycle()
     val showAdvancedOptions by viewModel.showAdvancedOptions.collectAsStateWithLifecycle()
@@ -991,7 +991,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         connectionProgress = connectionProgress,
         alwaysOnVpn = alwaysOnVpn,
         selectedServer = selectedServer,
-        activeBalancerServer = activeBalancerServer,
+        activeBalancer = activeBalancer,
         selectedServerId = selectedServerId,
         useRootService = useRootService,
         showAdvancedOptions = showAdvancedOptions,
@@ -1052,7 +1052,7 @@ private data class HomeUiState(
     val connectionProgress: ConnectionProgress?,
     val alwaysOnVpn: Boolean,
     val selectedServer: ServerConfig?,
-    val activeBalancerServer: ActiveBalancerServerState?,
+    val activeBalancer: ActiveBalancerState?,
     val selectedServerId: Long,
     val useRootService: Boolean,
     val showAdvancedOptions: Boolean,
@@ -1088,7 +1088,7 @@ private fun ConnectionPanel(
     connectionProgress: ConnectionProgress?,
     showProgressDetails: Boolean,
     selectedServerName: String,
-    activeBalancerServer: ActiveBalancerServerState?,
+    activeBalancer: ActiveBalancerState?,
     pingMs: StateFlow<Int?>,
     sessionTraffic: StateFlow<SessionTrafficMetrics?>,
     buttonColor: Color,
@@ -1232,7 +1232,7 @@ private fun ConnectionPanel(
 
         AnimatedVisibility(visible = connectionState.showsConnectionStats()) {
             ConnectionStatsBanner(
-                activeBalancerServer = activeBalancerServer,
+                activeBalancer = activeBalancer,
                 pingMs = pingMs,
                 sessionTraffic = sessionTraffic,
                 modifier = Modifier.padding(top = 16.dp),

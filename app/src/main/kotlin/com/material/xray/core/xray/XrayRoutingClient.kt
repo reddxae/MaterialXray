@@ -2,7 +2,10 @@ package com.material.xray.core.xray
 
 import android.util.Log
 import com.material.xray.model.ActiveBalancerSelection
+import com.material.xray.model.BalancerOutbound
+import com.xray.app.observatory.OutboundStatus
 import com.xray.app.router.command.GetBalancerInfoRequest
+import com.xray.app.router.command.GetBalancerInfoResponse
 import com.xray.app.router.command.RoutingServiceGrpc
 import com.xray.core.app.observatory.command.GetOutboundStatusRequest
 import com.xray.core.app.observatory.command.ObservatoryServiceGrpc
@@ -32,18 +35,20 @@ internal class XrayRoutingClient(
                     .setTag(balancerTag)
                     .build(),
             )
-            val outboundTag = response.balancer.override.target.takeIf { it.isNotBlank() }
-                ?: response.balancer.principleTarget.tagList.singleOrNull()?.takeIf { it.isNotBlank() }
-                ?: return@withChannel null
-            val latencyMs = runCatching {
+            val tags = response.selectedOutboundTags()
+            if (tags.isEmpty()) return@withChannel ActiveBalancerSelection()
+            val statuses = runCatching {
                 observatoryStub.withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
                     .getOutboundStatus(GetOutboundStatusRequest.getDefaultInstance())
                     .status
                     .statusList
-                    .firstOrNull { it.outboundTag == outboundTag && it.alive }
-                    ?.delay
-            }.getOrNull()
-            ActiveBalancerSelection(outboundTag = outboundTag, latencyMs = latencyMs)
+                    .associateBy { it.outboundTag }
+            }.getOrDefault(emptyMap())
+            ActiveBalancerSelection(
+                outbounds = tags.map { tag ->
+                    BalancerOutbound(outboundTag = tag, latencyMs = statuses[tag]?.balancerLatencyMs())
+                },
+            )
         }.getOrElse { error ->
             Log.w(TAG, "Xray balancer query failed", error)
             null
@@ -70,3 +75,22 @@ internal class XrayRoutingClient(
 }
 
 private const val TAG = "XrayRoutingClient"
+
+/** Overrides select one server even when the underlying strategy reports a larger pool. */
+internal fun GetBalancerInfoResponse.selectedOutboundTags(): List<String> = (
+    balancer.override.target.takeIf { it.isNotBlank() }?.let(::listOf)
+        ?: balancer.principleTarget.tagList
+    )
+    .filter { it.isNotBlank() }
+    .distinct()
+    .sorted()
+
+internal fun OutboundStatus.balancerLatencyMs(): Long? {
+    if (!alive) return null
+    if (hasHealthPing()) {
+        // Burst observatory stores its average in nanoseconds; regular observatory uses ms.
+        return healthPing.average.takeIf { healthPing.all > healthPing.fail && it >= 0 }
+            ?.let(TimeUnit.NANOSECONDS::toMillis)
+    }
+    return delay.takeIf { it >= 0 }
+}

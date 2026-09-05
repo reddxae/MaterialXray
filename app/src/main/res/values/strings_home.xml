@@ -48,7 +48,18 @@
     <string name="home_no_server_selected">No server selected</string>
     <string name="home_select_server_below">Select a server below</string>
     <string name="home_selected_server">Selected server</string>
-    <string name="home_balancer_active_server">%1$s</string>
+    <string name="home_balancer_loading">Checking servers&#8230;</string>
+    <string name="home_balancer_unavailable">Server details unavailable</string>
+    <string name="home_balancer_pool_description">Selected for new connections</string>
+    <string name="home_balancer_expand">Show selected servers</string>
+    <string name="home_balancer_collapse">Hide selected servers</string>
+    <string name="home_balancer_expanded">Expanded</string>
+    <string name="home_balancer_collapsed">Collapsed</string>
+    <plurals name="home_balancer_server_count">
+        <item quantity="one">Balancing · %1$d server</item>
+        <item quantity="other">Balancing · %1$d servers</item>
+    </plurals>
+    <string name="home_stats_average_ping">Avg. ping</string>
     <string name="home_stats_ping">Ping</string>
     <string name="home_stats_download">Download</string>
     <string name="home_stats_upload">Upload</string>

@@ -35,6 +35,7 @@ import com.material.xray.model.SubscriptionRouting
 import com.material.xray.model.SubscriptionUserAgentMode
 import com.material.xray.model.maskedBalancerOutboundAddress
 import com.material.xray.model.matchesBalancerOutbound
+import com.material.xray.model.primaryBalancerTag
 import com.material.xray.service.AlwaysOnVpnState
 import com.material.xray.service.AppUpdateChecker
 import com.material.xray.service.AppUpdateInstallProgress
@@ -92,7 +93,15 @@ data class ServerLatencyState(
     val httpingLatencyMs: Int? = null,
 )
 
-data class ActiveBalancerServerState(
+data class ActiveBalancerState(
+    val serverId: Long,
+    val servers: List<ActiveBalancerServer>,
+    val isLoading: Boolean,
+    val latencyMs: Long?,
+)
+
+data class ActiveBalancerServer(
+    val outboundTag: String,
     val title: String,
     val latencyMs: Long?,
 )
@@ -232,26 +241,37 @@ class HomeViewModel @Inject constructor(
         .map { it?.selectedServer }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), homeData.value?.selectedServer)
 
-    val activeBalancerServer: StateFlow<ActiveBalancerServerState?> = combine(
+    val activeBalancer: StateFlow<ActiveBalancerState?> = combine(
         connectionStateCoordinator.activeBalancerSelection,
         selectedServerId,
         selectedServer,
         allServers,
     ) { selection, selectedId, selectedConfig, servers ->
-        if (selection == null || selectedConfig == null) return@combine null
+        if (selectedConfig?.primaryBalancerTag() == null) return@combine null
         val selectedEntity = servers.firstOrNull { it.id == selectedId } ?: return@combine null
-        val matchingTitle = servers.asSequence()
-            .filter { it.id != selectedId && it.subscriptionId == selectedEntity.subscriptionId }
-            .firstOrNull { entity ->
-                runCatching {
-                    selectedConfig.matchesBalancerOutbound(selection.outboundTag, serverRepo.parseConfig(entity))
-                }.getOrDefault(false)
-            }
-            ?.name
-        val title = matchingTitle
-            ?: selectedConfig.maskedBalancerOutboundAddress(selection.outboundTag)
-            ?: return@combine null
-        ActiveBalancerServerState(title = title, latencyMs = selection.latencyMs)
+        val peers = if (selection?.outbounds.isNullOrEmpty()) {
+            emptyList()
+        } else {
+            servers.asSequence()
+                .filter { it.id != selectedId && it.subscriptionId == selectedEntity.subscriptionId }
+                .mapNotNull { entity ->
+                    runCatching { entity.name to serverRepo.parseConfig(entity) }.getOrNull()
+                }
+                .toList()
+        }
+        ActiveBalancerState(
+            serverId = selectedId,
+            servers = selection?.outbounds.orEmpty().map { outbound ->
+                val title = peers.firstOrNull { (_, config) ->
+                    selectedConfig.matchesBalancerOutbound(outbound.outboundTag, config)
+                }?.first
+                    ?: selectedConfig.maskedBalancerOutboundAddress(outbound.outboundTag)
+                    ?: outbound.outboundTag
+                ActiveBalancerServer(outbound.outboundTag, title, outbound.latencyMs)
+            },
+            isLoading = selection == null,
+            latencyMs = selection?.latencyMs,
+        )
     }
         // Matching the balancer outbound parses server configs from the whole subscription.
         .flowOn(Dispatchers.Default)

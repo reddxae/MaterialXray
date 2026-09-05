@@ -12,6 +12,7 @@ import com.material.xray.core.xray.XrayApiEndpoint
 import com.material.xray.core.xray.XrayState
 import com.material.xray.core.xray.XraySysStats
 import com.material.xray.model.ActiveBalancerSelection
+import com.material.xray.model.BalancerOutbound
 import com.material.xray.model.ConnectionState
 import com.material.xray.model.Protocol
 import com.material.xray.model.RootConnectionBackend
@@ -576,7 +577,7 @@ class ConnectionManagerTest {
     @Test
     fun `restored root connection recreates stats and routing clients`() = runTest {
         val harness = Harness()
-        val selection = ActiveBalancerSelection(outboundTag = "proxy-2", latencyMs = 45)
+        val selection = ActiveBalancerSelection(outbounds = listOf(BalancerOutbound(outboundTag = "proxy-2", latencyMs = 45)))
         harness.apiClients.trafficStats = mapOf("outbound>>>proxy>>>traffic>>>uplink" to 1024L)
         harness.apiClients.balancerSelection = selection
         harness.stateStore.state = XrayState(xrayPid = 42, xrayApiPort = 49_321)

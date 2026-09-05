@@ -1,6 +1,7 @@
 package com.material.xray.model
 
 import java.net.InetAddress
+import kotlin.math.roundToLong
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -8,7 +9,20 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
+/** The pool eligible for new connections, not a list of servers carrying existing traffic. */
 internal data class ActiveBalancerSelection(
+    val outbounds: List<BalancerOutbound> = emptyList(),
+) {
+    val latencyMs: Long?
+        get() {
+            if (outbounds.isEmpty()) return null
+            // A partial average would imply the whole pool was measured successfully.
+            val latencies = outbounds.map { it.latencyMs ?: return null }
+            return latencies.average().roundToLong()
+        }
+}
+
+internal data class BalancerOutbound(
     val outboundTag: String,
     val latencyMs: Long?,
 )

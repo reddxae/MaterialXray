@@ -85,4 +85,27 @@ class SubscriptionMetadataMapperTest {
 
         assertEquals("https://backup.example/sub", updated.fallbackUrl)
     }
+
+    @Test
+    fun requiresHardwareIdRoundTripsThroughMetadata() {
+        val entity = SubscriptionEntity(
+            name = "Sub",
+            url = "https://example.com/sub",
+            requiresHardwareId = true,
+        )
+
+        assertEquals(true, entity.toSubscriptionMetadata()?.requiresHardwareId)
+
+        val cleared = entity.withSubscriptionMetadata(
+            metadata = SubscriptionMetadata(profileTitle = "Provider"),
+        )
+
+        assertEquals(false, cleared.requiresHardwareId)
+
+        val required = entity.withSubscriptionMetadata(
+            metadata = SubscriptionMetadata(requiresHardwareId = true),
+        )
+
+        assertEquals(true, required.requiresHardwareId)
+    }
 }

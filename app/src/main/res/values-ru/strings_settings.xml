@@ -75,6 +75,7 @@
     <string name="settings_app_icon_title">Значок приложения</string>
     <string name="settings_send_hardware_id_title">Отправлять HWID</string>
     <string name="settings_send_hardware_id_description">Добавлять постоянный заголовок x-hwid, чтобы провайдеры могли распознавать это устройство</string>
+    <string name="settings_send_hardware_id_locked">Требуется подписке выбранного сервера, отключить нельзя</string>
     <string name="settings_show_advanced_options">Показывать расширенные параметры</string>
     <string name="settings_section_data">Данные</string>
     <string name="settings_export">Экспорт</string>

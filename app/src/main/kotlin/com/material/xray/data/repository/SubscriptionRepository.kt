@@ -51,6 +51,8 @@ class SubscriptionRepository @Inject constructor(
         }
     }
 
+    suspend fun getById(id: Long): SubscriptionEntity? = subscriptionDao.getById(id)
+
     data class RefreshResult(
         val subscriptionId: Long,
         val serverIdByConfigJson: Map<String, Long>,

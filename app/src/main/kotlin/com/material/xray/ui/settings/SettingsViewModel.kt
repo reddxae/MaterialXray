@@ -89,6 +89,7 @@ class SettingsViewModel @Inject constructor(
     private var rootBackendJob: Job? = null
 
     val settings = settingsDataState.data
+    val selectedSubscriptionRequiresHwid = settingsDataState.selectedSubscriptionRequiresHardwareId
     val geoipUpdating: StateFlow<Boolean> = _geoipUpdating.asStateFlow()
     val geositeUpdating: StateFlow<Boolean> = _geositeUpdating.asStateFlow()
     val assetUpdateEvents: Flow<AssetUpdateMessage> = _assetUpdateEvents.receiveAsFlow()

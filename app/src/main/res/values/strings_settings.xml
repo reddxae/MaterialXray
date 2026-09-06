@@ -73,6 +73,7 @@
     <string name="settings_app_icon_title">App icon</string>
     <string name="settings_send_hardware_id_title">Send hardware ID (HWID)</string>
     <string name="settings_send_hardware_id_description">Include a stable x-hwid header so providers can recognise this device</string>
+    <string name="settings_send_hardware_id_locked">Required by the subscription of the selected server and cannot be turned off</string>
     <string name="settings_show_advanced_options">Show advanced options</string>
     <string name="settings_section_data">Data</string>
     <string name="settings_export">Export</string>

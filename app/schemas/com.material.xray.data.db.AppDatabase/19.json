@@ -1,0 +1,359 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 19,
+    "identityHash": "47ffb8c10e6bf097086ffc9b80251a4d",
+    "entities": [
+      {
+        "tableName": "servers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subscriptionId` INTEGER NOT NULL, `name` TEXT NOT NULL, `protocol` TEXT NOT NULL, `address` TEXT NOT NULL, `port` INTEGER NOT NULL, `configJson` TEXT NOT NULL, `latencyMs` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, `edited` INTEGER NOT NULL, `guarded` INTEGER NOT NULL, FOREIGN KEY(`subscriptionId`) REFERENCES `subscriptions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subscriptionId",
+            "columnName": "subscriptionId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "protocol",
+            "columnName": "protocol",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "configJson",
+            "columnName": "configJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latencyMs",
+            "columnName": "latencyMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "edited",
+            "columnName": "edited",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "guarded",
+            "columnName": "guarded",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_servers_subscriptionId",
+            "unique": false,
+            "columnNames": [
+              "subscriptionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_servers_subscriptionId` ON `${TABLE_NAME}` (`subscriptionId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "subscriptions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "subscriptionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "subscriptions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `url` TEXT NOT NULL, `preferJson` INTEGER, `lastUpdated` INTEGER NOT NULL, `contentDisposition` TEXT, `contentType` TEXT, `profileTitle` TEXT, `profileUpdateIntervalHours` INTEGER, `autoUpdateIntervalHours` INTEGER NOT NULL, `subscriptionUploadBytes` INTEGER, `subscriptionDownloadBytes` INTEGER, `subscriptionTotalBytes` INTEGER, `subscriptionExpireAt` INTEGER, `profileWebPageUrl` TEXT, `announce` TEXT, `supportUrl` TEXT, `fallbackUrl` TEXT, `useFallbackUrl` INTEGER NOT NULL, `requiresHardwareId` INTEGER NOT NULL, `descriptionHidden` INTEGER NOT NULL, `userAgentMode` TEXT, `customUserAgent` TEXT, `customHeaders` TEXT, `appRoutingPackages` TEXT, `appRoutingMode` TEXT, `appRoutingInverted` INTEGER NOT NULL, `providerRouting` TEXT, `sortOrder` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "preferJson",
+            "columnName": "preferJson",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentDisposition",
+            "columnName": "contentDisposition",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contentType",
+            "columnName": "contentType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "profileTitle",
+            "columnName": "profileTitle",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "profileUpdateIntervalHours",
+            "columnName": "profileUpdateIntervalHours",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "autoUpdateIntervalHours",
+            "columnName": "autoUpdateIntervalHours",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subscriptionUploadBytes",
+            "columnName": "subscriptionUploadBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "subscriptionDownloadBytes",
+            "columnName": "subscriptionDownloadBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "subscriptionTotalBytes",
+            "columnName": "subscriptionTotalBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "subscriptionExpireAt",
+            "columnName": "subscriptionExpireAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "profileWebPageUrl",
+            "columnName": "profileWebPageUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "announce",
+            "columnName": "announce",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "supportUrl",
+            "columnName": "supportUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fallbackUrl",
+            "columnName": "fallbackUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "useFallbackUrl",
+            "columnName": "useFallbackUrl",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requiresHardwareId",
+            "columnName": "requiresHardwareId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "descriptionHidden",
+            "columnName": "descriptionHidden",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userAgentMode",
+            "columnName": "userAgentMode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "customUserAgent",
+            "columnName": "customUserAgent",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "customHeaders",
+            "columnName": "customHeaders",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "appRoutingPackages",
+            "columnName": "appRoutingPackages",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "appRoutingMode",
+            "columnName": "appRoutingMode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "appRoutingInverted",
+            "columnName": "appRoutingInverted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerRouting",
+            "columnName": "providerRouting",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "app_bypass",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `profileId` INTEGER NOT NULL, `uid` INTEGER NOT NULL, `excluded` INTEGER NOT NULL, `serverId` INTEGER, `manual` INTEGER NOT NULL, `routeMode` TEXT, PRIMARY KEY(`profileId`, `packageName`))",
+        "fields": [
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profileId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uid",
+            "columnName": "uid",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "excluded",
+            "columnName": "excluded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "serverId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "manual",
+            "columnName": "manual",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "routeMode",
+            "columnName": "routeMode",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "profileId",
+            "packageName"
+          ]
+        }
+      },
+      {
+        "tableName": "database_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `valueValidationRevision` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "valueValidationRevision",
+            "columnName": "valueValidationRevision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '47ffb8c10e6bf097086ffc9b80251a4d')"
+    ]
+  }
+}

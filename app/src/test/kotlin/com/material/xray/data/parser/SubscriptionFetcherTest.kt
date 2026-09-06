@@ -94,6 +94,25 @@ class SubscriptionFetcherTest {
     }
 
     @Test
+    fun `parse metadata reads always hwid enable header`() {
+        val enabled = SubscriptionStandardHeaders.parseMetadata(
+            Headers.headersOf("subscription-always-hwid-enable", " true "),
+        )
+
+        assertEquals(true, enabled.requiresHardwareId)
+
+        val disabled = SubscriptionStandardHeaders.parseMetadata(
+            Headers.headersOf("subscription-always-hwid-enable", "0"),
+        )
+
+        assertEquals(false, disabled.requiresHardwareId)
+
+        val absent = SubscriptionStandardHeaders.parseMetadata(Headers.headersOf())
+
+        assertEquals(false, absent.requiresHardwareId)
+    }
+
+    @Test
     fun `parse routing header decodes provider rules`() {
         val payload = """
             {

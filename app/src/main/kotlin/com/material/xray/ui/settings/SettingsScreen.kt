@@ -795,11 +795,23 @@ private fun SettingsScreenContent(
             }
             item(key = "app_settings") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // A provider may pin its hardware ID policy onto the selected server; while
+                    // that policy is active the toggle cannot be turned off from Settings.
+                    val selectedSubscriptionRequiresHwid =
+                        viewModel.selectedSubscriptionRequiresHwid.collectAsStateWithLifecycle().value
+                    val hwidLockedBySubscription = selectedSubscriptionRequiresHwid && subscriptionSendHardwareId
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_send_hardware_id_title),
-                        description = stringResource(R.string.settings_send_hardware_id_description),
+                        description = stringResource(
+                            if (hwidLockedBySubscription) {
+                                R.string.settings_send_hardware_id_locked
+                            } else {
+                                R.string.settings_send_hardware_id_description
+                            },
+                        ),
                         checked = subscriptionSendHardwareId,
                         onCheckedChange = viewModel::setSubscriptionSendHardwareId,
+                        enabled = !hwidLockedBySubscription,
                     )
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_show_advanced_options),

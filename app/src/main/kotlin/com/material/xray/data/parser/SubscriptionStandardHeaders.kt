@@ -32,6 +32,7 @@ object SubscriptionStandardHeaders {
     const val ANNOUNCE = "announce"
     const val SUPPORT_URL = "support-url"
     const val FALLBACK_URL = "fallback-url"
+    const val SUBSCRIPTION_ALWAYS_HWID_ENABLE = "subscription-always-hwid-enable"
     const val PER_APP_PROXY_LIST = "per-app-proxy-list"
     const val PER_APP_PROXY_MODE = "per-app-proxy-mode"
     const val PER_APP_PROXY_LIST_INVERT = "per-app-proxy-list-invert"
@@ -56,6 +57,7 @@ object SubscriptionStandardHeaders {
         ANNOUNCE,
         SUPPORT_URL,
         FALLBACK_URL,
+        SUBSCRIPTION_ALWAYS_HWID_ENABLE,
         PER_APP_PROXY_LIST,
         PER_APP_PROXY_MODE,
         PER_APP_PROXY_LIST_INVERT,
@@ -89,6 +91,9 @@ object SubscriptionStandardHeaders {
         profileWebPageUrl = normalizeNullableHeader(headers[PROFILE_WEB_PAGE_URL]),
         announce = decodeTextHeader(headers[ANNOUNCE]),
         supportUrl = normalizeNullableHeader(headers[SUPPORT_URL]),
+        fallbackUrl = normalizeNullableHeader(headers[FALLBACK_URL]),
+        requiresHardwareId = normalizeNullableHeader(headers[SUBSCRIPTION_ALWAYS_HWID_ENABLE])
+            ?.lowercase() in TRUTHY_HEADER_VALUES,
     )
 
     fun hasKnownResponseHeader(headers: Headers): Boolean = responseHeaderNames.any { headers[it] != null }
@@ -104,7 +109,7 @@ object SubscriptionStandardHeaders {
             .filter { it.isNotEmpty() }
         val mode = SubscriptionAppRoutingMode.fromHeader(headers[PER_APP_PROXY_MODE]) ?: return null
         val inverted = normalizeNullableHeader(headers[PER_APP_PROXY_LIST_INVERT])
-            ?.lowercase() in INVERT_TRUTHY_VALUES
+            ?.lowercase() in TRUTHY_HEADER_VALUES
         return SubscriptionAppRouting(packageNames, mode, inverted).normalized()
     }
 
@@ -169,5 +174,5 @@ object SubscriptionStandardHeaders {
 
     private const val BASE64_PREFIX = "base64:"
     private val PACKAGE_LIST_SEPARATOR_REGEX = "[,;\\s]+".toRegex()
-    private val INVERT_TRUTHY_VALUES = setOf("1", "true", "yes", "on")
+    private val TRUTHY_HEADER_VALUES = setOf("1", "true", "yes", "on")
 }

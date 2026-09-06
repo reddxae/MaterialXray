@@ -118,6 +118,9 @@ internal object DatabaseMigrations {
         17 to listOf(
             "ALTER TABLE subscriptions ADD COLUMN appRoutingInverted INTEGER NOT NULL DEFAULT 0",
         ),
+        18 to listOf(
+            "ALTER TABLE subscriptions ADD COLUMN requiresHardwareId INTEGER NOT NULL DEFAULT 0",
+        ),
     )
 
     val all: Array<Migration> = sqlByStartVersion.entries

@@ -533,6 +533,36 @@ fun HomeScreen(
         onDismiss = viewModel::dismissDiscardEditedActiveConfig,
         onConfirm = viewModel::confirmDiscardEditedActiveConfig,
     )
+    HwidRequiredDialogHost(
+        visible = uiState.pendingHwidServerSelection != null,
+        onDismiss = viewModel::dismissHwidRequiredSelection,
+        onConfirm = viewModel::confirmHwidRequiredSelection,
+    )
+}
+
+@Composable
+private fun HwidRequiredDialogHost(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!visible) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.home_hwid_required_title)) },
+        text = { Text(stringResource(R.string.home_hwid_required_body)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.home_hwid_required_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.home_hwid_required_cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -998,6 +1028,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
     val appUpdateInstallProgress by viewModel.appUpdateInstallProgress.collectAsStateWithLifecycle()
     val showInstallPermissionRationale by viewModel.showInstallPermissionRationale.collectAsStateWithLifecycle()
     val pendingServerSelection by viewModel.pendingServerSelection.collectAsStateWithLifecycle()
+    val pendingHwidServerSelection by viewModel.pendingHwidServerSelection.collectAsStateWithLifecycle()
 
     return HomeUiState(
         connectionState = connectionState,
@@ -1019,6 +1050,7 @@ private fun collectHomeUiState(viewModel: HomeViewModel): HomeUiState {
         appUpdateInstallProgress = appUpdateInstallProgress,
         showInstallPermissionRationale = showInstallPermissionRationale,
         pendingServerSelection = pendingServerSelection,
+        pendingHwidServerSelection = pendingHwidServerSelection,
     )
 }
 
@@ -1082,6 +1114,8 @@ private data class HomeUiState(
     val showInstallPermissionRationale: Boolean,
     /** Server awaiting confirmation because switching to it discards an edited active config. */
     val pendingServerSelection: Long?,
+    /** Server awaiting confirmation because its subscription requires the hardware ID. */
+    val pendingHwidServerSelection: Long?,
 )
 
 private data class ConnectionUiState(

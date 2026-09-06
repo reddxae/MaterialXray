@@ -13,6 +13,7 @@ data class SubscriptionMetadata(
     val announce: String? = null,
     val supportUrl: String? = null,
     val fallbackUrl: String? = null,
+    val requiresHardwareId: Boolean = false,
 )
 
 @Serializable
@@ -31,7 +32,8 @@ fun SubscriptionMetadata.hasValues(): Boolean = contentDisposition != null ||
     profileWebPageUrl != null ||
     announce != null ||
     supportUrl != null ||
-    fallbackUrl != null
+    fallbackUrl != null ||
+    requiresHardwareId
 
 fun SubscriptionMetadata.normalized(): SubscriptionMetadata? {
     val normalized = copy(

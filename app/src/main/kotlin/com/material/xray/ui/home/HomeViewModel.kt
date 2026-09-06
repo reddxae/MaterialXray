@@ -306,6 +306,10 @@ class HomeViewModel @Inject constructor(
     /** Server the user picked while an edited active config is stored, pending their confirmation. */
     private val _pendingServerSelection = MutableStateFlow<Long?>(null)
     val pendingServerSelection: StateFlow<Long?> = _pendingServerSelection.asStateFlow()
+
+    /** Server the user picked whose subscription requires the hardware ID, which is currently off. */
+    private val _pendingHwidServerSelection = MutableStateFlow<Long?>(null)
+    val pendingHwidServerSelection: StateFlow<Long?> = _pendingHwidServerSelection.asStateFlow()
     val showInstallPermissionRationale: StateFlow<Boolean> = appUpdateInstaller.installPermissionRationaleRequired
 
     init {
@@ -381,6 +385,12 @@ class HomeViewModel @Inject constructor(
     fun selectServer(serverId: Long) {
         serverSelectionJob?.cancel()
         serverSelectionJob = viewModelScope.launch {
+            // A provider may require the hardware ID for its servers. When the user keeps it off,
+            // surface the choice instead of silently selecting the server.
+            if (requiresHardwareIdConsent(serverId)) {
+                _pendingHwidServerSelection.value = serverId
+                return@launch
+            }
             // The edited active config was written against the currently selected server, so
             // moving away from it throws the edit away. Say so before it happens.
             if (serverId != settingsRepo.lastServerId.first() && activeConfigOverrideStore.exists()) {
@@ -389,6 +399,28 @@ class HomeViewModel @Inject constructor(
             }
             applyServerSelection(serverId)
         }
+    }
+
+    fun confirmHwidRequiredSelection() {
+        val serverId = _pendingHwidServerSelection.value ?: return
+        _pendingHwidServerSelection.value = null
+        serverSelectionJob?.cancel()
+        serverSelectionJob = viewModelScope.launch {
+            settingsRepo.setSubscriptionSendHardwareId(true)
+            // Re-enter the normal flow so a pending edited-config confirmation still applies.
+            selectServer(serverId)
+        }
+    }
+
+    fun dismissHwidRequiredSelection() {
+        _pendingHwidServerSelection.value = null
+    }
+
+    private suspend fun requiresHardwareIdConsent(serverId: Long): Boolean {
+        val serverEntity = serverRepo.getById(serverId) ?: return false
+        val subscription = subscriptionRepo.getById(serverEntity.subscriptionId) ?: return false
+        if (!subscription.requiresHardwareId) return false
+        return !settingsRepo.subscriptionSendHardwareId.first()
     }
 
     fun confirmDiscardEditedActiveConfig() {

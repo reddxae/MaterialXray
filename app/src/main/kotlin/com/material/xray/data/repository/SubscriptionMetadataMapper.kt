@@ -20,6 +20,7 @@ fun SubscriptionEntity.toSubscriptionMetadata(): SubscriptionMetadata? = Subscri
     announce = announce,
     supportUrl = supportUrl,
     fallbackUrl = fallbackUrl,
+    requiresHardwareId = requiresHardwareId,
 ).normalized()
 
 fun SubscriptionEntity.withSubscriptionMetadata(
@@ -47,5 +48,6 @@ fun SubscriptionEntity.withSubscriptionMetadata(
         announce = normalizedMetadata?.announce,
         supportUrl = normalizedMetadata?.supportUrl,
         fallbackUrl = normalizedMetadata?.fallbackUrl,
+        requiresHardwareId = normalizedMetadata?.requiresHardwareId == true,
     )
 }

@@ -648,6 +648,18 @@ class SubscriptionFetcherTest {
     }
 
     @Test
+    fun `body comment headers accept routing enable key`() {
+        val body = """
+            #routing-enable: 0
+            vless://uuid@example.com:443?encryption=none&type=tcp#Node
+        """.trimIndent()
+
+        val headers = SubscriptionBodyComments.parse(body)
+
+        assertEquals("0", headers["routing-enable"])
+    }
+
+    @Test
     fun `merged headers keep response header precedence over body comments`() {
         val responseHeaders = Headers.headersOf("profile-title", "From Header")
         val bodyHeaders = SubscriptionBodyComments.parse("#profile-title: From Body")

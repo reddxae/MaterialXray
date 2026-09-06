@@ -36,8 +36,10 @@ object SubscriptionRoutingHeaderParser {
         "user",
     )
     private val json = Json { ignoreUnknownKeys = true }
+    private val routingDisabledValues = setOf("0", "false", "off", "no")
 
     fun parse(headers: Headers): SubscriptionRouting? {
+        if (!routingEnabled(headers)) return null
         val header = SubscriptionStandardHeaders.normalizeNullableHeader(
             headers[SubscriptionStandardHeaders.ROUTING],
         ) ?: return null
@@ -52,6 +54,14 @@ object SubscriptionRoutingHeaderParser {
         } ?: return null
         val root = runCatching { json.parseToJsonElement(payload) as? JsonObject }.getOrNull() ?: return null
         return parseXrayRouting(root)
+    }
+
+    // Happ's `routing-enable: 0` tells the client the provider does not want the routing header
+    // imported on this subscription. Only explicit falsy values disable; absence stays enabled.
+    private fun routingEnabled(headers: Headers): Boolean {
+        val raw = headers[SubscriptionStandardHeaders.ROUTING_ENABLE] ?: return true
+        val normalized = SubscriptionStandardHeaders.normalizeNullableHeader(raw) ?: return true
+        return normalized.lowercase() !in routingDisabledValues
     }
 
     private fun parseHappHeader(header: String): SubscriptionRouting? {

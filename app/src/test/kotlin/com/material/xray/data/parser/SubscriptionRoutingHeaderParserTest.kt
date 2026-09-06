@@ -102,5 +102,46 @@ class SubscriptionRoutingHeaderParserTest {
         assertNull(SubscriptionRoutingHeaderParser.parse(headers))
     }
 
+    @Test
+    fun `routing-enable 0 suppresses routing import`() {
+        val payload = """{ "DirectSites": ["domain:direct.example"] }""".trimIndent()
+        val headers = Headers.headersOf(
+            "routing",
+            happRoutingLink(payload),
+            "routing-enable",
+            "0",
+        )
+
+        assertNull(SubscriptionRoutingHeaderParser.parse(headers))
+    }
+
+    @Test
+    fun `routing-enable false suppresses routing import`() {
+        val payload = """{ "DirectSites": ["domain:direct.example"] }""".trimIndent()
+        val headers = Headers.headersOf(
+            "routing",
+            happRoutingLink(payload),
+            "routing-enable",
+            " false ",
+        )
+
+        assertNull(SubscriptionRoutingHeaderParser.parse(headers))
+    }
+
+    @Test
+    fun `routing-enable enabled values keep routing import`() {
+        val payload = """{ "DirectSites": ["domain:direct.example"] }""".trimIndent()
+        listOf("1", "true", "yes", "").forEach { enableValue ->
+            val headers = Headers.headersOf(
+                "routing",
+                happRoutingLink(payload),
+                "routing-enable",
+                enableValue,
+            )
+
+            assertEquals("proxy", SubscriptionRoutingHeaderParser.parse(headers)?.fallbackOutboundTag)
+        }
+    }
+
     private fun happRoutingLink(payload: String, action: String = "add"): String = "happ://routing/$action/${Base64.getEncoder().encodeToString(payload.toByteArray())}"
 }

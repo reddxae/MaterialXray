@@ -35,6 +35,7 @@ object SubscriptionStandardHeaders {
     const val PER_APP_PROXY_LIST = "per-app-proxy-list"
     const val PER_APP_PROXY_MODE = "per-app-proxy-mode"
     const val ROUTING = "routing"
+    const val ROUTING_ENABLE = "routing-enable"
 
     val requestHeaderNames: List<String> = listOf(
         USER_AGENT,
@@ -57,6 +58,7 @@ object SubscriptionStandardHeaders {
         PER_APP_PROXY_LIST,
         PER_APP_PROXY_MODE,
         ROUTING,
+        ROUTING_ENABLE,
     )
 
     fun applyRequestHeaders(

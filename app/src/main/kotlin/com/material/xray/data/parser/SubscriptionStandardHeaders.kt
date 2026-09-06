@@ -31,6 +31,7 @@ object SubscriptionStandardHeaders {
     const val PROFILE_WEB_PAGE_URL = "profile-web-page-url"
     const val ANNOUNCE = "announce"
     const val SUPPORT_URL = "support-url"
+    const val FALLBACK_URL = "fallback-url"
     const val PER_APP_PROXY_LIST = "per-app-proxy-list"
     const val PER_APP_PROXY_MODE = "per-app-proxy-mode"
     const val ROUTING = "routing"
@@ -52,6 +53,7 @@ object SubscriptionStandardHeaders {
         PROFILE_WEB_PAGE_URL,
         ANNOUNCE,
         SUPPORT_URL,
+        FALLBACK_URL,
         PER_APP_PROXY_LIST,
         PER_APP_PROXY_MODE,
         ROUTING,

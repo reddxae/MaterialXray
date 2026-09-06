@@ -12,6 +12,7 @@ data class SubscriptionMetadata(
     val profileWebPageUrl: String? = null,
     val announce: String? = null,
     val supportUrl: String? = null,
+    val fallbackUrl: String? = null,
 )
 
 @Serializable
@@ -29,7 +30,8 @@ fun SubscriptionMetadata.hasValues(): Boolean = contentDisposition != null ||
     subscriptionUserInfo?.hasValues() == true ||
     profileWebPageUrl != null ||
     announce != null ||
-    supportUrl != null
+    supportUrl != null ||
+    fallbackUrl != null
 
 fun SubscriptionMetadata.normalized(): SubscriptionMetadata? {
     val normalized = copy(
@@ -41,6 +43,7 @@ fun SubscriptionMetadata.normalized(): SubscriptionMetadata? {
         profileWebPageUrl = profileWebPageUrl.trimToNull(),
         announce = announce.trimToNull(),
         supportUrl = supportUrl.trimToNull(),
+        fallbackUrl = fallbackUrl.trimToNull(),
     )
     return normalized.takeIf { it.hasValues() }
 }

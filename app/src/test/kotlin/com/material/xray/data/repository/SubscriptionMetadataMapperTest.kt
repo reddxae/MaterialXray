@@ -63,5 +63,26 @@ class SubscriptionMetadataMapperTest {
         assertNull(updated.subscriptionDownloadBytes)
         assertEquals(200L, updated.subscriptionTotalBytes)
         assertNull(updated.announce)
+        assertNull(updated.fallbackUrl)
+    }
+
+    @Test
+    fun fallbackUrlRoundTripsThroughMetadata() {
+        val entity = SubscriptionEntity(
+            name = "Sub",
+            url = "https://example.com/sub",
+            fallbackUrl = " https://backup.example/sub ",
+        )
+
+        assertEquals("https://backup.example/sub", entity.toSubscriptionMetadata()?.fallbackUrl)
+
+        val updated = SubscriptionEntity(
+            name = "Sub",
+            url = "https://example.com/sub",
+        ).withSubscriptionMetadata(
+            metadata = SubscriptionMetadata(fallbackUrl = " https://backup.example/sub "),
+        )
+
+        assertEquals("https://backup.example/sub", updated.fallbackUrl)
     }
 }

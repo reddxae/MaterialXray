@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
@@ -89,6 +90,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -506,7 +508,7 @@ fun HomeScreen(
     EditSubscriptionDialogHost(
         subscription = editingSubscription,
         onDismiss = { editingSubscriptionId = null },
-        onConfirm = { subscription, name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
+        onConfirm = { subscription, name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders, useFallbackUrl ->
             viewModel.updateSubscription(
                 subscription,
                 name,
@@ -516,6 +518,7 @@ fun HomeScreen(
                 userAgentMode,
                 customUserAgent,
                 customHeaders,
+                useFallbackUrl,
             )
             editingSubscriptionId = null
         },
@@ -926,15 +929,25 @@ private fun ReorderableSubscriptionList(order: SnapshotStateList<SubscriptionEnt
 private fun EditSubscriptionDialogHost(
     subscription: SubscriptionEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (SubscriptionEntity, String, String, Boolean, Int, SubscriptionUserAgentMode, String, String) -> Unit,
+    onConfirm: (SubscriptionEntity, String, String, Boolean, Int, SubscriptionUserAgentMode, String, String, Boolean) -> Unit,
 ) {
     subscription ?: return
 
     EditSubscriptionDialog(
         subscription = subscription,
         onDismiss = onDismiss,
-        onConfirm = { name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders ->
-            onConfirm(subscription, name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
+        onConfirm = { name, url, preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders, useFallbackUrl ->
+            onConfirm(
+                subscription,
+                name,
+                url,
+                preferJson,
+                autoUpdateIntervalHours,
+                userAgentMode,
+                customUserAgent,
+                customHeaders,
+                useFallbackUrl,
+            )
         },
     )
 }
@@ -2448,7 +2461,7 @@ private fun autoUpdateIntervalLabel(intervalHours: Int): String = when (interval
 private fun EditSubscriptionDialog(
     subscription: SubscriptionEntity,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Boolean, Int, SubscriptionUserAgentMode, String, String) -> Unit,
+    onConfirm: (String, String, Boolean, Int, SubscriptionUserAgentMode, String, String, Boolean) -> Unit,
 ) {
     var name by rememberSaveable(subscription.id) { mutableStateOf(subscription.name) }
     var url by rememberSaveable(subscription.id) { mutableStateOf(subscription.url) }
@@ -2465,13 +2478,15 @@ private fun EditSubscriptionDialog(
     var customHeaders by rememberSaveable(subscription.id) {
         mutableStateOf(subscription.customHeaders.orEmpty())
     }
+    var useFallbackUrl by rememberSaveable(subscription.id) { mutableStateOf(subscription.useFallbackUrl) }
     val hasChanges = name.trim() != subscription.name ||
         url.trim() != subscription.url ||
         preferJson != (subscription.preferJson ?: true) ||
         autoUpdateIntervalHours != subscription.autoUpdateIntervalHours ||
         userAgentMode != SubscriptionUserAgentMode.fromValue(subscription.userAgentMode) ||
         customUserAgent.trim().ifBlank { null } != subscription.customUserAgent ||
-        customHeaders.trim().ifBlank { null } != subscription.customHeaders
+        customHeaders.trim().ifBlank { null } != subscription.customHeaders ||
+        useFallbackUrl != subscription.useFallbackUrl
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.home_edit_subscription_title)) },
@@ -2523,12 +2538,29 @@ private fun EditSubscriptionDialog(
                     onCustomUserAgentChange = { customUserAgent = it },
                     onCustomHeadersChange = { customHeaders = it },
                 )
+                if (subscription.fallbackUrl != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    FallbackUrlRow(
+                        fallbackUrl = subscription.fallbackUrl.orEmpty(),
+                        checked = useFallbackUrl,
+                        onCheckedChange = { useFallbackUrl = it },
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onConfirm(name.trim(), url.trim(), preferJson, autoUpdateIntervalHours, userAgentMode, customUserAgent, customHeaders)
+                    onConfirm(
+                        name.trim(),
+                        url.trim(),
+                        preferJson,
+                        autoUpdateIntervalHours,
+                        userAgentMode,
+                        customUserAgent,
+                        customHeaders,
+                        useFallbackUrl,
+                    )
                 },
                 enabled = url.isNotBlank() && hasChanges,
             ) {
@@ -2541,6 +2573,48 @@ private fun EditSubscriptionDialog(
             }
         },
     )
+}
+
+@Composable
+private fun FallbackUrlRow(
+    fallbackUrl: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            ),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.home_fallback_url_title),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = stringResource(R.string.home_fallback_url_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = fallbackUrl,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+        )
+    }
 }
 
 @Composable

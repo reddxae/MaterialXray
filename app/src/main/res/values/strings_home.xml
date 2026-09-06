@@ -143,6 +143,8 @@
     <string name="home_edit_subscription_title">Edit subscription</string>
     <string name="home_field_name">Name</string>
     <string name="home_name_from_provider_hint">Leave empty to get the name from the subscription provider</string>
+    <string name="home_fallback_url_title">Use backup URL</string>
+    <string name="home_fallback_url_description">Retry the provider\'s backup URL when the main one fails</string>
     <string name="home_field_url" translatable="false">URL</string>
     <string name="home_auto_update_label">Auto update</string>
     <string name="home_auto_update_manual">Manual update only</string>

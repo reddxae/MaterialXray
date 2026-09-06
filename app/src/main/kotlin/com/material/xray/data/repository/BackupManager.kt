@@ -132,6 +132,7 @@ class BackupManager @Inject constructor(
                     userAgentMode = subscription.userAgentMode,
                     customUserAgent = subscription.customUserAgent,
                     customHeaders = subscription.customHeaders,
+                    useFallbackUrl = subscription.useFallbackUrl,
                     metadata = subscription.toSubscriptionMetadata(),
                     appRouting = subscription.toSubscriptionAppRouting(),
                     routing = subscription.toSubscriptionRouting(),
@@ -180,6 +181,7 @@ class BackupManager @Inject constructor(
                         userAgentMode = planned.value.userAgentMode,
                         customUserAgent = planned.value.customUserAgent,
                         customHeaders = planned.value.customHeaders,
+                        useFallbackUrl = planned.value.useFallbackUrl,
                         sortOrder = sortOrder,
                     ).withSubscriptionMetadata(planned.value.metadata)
                         .withSubscriptionAppRouting(planned.value.appRouting)

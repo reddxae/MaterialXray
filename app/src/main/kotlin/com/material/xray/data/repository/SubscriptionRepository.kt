@@ -18,6 +18,7 @@ import com.material.xray.model.parseSubscriptionHeaders
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -145,11 +146,8 @@ class SubscriptionRepository @Inject constructor(
     internal suspend fun prepareRefresh(subId: Long, url: String): PreparedRefresh? {
         val existing = subscriptionDao.getById(subId) ?: return null
         val identity = existing.requestIdentity(settingsRepository.subscriptionSendHardwareId.first())
-        val fetched = fetcher.fetchWithMetadata(
-            url = url,
-            identity = identity,
-            preferJson = existing.preferJson ?: settingsRepository.legacySubscriptionPreferJson.first(),
-        )
+        val preferJson = existing.preferJson ?: settingsRepository.legacySubscriptionPreferJson.first()
+        val fetched = fetchWithFallback(existing, url, identity, preferJson)
         val servers = fetched.configs.mapIndexed { index, config ->
             ServerEntity(
                 subscriptionId = subId,
@@ -167,6 +165,32 @@ class SubscriptionRepository @Inject constructor(
             fetched = fetched,
             servers = servers,
         )
+    }
+
+    /**
+     * Fetches the subscription, retrying the provider-advertised backup URL once when the primary
+     * URL fails and the user opted in. The stored subscription URL always stays the primary one: a
+     * backup mirror is only ever a fetch target, so its redirects are not promoted.
+     */
+    private suspend fun fetchWithFallback(
+        existing: SubscriptionEntity,
+        url: String,
+        identity: SubscriptionRequestIdentity,
+        preferJson: Boolean,
+    ): FetchedSubscription = try {
+        fetcher.fetchWithMetadata(url = url, identity = identity, preferJson = preferJson)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: IOException) {
+        val fallbackUrl = existing.fallbackRefreshUrl(url) ?: throw error
+        try {
+            fetcher.fetchWithMetadata(url = fallbackUrl, identity = identity, preferJson = preferJson)
+        } catch (fallbackError: CancellationException) {
+            throw fallbackError
+        } catch (_: IOException) {
+            // Both endpoints failed; the primary failure is the actionable one.
+            throw error
+        }.copy(resolvedUrl = url, permanentRedirectUrl = null)
     }
 
     internal suspend fun commitRefresh(prepared: PreparedRefresh): RefreshResult? {
@@ -206,6 +230,10 @@ class SubscriptionRepository @Inject constructor(
 
     suspend fun setDescriptionHidden(subId: Long, hidden: Boolean) {
         subscriptionDao.updateDescriptionHidden(subId, hidden)
+    }
+
+    suspend fun setSubscriptionFallbackEnabled(subId: Long, enabled: Boolean) {
+        subscriptionDao.updateFallbackEnabled(subId, enabled)
     }
 
     suspend fun updateSortOrders(subscriptionIds: List<Long>) {
@@ -330,6 +358,18 @@ internal fun SubscriptionEntity.isDueForRefresh(nowMillis: Long): Boolean {
 
     val intervalMillis = interval * MILLIS_PER_HOUR
     return nowMillis - lastUpdated >= intervalMillis
+}
+
+/**
+ * The provider-advertised backup URL when fallback fetching is enabled and it differs from the
+ * primary URL; null otherwise.
+ */
+internal fun SubscriptionEntity.fallbackRefreshUrl(primaryUrl: String): String? {
+    if (!useFallbackUrl) return null
+    val fallback = fallbackUrl?.trim().orEmpty()
+    if (fallback.isEmpty()) return null
+    if (fallback.equals(primaryUrl.trim(), ignoreCase = true)) return null
+    return fallback
 }
 
 /**

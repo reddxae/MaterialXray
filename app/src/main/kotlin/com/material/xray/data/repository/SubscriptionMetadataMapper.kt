@@ -19,6 +19,7 @@ fun SubscriptionEntity.toSubscriptionMetadata(): SubscriptionMetadata? = Subscri
     profileWebPageUrl = profileWebPageUrl,
     announce = announce,
     supportUrl = supportUrl,
+    fallbackUrl = fallbackUrl,
 ).normalized()
 
 fun SubscriptionEntity.withSubscriptionMetadata(
@@ -45,5 +46,6 @@ fun SubscriptionEntity.withSubscriptionMetadata(
         profileWebPageUrl = normalizedMetadata?.profileWebPageUrl,
         announce = normalizedMetadata?.announce,
         supportUrl = normalizedMetadata?.supportUrl,
+        fallbackUrl = normalizedMetadata?.fallbackUrl,
     )
 }

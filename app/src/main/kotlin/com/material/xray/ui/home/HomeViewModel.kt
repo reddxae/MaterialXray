@@ -487,6 +487,7 @@ class HomeViewModel @Inject constructor(
         userAgentMode: SubscriptionUserAgentMode,
         customUserAgent: String,
         customHeaders: String,
+        useFallbackUrl: Boolean,
     ) {
         viewModelScope.launch {
             val normalizedIntervalHours = autoUpdateIntervalHours.coerceAtLeast(0)
@@ -517,6 +518,10 @@ class HomeViewModel @Inject constructor(
                 }
             } else if (hasIntervalChanges) {
                 subscriptionRepo.setAutoUpdateInterval(sub.id, normalizedIntervalHours)
+            }
+
+            if (useFallbackUrl != sub.useFallbackUrl) {
+                subscriptionRepo.setSubscriptionFallbackEnabled(sub.id, useFallbackUrl)
             }
 
             if (hasIntervalChanges) {

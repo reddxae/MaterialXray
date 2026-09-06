@@ -22,6 +22,8 @@ data class SubscriptionEntity(
     val profileWebPageUrl: String? = null,
     val announce: String? = null,
     val supportUrl: String? = null,
+    val fallbackUrl: String? = null,
+    val useFallbackUrl: Boolean = false,
     val descriptionHidden: Boolean = false,
     val userAgentMode: String? = null,
     val customUserAgent: String? = null,

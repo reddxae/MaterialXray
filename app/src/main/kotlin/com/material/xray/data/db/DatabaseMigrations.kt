@@ -111,6 +111,10 @@ internal object DatabaseMigrations {
             "ALTER TABLE subscriptions ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0",
             "UPDATE subscriptions SET sortOrder = id",
         ),
+        16 to listOf(
+            "ALTER TABLE subscriptions ADD COLUMN fallbackUrl TEXT",
+            "ALTER TABLE subscriptions ADD COLUMN useFallbackUrl INTEGER NOT NULL DEFAULT 0",
+        ),
     )
 
     val all: Array<Migration> = sqlByStartVersion.entries

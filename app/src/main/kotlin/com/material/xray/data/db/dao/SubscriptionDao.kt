@@ -51,9 +51,6 @@ interface SubscriptionDao {
     @Query("UPDATE subscriptions SET descriptionHidden = :hidden WHERE id = :id")
     suspend fun updateDescriptionHidden(id: Long, hidden: Boolean)
 
-    @Query("UPDATE subscriptions SET useFallbackUrl = :enabled WHERE id = :id")
-    suspend fun updateFallbackEnabled(id: Long, enabled: Boolean)
-
     @Transaction
     suspend fun updateSortOrders(subscriptionIds: List<Long>) {
         subscriptionIds.forEachIndexed { sortOrder, subscriptionId ->

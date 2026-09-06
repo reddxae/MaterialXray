@@ -77,7 +77,6 @@ internal object DatabaseValueValidator {
             announce = NULLIF(TRIM(announce), ''),
             supportUrl = NULLIF(TRIM(supportUrl), ''),
             fallbackUrl = NULLIF(TRIM(fallbackUrl), ''),
-            useFallbackUrl = CASE WHEN useFallbackUrl = 0 THEN 0 ELSE 1 END,
             requiresHardwareId = CASE WHEN requiresHardwareId = 0 THEN 0 ELSE 1 END,
             descriptionHidden = CASE WHEN descriptionHidden = 0 THEN 0 ELSE 1 END,
             userAgentMode = CASE LOWER(TRIM(userAgentMode))
@@ -120,7 +119,6 @@ internal object DatabaseValueValidator {
             OR (announce IS NOT NULL AND (TRIM(announce) = '' OR announce != TRIM(announce)))
             OR (supportUrl IS NOT NULL AND (TRIM(supportUrl) = '' OR supportUrl != TRIM(supportUrl)))
             OR (fallbackUrl IS NOT NULL AND (TRIM(fallbackUrl) = '' OR fallbackUrl != TRIM(fallbackUrl)))
-            OR useFallbackUrl NOT IN (0, 1)
             OR requiresHardwareId NOT IN (0, 1)
             OR descriptionHidden NOT IN (0, 1)
             OR (userAgentMode IS NOT NULL AND userAgentMode != LOWER(TRIM(userAgentMode)))

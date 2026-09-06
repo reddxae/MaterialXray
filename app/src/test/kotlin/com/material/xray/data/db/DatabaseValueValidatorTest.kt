@@ -52,7 +52,6 @@ class DatabaseValueValidatorTest {
                     announce TEXT,
                     supportUrl TEXT,
                     fallbackUrl TEXT,
-                    useFallbackUrl INTEGER NOT NULL DEFAULT 0,
                     requiresHardwareId INTEGER NOT NULL DEFAULT 0,
                     descriptionHidden INTEGER NOT NULL,
                     userAgentMode TEXT,
@@ -105,11 +104,11 @@ class DatabaseValueValidatorTest {
                     id, name, url, preferJson, lastUpdated, autoUpdateIntervalHours,
                     subscriptionTotalBytes, subscriptionExpireAt, descriptionHidden,
                     userAgentMode, appRoutingPackages, appRoutingMode, appRoutingInverted,
-                    fallbackUrl, useFallbackUrl, requiresHardwareId
+                    fallbackUrl, requiresHardwareId
                 ) VALUES (
                     1, '  ', ' https://example.com ', 2, -1, -6,
                     -1, 0, 4, ' CUSTOM ', ' ["com.example"] ', ' bypass ', 7,
-                    '  https://backup.example.com  ', 5, 9
+                    '  https://backup.example.com  ', 9
                 )
                 """.trimIndent(),
             )
@@ -162,7 +161,6 @@ class DatabaseValueValidatorTest {
                 assertEquals("direct", row.getString("appRoutingMode"))
                 assertEquals(1, row.getInt("appRoutingInverted"))
                 assertEquals("https://backup.example.com", row.getString("fallbackUrl"))
-                assertEquals(1, row.getInt("useFallbackUrl"))
                 assertEquals(1, row.getInt("requiresHardwareId"))
             }
             statement.executeQuery("SELECT * FROM servers").use { row ->

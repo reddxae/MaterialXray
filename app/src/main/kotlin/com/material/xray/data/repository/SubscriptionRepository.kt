@@ -173,8 +173,8 @@ class SubscriptionRepository @Inject constructor(
 
     /**
      * Fetches the subscription, retrying the provider-advertised backup URL once when the primary
-     * URL fails and the user opted in. The stored subscription URL always stays the primary one: a
-     * backup mirror is only ever a fetch target, so its redirects are not promoted.
+     * URL fails. The stored subscription URL always stays the primary one: a backup mirror is only
+     * ever a fetch target, so its redirects are not promoted.
      */
     private suspend fun fetchWithFallback(
         existing: SubscriptionEntity,
@@ -235,10 +235,6 @@ class SubscriptionRepository @Inject constructor(
 
     suspend fun setDescriptionHidden(subId: Long, hidden: Boolean) {
         subscriptionDao.updateDescriptionHidden(subId, hidden)
-    }
-
-    suspend fun setSubscriptionFallbackEnabled(subId: Long, enabled: Boolean) {
-        subscriptionDao.updateFallbackEnabled(subId, enabled)
     }
 
     suspend fun updateSortOrders(subscriptionIds: List<Long>) {
@@ -366,11 +362,9 @@ internal fun SubscriptionEntity.isDueForRefresh(nowMillis: Long): Boolean {
 }
 
 /**
- * The provider-advertised backup URL when fallback fetching is enabled and it differs from the
- * primary URL; null otherwise.
+ * The provider-advertised backup URL when it differs from the primary URL; null otherwise.
  */
 internal fun SubscriptionEntity.fallbackRefreshUrl(primaryUrl: String): String? {
-    if (!useFallbackUrl) return null
     val fallback = fallbackUrl?.trim().orEmpty()
     if (fallback.isEmpty()) return null
     if (fallback.equals(primaryUrl.trim(), ignoreCase = true)) return null

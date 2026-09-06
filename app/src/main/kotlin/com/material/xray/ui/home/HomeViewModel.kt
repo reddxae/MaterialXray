@@ -539,7 +539,6 @@ class HomeViewModel @Inject constructor(
         userAgentMode: SubscriptionUserAgentMode,
         customUserAgent: String,
         customHeaders: String,
-        useFallbackUrl: Boolean,
     ) {
         viewModelScope.launch {
             val normalizedIntervalHours = autoUpdateIntervalHours.coerceAtLeast(0)
@@ -553,12 +552,6 @@ class HomeViewModel @Inject constructor(
                 preferJson != (sub.preferJson ?: true) ||
                 identityChanged
             val hasIntervalChanges = normalizedIntervalHours != sub.autoUpdateIntervalHours
-
-            // Toggle before refreshing so a refresh started from this edit already uses the
-            // fallback endpoint the user may have just enabled.
-            if (useFallbackUrl != sub.useFallbackUrl) {
-                subscriptionRepo.setSubscriptionFallbackEnabled(sub.id, useFallbackUrl)
-            }
 
             if (hasSubscriptionChanges) {
                 runSubscriptionOperation {

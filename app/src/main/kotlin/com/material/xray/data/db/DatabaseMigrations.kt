@@ -121,6 +121,61 @@ internal object DatabaseMigrations {
         18 to listOf(
             "ALTER TABLE subscriptions ADD COLUMN requiresHardwareId INTEGER NOT NULL DEFAULT 0",
         ),
+        19 to listOf(
+            """
+            CREATE TABLE subscriptions_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                preferJson INTEGER,
+                lastUpdated INTEGER NOT NULL,
+                contentDisposition TEXT,
+                contentType TEXT,
+                profileTitle TEXT,
+                profileUpdateIntervalHours INTEGER,
+                autoUpdateIntervalHours INTEGER NOT NULL,
+                subscriptionUploadBytes INTEGER,
+                subscriptionDownloadBytes INTEGER,
+                subscriptionTotalBytes INTEGER,
+                subscriptionExpireAt INTEGER,
+                profileWebPageUrl TEXT,
+                announce TEXT,
+                supportUrl TEXT,
+                fallbackUrl TEXT,
+                requiresHardwareId INTEGER NOT NULL,
+                descriptionHidden INTEGER NOT NULL,
+                userAgentMode TEXT,
+                customUserAgent TEXT,
+                customHeaders TEXT,
+                appRoutingPackages TEXT,
+                appRoutingMode TEXT,
+                appRoutingInverted INTEGER NOT NULL,
+                providerRouting TEXT,
+                sortOrder INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            """
+            INSERT INTO subscriptions_new (
+                id, name, url, preferJson, lastUpdated, contentDisposition, contentType,
+                profileTitle, profileUpdateIntervalHours, autoUpdateIntervalHours,
+                subscriptionUploadBytes, subscriptionDownloadBytes, subscriptionTotalBytes,
+                subscriptionExpireAt, profileWebPageUrl, announce, supportUrl, fallbackUrl,
+                requiresHardwareId, descriptionHidden, userAgentMode, customUserAgent,
+                customHeaders, appRoutingPackages, appRoutingMode, appRoutingInverted,
+                providerRouting, sortOrder
+            )
+            SELECT id, name, url, preferJson, lastUpdated, contentDisposition, contentType,
+                profileTitle, profileUpdateIntervalHours, autoUpdateIntervalHours,
+                subscriptionUploadBytes, subscriptionDownloadBytes, subscriptionTotalBytes,
+                subscriptionExpireAt, profileWebPageUrl, announce, supportUrl, fallbackUrl,
+                requiresHardwareId, descriptionHidden, userAgentMode, customUserAgent,
+                customHeaders, appRoutingPackages, appRoutingMode, appRoutingInverted,
+                providerRouting, sortOrder
+            FROM subscriptions
+            """.trimIndent(),
+            "DROP TABLE subscriptions",
+            "ALTER TABLE subscriptions_new RENAME TO subscriptions",
+        ),
     )
 
     val all: Array<Migration> = sqlByStartVersion.entries

@@ -11,36 +11,29 @@ import org.junit.Test
 
 class SubscriptionFallbackUrlTest {
     @Test
-    fun returnsNullWhenFallbackIsDisabled() {
-        val entity = entity(fallbackUrl = "https://backup.example/sub", useFallbackUrl = false)
-
-        assertNull(entity.fallbackRefreshUrl("https://example.com/sub"))
-    }
-
-    @Test
     fun returnsNullWhenProviderNeverAdvertisedFallback() {
-        val entity = entity(fallbackUrl = null, useFallbackUrl = true)
+        val entity = entity(fallbackUrl = null)
 
         assertNull(entity.fallbackRefreshUrl("https://example.com/sub"))
     }
 
     @Test
     fun returnsNullWhenFallbackMatchesPrimaryUrl() {
-        val entity = entity(fallbackUrl = "https://example.com/sub", useFallbackUrl = true)
+        val entity = entity(fallbackUrl = "https://example.com/sub")
 
         assertNull(entity.fallbackRefreshUrl(" https://example.com/sub "))
     }
 
     @Test
     fun returnsTrimmedFallbackUrl() {
-        val entity = entity(fallbackUrl = " https://backup.example/sub ", useFallbackUrl = true)
+        val entity = entity(fallbackUrl = " https://backup.example/sub ")
 
         assertEquals("https://backup.example/sub", entity.fallbackRefreshUrl("https://example.com/sub"))
     }
 
     @Test
     fun fallbackFetchKeepsPrimaryPolicyWhenMirrorOmitsIt() {
-        val existing = entity(fallbackUrl = "https://backup.example/sub", useFallbackUrl = true)
+        val existing = entity(fallbackUrl = "https://backup.example/sub")
             .copy(requiresHardwareId = true)
 
         val fetched = FetchedSubscription(
@@ -55,7 +48,7 @@ class SubscriptionFallbackUrlTest {
 
     @Test
     fun fallbackFetchPrefersMirrorPolicyWhenPresent() {
-        val existing = entity(fallbackUrl = "https://backup.example/sub", useFallbackUrl = true)
+        val existing = entity(fallbackUrl = "https://backup.example/sub")
             .copy(requiresHardwareId = true)
 
         val fetched = FetchedSubscription(
@@ -71,10 +64,9 @@ class SubscriptionFallbackUrlTest {
         assertEquals(true, fetched.metadata.requiresHardwareId)
     }
 
-    private fun entity(fallbackUrl: String?, useFallbackUrl: Boolean) = SubscriptionEntity(
+    private fun entity(fallbackUrl: String?) = SubscriptionEntity(
         name = "Sub",
         url = "https://example.com/sub",
         fallbackUrl = fallbackUrl,
-        useFallbackUrl = useFallbackUrl,
     )
 }

@@ -146,8 +146,6 @@
     <string name="home_edit_subscription_title">Изменить подписку</string>
     <string name="home_field_name">Название</string>
     <string name="home_name_from_provider_hint">Оставьте пустым, чтобы получить название от провайдера подписки</string>
-    <string name="home_fallback_url_title">Использовать резервный URL</string>
-    <string name="home_fallback_url_description">Повторять загрузку с резервного URL провайдера, если основной недоступен</string>
     <string name="home_auto_update_label">Автообновление</string>
     <string name="home_auto_update_manual">Только вручную</string>
     <string name="home_duration_manual">Только вручную</string>

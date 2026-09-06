@@ -24,7 +24,6 @@ data class BackupData(
         val userAgentMode: String? = null,
         val customUserAgent: String? = null,
         val customHeaders: String? = null,
-        val useFallbackUrl: Boolean = false,
         val metadata: SubscriptionMetadata? = null,
         val appRouting: SubscriptionAppRouting? = null,
         val routing: SubscriptionRouting? = null,

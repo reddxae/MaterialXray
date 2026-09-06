@@ -23,7 +23,6 @@ data class SubscriptionEntity(
     val announce: String? = null,
     val supportUrl: String? = null,
     val fallbackUrl: String? = null,
-    val useFallbackUrl: Boolean = false,
     val requiresHardwareId: Boolean = false,
     val descriptionHidden: Boolean = false,
     val userAgentMode: String? = null,

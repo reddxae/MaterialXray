@@ -21,6 +21,16 @@ interface SubscriptionDao {
     @Query("SELECT * FROM subscriptions WHERE id = :id")
     suspend fun getById(id: Long): SubscriptionEntity?
 
+    @Query(
+        """
+        SELECT subscriptions.requiresHardwareId
+        FROM subscriptions
+        INNER JOIN servers ON servers.subscriptionId = subscriptions.id
+        WHERE servers.id = :serverId
+        """,
+    )
+    fun observeRequiresHardwareIdForServer(serverId: Long): Flow<Boolean?>
+
     @Insert
     suspend fun insert(sub: SubscriptionEntity): Long
 

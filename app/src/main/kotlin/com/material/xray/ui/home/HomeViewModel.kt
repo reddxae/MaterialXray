@@ -385,20 +385,25 @@ class HomeViewModel @Inject constructor(
     fun selectServer(serverId: Long) {
         serverSelectionJob?.cancel()
         serverSelectionJob = viewModelScope.launch {
-            // A provider may require the hardware ID for its servers. When the user keeps it off,
-            // surface the choice instead of silently selecting the server.
-            if (requiresHardwareIdConsent(serverId)) {
-                _pendingHwidServerSelection.value = serverId
-                return@launch
-            }
-            // The edited active config was written against the currently selected server, so
-            // moving away from it throws the edit away. Say so before it happens.
-            if (serverId != settingsRepo.lastServerId.first() && activeConfigOverrideStore.exists()) {
-                _pendingServerSelection.value = serverId
-                return@launch
-            }
-            applyServerSelection(serverId)
+            selectServerChecked(serverId)
         }
+    }
+
+    private suspend fun selectServerChecked(serverId: Long) {
+        // A provider may require the hardware ID for its servers. When the user keeps it off,
+        // surface the choice instead of silently selecting the server. Re-tapping the already
+        // selected server keeps the nudge: that selection then violates the provider policy.
+        if (requiresHardwareIdConsent(serverId)) {
+            _pendingHwidServerSelection.value = serverId
+            return
+        }
+        // The edited active config was written against the currently selected server, so
+        // moving away from it throws the edit away. Say so before it happens.
+        if (serverId != settingsRepo.lastServerId.first() && activeConfigOverrideStore.exists()) {
+            _pendingServerSelection.value = serverId
+            return
+        }
+        applyServerSelection(serverId)
     }
 
     fun confirmHwidRequiredSelection() {
@@ -407,13 +412,28 @@ class HomeViewModel @Inject constructor(
         serverSelectionJob?.cancel()
         serverSelectionJob = viewModelScope.launch {
             settingsRepo.setSubscriptionSendHardwareId(true)
+            refreshServersForHwidPolicy(serverId)
             // Re-enter the normal flow so a pending edited-config confirmation still applies.
-            selectServer(serverId)
+            selectServerChecked(serverId)
         }
     }
 
     fun dismissHwidRequiredSelection() {
         _pendingHwidServerSelection.value = null
+    }
+
+    // The servers on screen were fetched without the hardware ID header; HWID-gated providers
+    // typically hand out a different server set once it is sent, so refetch right away.
+    private suspend fun refreshServersForHwidPolicy(serverId: Long) {
+        val subscriptionId = serverRepo.getById(serverId)?.subscriptionId ?: return
+        val subscription = subscriptionRepo.getById(subscriptionId) ?: return
+        try {
+            subscriptionRefreshCoordinator.refreshSubscription(subscription.id, subscription.url)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // The next scheduled refresh can pick the provider up instead.
+        }
     }
 
     private suspend fun requiresHardwareIdConsent(serverId: Long): Boolean {
@@ -534,6 +554,12 @@ class HomeViewModel @Inject constructor(
                 identityChanged
             val hasIntervalChanges = normalizedIntervalHours != sub.autoUpdateIntervalHours
 
+            // Toggle before refreshing so a refresh started from this edit already uses the
+            // fallback endpoint the user may have just enabled.
+            if (useFallbackUrl != sub.useFallbackUrl) {
+                subscriptionRepo.setSubscriptionFallbackEnabled(sub.id, useFallbackUrl)
+            }
+
             if (hasSubscriptionChanges) {
                 runSubscriptionOperation {
                     subscriptionRefreshCoordinator.updateSubscription(
@@ -550,10 +576,6 @@ class HomeViewModel @Inject constructor(
                 }
             } else if (hasIntervalChanges) {
                 subscriptionRepo.setAutoUpdateInterval(sub.id, normalizedIntervalHours)
-            }
-
-            if (useFallbackUrl != sub.useFallbackUrl) {
-                subscriptionRepo.setSubscriptionFallbackEnabled(sub.id, useFallbackUrl)
             }
 
             if (hasIntervalChanges) {

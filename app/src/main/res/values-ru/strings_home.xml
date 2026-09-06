@@ -227,7 +227,7 @@
     <string name="home_discard_edited_config_confirm">Удалить и переключить</string>
     <string name="home_discard_edited_config_cancel">Продолжить правку</string>
     <string name="home_hwid_required_title">Эта подписка требует HWID</string>
-    <string name="home_hwid_required_body">Провайдер этой подписки распознаёт устройства по постоянному идентификатору (HWID) и выдаёт серверы только тем, кто его отправляет. Включение добавляет заголовок x-hwid в запросы подписки.</string>
+    <string name="home_hwid_required_body">Провайдер этой подписки требует, чтобы все подключающиеся устройства предоставляли HWID — идентификатор устройства с такими данными, как модель и версия ОС.</string>
     <string name="home_hwid_required_confirm">Включить HWID</string>
     <string name="home_hwid_required_cancel">Отмена</string>
 </resources>

@@ -550,7 +550,13 @@ private fun HwidRequiredDialogHost(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.home_hwid_required_title)) },
+        title = {
+            Text(
+                stringResource(R.string.home_hwid_required_title),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+        },
         text = { Text(stringResource(R.string.home_hwid_required_body)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {

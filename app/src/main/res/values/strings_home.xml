@@ -213,7 +213,7 @@
     <string name="home_discard_edited_config_confirm">Discard and switch</string>
     <string name="home_discard_edited_config_cancel">Keep editing</string>
     <string name="home_hwid_required_title">This subscription requires HWID</string>
-    <string name="home_hwid_required_body">The provider of this subscription identifies devices by a stable hardware ID (HWID) and only serves servers to devices that send it. Turning it on adds an x-hwid header to subscription requests for this app.</string>
+    <string name="home_hwid_required_body">The provider of this subscription requires all connecting devices to provide HWID - a device identifier with information like model and OS version.</string>
     <string name="home_hwid_required_confirm">Turn on HWID</string>
     <string name="home_hwid_required_cancel">Cancel</string>
 </resources>

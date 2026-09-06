@@ -30,6 +30,7 @@ data class SubscriptionEntity(
     val customHeaders: String? = null,
     val appRoutingPackages: String? = null,
     val appRoutingMode: String? = null,
+    val appRoutingInverted: Boolean = false,
     val providerRouting: String? = null,
     val sortOrder: Int = 0,
 )

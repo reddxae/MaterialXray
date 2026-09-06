@@ -62,6 +62,38 @@ class SubscriptionFetcherTest {
     }
 
     @Test
+    fun `parse app routing reads invert flag from header`() {
+        val headers = Headers.headersOf(
+            "per-app-proxy-list",
+            "com.example.app",
+            "per-app-proxy-mode",
+            "bypass",
+            "per-app-proxy-list-invert",
+            "1",
+        )
+
+        val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
+
+        assertEquals(true, routing.inverted)
+    }
+
+    @Test
+    fun `parse app routing keeps invert off for falsy values`() {
+        val headers = Headers.headersOf(
+            "per-app-proxy-list",
+            "com.example.app",
+            "per-app-proxy-mode",
+            "bypass",
+            "per-app-proxy-list-invert",
+            "0",
+        )
+
+        val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
+
+        assertEquals(false, routing.inverted)
+    }
+
+    @Test
     fun `parse routing header decodes provider rules`() {
         val payload = """
             {

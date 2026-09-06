@@ -41,19 +41,18 @@ class SubscriptionAppRoutingRepository @Inject constructor(
     }
 
     private suspend fun buildProviderAssignments(routing: SubscriptionAppRouting): List<AppBypassEntity> {
-        val packages = routing.packageNames.toSet()
-        if (packages.isEmpty()) return emptyList()
+        if (routing.packageNames.isEmpty()) return emptyList()
 
-        val assignment = routing.mode.toRouteAssignment()
         return appInventory.loadRoutingSnapshot().apps
-            .filter { it.packageName in packages }
-            .map { app ->
-                assignment.toAppBypassEntity(
-                    packageName = app.packageName,
-                    profileId = app.profileId,
-                    uid = app.uid,
-                    manual = false,
-                )
+            .mapNotNull { app ->
+                val mode = routing.assignmentModeFor(app.packageName) ?: return@mapNotNull null
+                mode.toRouteAssignment()
+                    .toAppBypassEntity(
+                        packageName = app.packageName,
+                        profileId = app.profileId,
+                        uid = app.uid,
+                        manual = false,
+                    )
             }
     }
 

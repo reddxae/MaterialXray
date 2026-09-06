@@ -59,6 +59,7 @@ class DatabaseValueValidatorTest {
                     customHeaders TEXT,
                     appRoutingPackages TEXT,
                     appRoutingMode TEXT,
+                    appRoutingInverted INTEGER NOT NULL DEFAULT 0,
                     providerRouting TEXT
                 )
                 """.trimIndent(),
@@ -102,11 +103,11 @@ class DatabaseValueValidatorTest {
                 INSERT INTO subscriptions (
                     id, name, url, preferJson, lastUpdated, autoUpdateIntervalHours,
                     subscriptionTotalBytes, subscriptionExpireAt, descriptionHidden,
-                    userAgentMode, appRoutingPackages, appRoutingMode,
+                    userAgentMode, appRoutingPackages, appRoutingMode, appRoutingInverted,
                     fallbackUrl, useFallbackUrl
                 ) VALUES (
                     1, '  ', ' https://example.com ', 2, -1, -6,
-                    -1, 0, 4, ' CUSTOM ', ' ["com.example"] ', ' bypass ',
+                    -1, 0, 4, ' CUSTOM ', ' ["com.example"] ', ' bypass ', 7,
                     '  https://backup.example.com  ', 5
                 )
                 """.trimIndent(),
@@ -158,6 +159,7 @@ class DatabaseValueValidatorTest {
                 assertEquals("custom", row.getString("userAgentMode"))
                 assertEquals("[\"com.example\"]", row.getString("appRoutingPackages"))
                 assertEquals("direct", row.getString("appRoutingMode"))
+                assertEquals(1, row.getInt("appRoutingInverted"))
                 assertEquals("https://backup.example.com", row.getString("fallbackUrl"))
                 assertEquals(1, row.getInt("useFallbackUrl"))
             }

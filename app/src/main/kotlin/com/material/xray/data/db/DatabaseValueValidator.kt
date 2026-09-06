@@ -99,6 +99,7 @@ internal object DatabaseValueValidator {
                 WHEN 'default_outbound' THEN 'default_outbound'
                 ELSE NULL
             END,
+            appRoutingInverted = CASE WHEN appRoutingInverted = 0 THEN 0 ELSE 1 END,
             providerRouting = NULLIF(TRIM(providerRouting), '')
         WHERE TRIM(name) = ''
             OR name != TRIM(name)
@@ -126,6 +127,7 @@ internal object DatabaseValueValidator {
             OR (customHeaders IS NOT NULL AND (TRIM(customHeaders) = '' OR customHeaders != TRIM(customHeaders)))
             OR LOWER(TRIM(appRoutingMode)) = 'bypass'
             OR (appRoutingMode IS NOT NULL AND LOWER(TRIM(appRoutingMode)) NOT IN ('direct', 'default_selected', 'default_outbound', 'bypass'))
+            OR appRoutingInverted NOT IN (0, 1)
             OR (appRoutingPackages IS NOT NULL AND (TRIM(appRoutingPackages) = '' OR appRoutingPackages != TRIM(appRoutingPackages)))
             OR (appRoutingPackages IS NOT NULL AND appRoutingMode IS NULL)
             OR (providerRouting IS NOT NULL AND (TRIM(providerRouting) = '' OR providerRouting != TRIM(providerRouting)))

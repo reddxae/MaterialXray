@@ -34,6 +34,7 @@ object SubscriptionStandardHeaders {
     const val FALLBACK_URL = "fallback-url"
     const val PER_APP_PROXY_LIST = "per-app-proxy-list"
     const val PER_APP_PROXY_MODE = "per-app-proxy-mode"
+    const val PER_APP_PROXY_LIST_INVERT = "per-app-proxy-list-invert"
     const val ROUTING = "routing"
     const val ROUTING_ENABLE = "routing-enable"
 
@@ -57,6 +58,7 @@ object SubscriptionStandardHeaders {
         FALLBACK_URL,
         PER_APP_PROXY_LIST,
         PER_APP_PROXY_MODE,
+        PER_APP_PROXY_LIST_INVERT,
         ROUTING,
         ROUTING_ENABLE,
     )
@@ -101,7 +103,9 @@ object SubscriptionStandardHeaders {
             .map { it.trim().trim('"', '\'') }
             .filter { it.isNotEmpty() }
         val mode = SubscriptionAppRoutingMode.fromHeader(headers[PER_APP_PROXY_MODE]) ?: return null
-        return SubscriptionAppRouting(packageNames, mode).normalized()
+        val inverted = normalizeNullableHeader(headers[PER_APP_PROXY_LIST_INVERT])
+            ?.lowercase() in INVERT_TRUTHY_VALUES
+        return SubscriptionAppRouting(packageNames, mode, inverted).normalized()
     }
 
     fun normalizeContentType(value: String?): String? {
@@ -165,4 +169,5 @@ object SubscriptionStandardHeaders {
 
     private const val BASE64_PREFIX = "base64:"
     private val PACKAGE_LIST_SEPARATOR_REGEX = "[,;\\s]+".toRegex()
+    private val INVERT_TRUTHY_VALUES = setOf("1", "true", "yes", "on")
 }

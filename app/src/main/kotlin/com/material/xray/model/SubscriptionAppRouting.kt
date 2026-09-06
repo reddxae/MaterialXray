@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 data class SubscriptionAppRouting(
     val packageNames: List<String>,
     val mode: SubscriptionAppRoutingMode,
+    val inverted: Boolean = false,
 ) {
     fun normalized(): SubscriptionAppRouting? {
         val normalizedPackages = packageNames
@@ -13,6 +14,17 @@ data class SubscriptionAppRouting(
             .filter { PACKAGE_NAME_REGEX.matches(it) }
             .distinct()
         return copy(packageNames = normalizedPackages).takeIf { normalizedPackages.isNotEmpty() }
+    }
+
+    /**
+     * Mode a package should be assigned to, or null when the package stays on the default route.
+     * An inverted list flips the meaning: listed packages get the opposite of [mode] while every
+     * other installed package follows [mode] itself.
+     */
+    fun assignmentModeFor(packageName: String): SubscriptionAppRoutingMode? = when {
+        packageNames.contains(packageName) -> if (inverted) mode.inverted() else mode
+        inverted -> mode
+        else -> null
     }
 
     companion object {
@@ -26,6 +38,11 @@ enum class SubscriptionAppRoutingMode(val persistedValue: String) {
     DefaultSelected("default_selected"),
     DefaultOutbound("default_outbound"),
     ;
+
+    fun inverted(): SubscriptionAppRoutingMode = when (this) {
+        Direct -> DefaultSelected
+        DefaultSelected, DefaultOutbound -> Direct
+    }
 
     companion object {
         fun fromHeader(value: String?): SubscriptionAppRoutingMode? = when (value?.trim()?.lowercase()?.replace('-', '_')) {

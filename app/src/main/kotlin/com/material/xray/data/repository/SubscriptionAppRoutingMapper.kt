@@ -18,7 +18,7 @@ fun SubscriptionEntity.toSubscriptionAppRouting(): SubscriptionAppRouting? {
             subscriptionRoutingJson.decodeFromString(ListSerializer(String.serializer()), appRoutingPackages)
         }
     }.getOrDefault(emptyList())
-    return SubscriptionAppRouting(packages, mode).normalized()
+    return SubscriptionAppRouting(packages, mode, appRoutingInverted).normalized()
 }
 
 fun SubscriptionEntity.withSubscriptionAppRouting(routing: SubscriptionAppRouting?): SubscriptionEntity {
@@ -28,5 +28,6 @@ fun SubscriptionEntity.withSubscriptionAppRouting(routing: SubscriptionAppRoutin
             subscriptionRoutingJson.encodeToString(ListSerializer(String.serializer()), it)
         },
         appRoutingMode = normalized?.mode?.persistedValue,
+        appRoutingInverted = normalized?.inverted == true,
     )
 }

@@ -19,7 +19,12 @@ import okhttp3.Request
 internal const val GEOIP_FILE_NAME = "geoip.dat"
 internal const val GEOSITE_FILE_NAME = "geosite.dat"
 
+/** Assets older than this are re-downloaded by the periodic background refresh. */
+internal const val GEO_DATA_MAX_AGE_MS = 24L * 60 * 60 * 1000
+
 internal fun normalizeGeoDataUrl(url: String): String = url.trim()
+
+internal fun isGeoDataStale(updatedAtMillis: Long?, nowMillis: Long): Boolean = updatedAtMillis == null || nowMillis - updatedAtMillis >= GEO_DATA_MAX_AGE_MS
 
 data class GeoDataStatus(
     val geoipUrl: String,
@@ -41,6 +46,8 @@ class GeoDataManager @Inject constructor(
     private val binaryDir get() = File(context.filesDir, "bin")
     private val geoipSourceFile get() = File(binaryDir, "geoip-source")
     private val geositeSourceFile get() = File(binaryDir, "geosite-source")
+    private val geoipUpdatedAtFile get() = File(binaryDir, "geoip-updated-at")
+    private val geositeUpdatedAtFile get() = File(binaryDir, "geosite-updated-at")
 
     suspend fun needsRefresh(): Boolean = withContext(Dispatchers.IO) {
         resolveState().needsDownload
@@ -59,6 +66,8 @@ class GeoDataManager @Inject constructor(
             }
             geoipSourceFile.writeText(state.geoipUrl)
             geositeSourceFile.writeText(state.geositeUrl)
+            markUpdated(geoipUpdatedAtFile)
+            markUpdated(geositeUpdatedAtFile)
         }
 
         GeoDataStatus(
@@ -75,12 +84,53 @@ class GeoDataManager @Inject constructor(
             GeoDataAsset.GEOIP -> {
                 download(state.geoipUrl, state.geoipFile)
                 geoipSourceFile.writeText(state.geoipUrl)
+                markUpdated(geoipUpdatedAtFile)
             }
             GeoDataAsset.GEOSITE -> {
                 download(state.geositeUrl, state.geositeFile)
                 geositeSourceFile.writeText(state.geositeUrl)
+                markUpdated(geositeUpdatedAtFile)
             }
         }
+    }
+
+    /**
+     * Re-downloads each asset that is missing, was fetched with a different URL, or is older than
+     * [GEO_DATA_MAX_AGE_MS]. Only files on disk are replaced: a running core keeps serving its
+     * in-memory data and picks up the fresh files at its next start, so no reload is triggered.
+     */
+    suspend fun refreshIfStale() = withContext(Dispatchers.IO) {
+        binaryDir.mkdirs()
+        val state = resolveState()
+        coroutineScope {
+            val geoip = async {
+                runCatching {
+                    refreshIfDue(state.geoipUrl, state.geoipFile, geoipSourceFile, geoipUpdatedAtFile)
+                }
+            }
+            val geosite = async {
+                runCatching {
+                    refreshIfDue(state.geositeUrl, state.geositeFile, geositeSourceFile, geositeUpdatedAtFile)
+                }
+            }
+            val failures = listOfNotNull(geoip.await().exceptionOrNull(), geosite.await().exceptionOrNull())
+            if (failures.isNotEmpty()) throw failures.first()
+        }
+    }
+
+    private fun refreshIfDue(url: String, targetFile: File, sourceMarkerFile: File, updatedAtFile: File) {
+        val updatedAt = updatedAtFile.readTextOrNull()?.toLongOrNull()
+        val isDue = sourceMarkerFile.readTextOrNull() != url ||
+            !targetFile.exists() ||
+            isGeoDataStale(updatedAt, System.currentTimeMillis())
+        if (!isDue) return
+        download(url, targetFile)
+        sourceMarkerFile.writeText(url)
+        markUpdated(updatedAtFile)
+    }
+
+    private fun markUpdated(updatedAtFile: File) {
+        updatedAtFile.writeText(System.currentTimeMillis().toString())
     }
 
     private fun download(sourceUrl: String, targetFile: File) {

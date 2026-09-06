@@ -8,6 +8,7 @@ import com.material.xray.data.repository.BackupManager
 import com.material.xray.data.repository.SettingsRepository
 import com.material.xray.di.ApplicationScope
 import com.material.xray.service.AppUpdateScheduler
+import com.material.xray.service.GeoDataUpdateScheduler
 import com.material.xray.service.OemAutostartManager
 import com.material.xray.service.StartupDiagnosticsLogger
 import com.material.xray.service.SubscriptionUpdateScheduler
@@ -26,6 +27,8 @@ class MaterialXrayApp : Application() {
     @Inject lateinit var subscriptionUpdateScheduler: SubscriptionUpdateScheduler
 
     @Inject lateinit var appUpdateScheduler: AppUpdateScheduler
+
+    @Inject lateinit var geoDataUpdateScheduler: GeoDataUpdateScheduler
 
     @Inject lateinit var settingsRepository: SettingsRepository
 
@@ -73,6 +76,7 @@ class MaterialXrayApp : Application() {
         }
         subscriptionUpdateScheduler.schedulePeriodicUpdates()
         subscriptionUpdateScheduler.enqueueDueCheckNow(STARTUP_BACKGROUND_WORK_DELAY_SECONDS)
+        geoDataUpdateScheduler.schedulePeriodicRefresh()
     }
 
     private companion object {

@@ -151,6 +151,21 @@ class SubscriptionFetcherTest {
     }
 
     @Test
+    fun `parse metadata reads url replacement headers`() {
+        val metadata = SubscriptionStandardHeaders.parseMetadata(
+            Headers.headersOf(
+                "new-url",
+                " https://mynew-domain.com/sub ",
+                "new-domain",
+                " mynew-domain.com ",
+            ),
+        )
+
+        assertEquals("https://mynew-domain.com/sub", metadata.newUrl)
+        assertEquals("mynew-domain.com", metadata.newDomain)
+    }
+
+    @Test
     fun `parse routing header decodes provider rules`() {
         val payload = """
             {

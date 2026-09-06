@@ -13,6 +13,8 @@ data class SubscriptionMetadata(
     val announce: String? = null,
     val supportUrl: String? = null,
     val fallbackUrl: String? = null,
+    val newUrl: String? = null,
+    val newDomain: String? = null,
     val requiresHardwareId: Boolean = false,
 )
 
@@ -33,6 +35,8 @@ fun SubscriptionMetadata.hasValues(): Boolean = contentDisposition != null ||
     announce != null ||
     supportUrl != null ||
     fallbackUrl != null ||
+    newUrl != null ||
+    newDomain != null ||
     requiresHardwareId
 
 fun SubscriptionMetadata.normalized(): SubscriptionMetadata? {
@@ -46,6 +50,8 @@ fun SubscriptionMetadata.normalized(): SubscriptionMetadata? {
         announce = announce.trimToNull(),
         supportUrl = supportUrl.trimToNull(),
         fallbackUrl = fallbackUrl.trimToNull(),
+        newUrl = newUrl.trimToNull(),
+        newDomain = newDomain.trimToNull(),
     )
     return normalized.takeIf { it.hasValues() }
 }

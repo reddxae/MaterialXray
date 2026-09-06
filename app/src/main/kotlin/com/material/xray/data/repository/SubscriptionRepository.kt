@@ -9,6 +9,7 @@ import com.material.xray.data.db.entity.SubscriptionEntity
 import com.material.xray.data.parser.FetchedSubscription
 import com.material.xray.data.parser.ShareLinkParser
 import com.material.xray.data.parser.SubscriptionFetcher
+import com.material.xray.data.parser.SubscriptionUrlReplacement
 import com.material.xray.model.ServerConfig
 import com.material.xray.model.SubscriptionAppRouting
 import com.material.xray.model.SubscriptionRequestIdentity
@@ -264,8 +265,11 @@ class SubscriptionRepository @Inject constructor(
         val providerName = fetched.metadata.profileTitle.trimToNull()
         return withSubscriptionMetadata(
             metadata = fetched.metadata,
+            // A permanent redirect is the most current location; the provider's new-url/new-domain
+            // directive is the next authority. Both move the subscription permanently.
             resolvedUrl = fetched.permanentRedirectUrl
                 ?.takeIf { it.isNotBlank() }
+                ?: SubscriptionUrlReplacement.resolve(fetched.metadata, url)
                 ?: url,
             resolvedName = resolveDisplayName(providerName),
             lastUpdated = System.currentTimeMillis(),

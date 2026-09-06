@@ -32,6 +32,8 @@ object SubscriptionStandardHeaders {
     const val ANNOUNCE = "announce"
     const val SUPPORT_URL = "support-url"
     const val FALLBACK_URL = "fallback-url"
+    const val NEW_URL = "new-url"
+    const val NEW_DOMAIN = "new-domain"
     const val SUBSCRIPTION_ALWAYS_HWID_ENABLE = "subscription-always-hwid-enable"
     const val PER_APP_PROXY_LIST = "per-app-proxy-list"
     const val PER_APP_PROXY_MODE = "per-app-proxy-mode"
@@ -57,6 +59,8 @@ object SubscriptionStandardHeaders {
         ANNOUNCE,
         SUPPORT_URL,
         FALLBACK_URL,
+        NEW_URL,
+        NEW_DOMAIN,
         SUBSCRIPTION_ALWAYS_HWID_ENABLE,
         PER_APP_PROXY_LIST,
         PER_APP_PROXY_MODE,
@@ -92,6 +96,8 @@ object SubscriptionStandardHeaders {
         announce = decodeTextHeader(headers[ANNOUNCE]),
         supportUrl = normalizeNullableHeader(headers[SUPPORT_URL]),
         fallbackUrl = normalizeNullableHeader(headers[FALLBACK_URL]),
+        newUrl = normalizeNullableHeader(headers[NEW_URL]),
+        newDomain = normalizeNullableHeader(headers[NEW_DOMAIN]),
         requiresHardwareId = normalizeNullableHeader(headers[SUBSCRIPTION_ALWAYS_HWID_ENABLE])
             ?.lowercase() in TRUTHY_HEADER_VALUES,
     )

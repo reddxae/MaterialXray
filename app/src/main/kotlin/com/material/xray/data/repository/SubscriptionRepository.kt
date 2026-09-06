@@ -53,6 +53,8 @@ class SubscriptionRepository @Inject constructor(
 
     suspend fun getById(id: Long): SubscriptionEntity? = subscriptionDao.getById(id)
 
+    fun observeRequiresHardwareIdForServer(serverId: Long): Flow<Boolean?> = subscriptionDao.observeRequiresHardwareIdForServer(serverId)
+
     data class RefreshResult(
         val subscriptionId: Long,
         val serverIdByConfigJson: Map<String, Long>,
@@ -193,6 +195,7 @@ class SubscriptionRepository @Inject constructor(
             // Both endpoints failed; the primary failure is the actionable one.
             throw error
         }.copy(resolvedUrl = url, permanentRedirectUrl = null)
+            .withFallbackPolicyPreserved(existing)
     }
 
     internal suspend fun commitRefresh(prepared: PreparedRefresh): RefreshResult? {
@@ -373,6 +376,18 @@ internal fun SubscriptionEntity.fallbackRefreshUrl(primaryUrl: String): String? 
     if (fallback.equals(primaryUrl.trim(), ignoreCase = true)) return null
     return fallback
 }
+
+/**
+ * A plain backup mirror rarely repeats the provider's metadata. Keeping the policy the primary
+ * URL advertised (its fallback URL and hardware ID requirement) stops one successful fallback
+ * refresh from silently erasing it while the primary endpoint is down.
+ */
+internal fun FetchedSubscription.withFallbackPolicyPreserved(existing: SubscriptionEntity): FetchedSubscription = copy(
+    metadata = metadata.copy(
+        fallbackUrl = metadata.fallbackUrl ?: existing.fallbackUrl,
+        requiresHardwareId = metadata.requiresHardwareId || existing.requiresHardwareId,
+    ),
+)
 
 /**
  * Keeps guarded servers verbatim while every other server is replaced by the fetched set.

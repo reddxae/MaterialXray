@@ -615,6 +615,125 @@ class SubscriptionFetcherTest {
         assertEquals("custom-device", requireNotNull(capture.request).header("x-hwid"))
     }
 
+    @Test
+    fun `body comment headers extract known keys and ignore unknown lines`() {
+        val body = """
+            #profile-title: Test Panel
+            # profile-update-interval: 12
+            #SUBSCRIPTION-USERINFO: upload=1; download=2; total=3; expire=4
+            #created-by: some panel
+            #no-colon-line
+            vless://uuid@example.com:443?encryption=none&type=tcp#Node
+        """.trimIndent()
+
+        val headers = SubscriptionBodyComments.parse(body)
+
+        assertEquals("Test Panel", headers["profile-title"])
+        assertEquals("12", headers["profile-update-interval"])
+        assertEquals("upload=1; download=2; total=3; expire=4", headers["subscription-userinfo"])
+        assertNull(headers["created-by"])
+        assertEquals(3, headers.size)
+    }
+
+    @Test
+    fun `body comment headers accept routing key`() {
+        val body = """
+            #routing: happ://routing/add/eyJCbG9jayI6WyJleGFtcGxlLmNvbSJdfQ==
+            vless://uuid@example.com:443?encryption=none&type=tcp#Node
+        """.trimIndent()
+
+        val headers = SubscriptionBodyComments.parse(body)
+
+        assertEquals("happ://routing/add/eyJCbG9jayI6WyJleGFtcGxlLmNvbSJdfQ==", headers["routing"])
+    }
+
+    @Test
+    fun `merged headers keep response header precedence over body comments`() {
+        val responseHeaders = Headers.headersOf("profile-title", "From Header")
+        val bodyHeaders = SubscriptionBodyComments.parse("#profile-title: From Body")
+
+        val merged = SubscriptionBodyComments.merge(responseHeaders, bodyHeaders)
+
+        assertEquals("From Header", merged["profile-title"])
+    }
+
+    @Test
+    fun `merged headers union per app proxy list from both sources`() {
+        val responseHeaders = Headers.headersOf("per-app-proxy-list", "com.example.one")
+        val bodyHeaders = SubscriptionBodyComments.parse("#per-app-proxy-list: com.example.two")
+
+        val merged = SubscriptionBodyComments.merge(responseHeaders, bodyHeaders)
+
+        assertEquals(listOf("com.example.two", "com.example.one"), merged.values("per-app-proxy-list"))
+    }
+
+    @Test
+    fun `fetch reads metadata from body comments`() = runTest {
+        val fetcher = capturingFetcher(
+            capture = RequestCapture(),
+            body = """
+                #profile-title: Comment Panel
+                #subscription-userinfo: upload=11; download=22; total=33; expire=1700000000
+                #support-url: https://t.me/example
+                vless://uuid@example.com:443?encryption=none&type=tcp#Node
+            """.trimIndent(),
+        )
+
+        val fetched = fetcher.fetchWithMetadata("https://subscriptions.example/comments")
+
+        assertEquals("Comment Panel", fetched.metadata.profileTitle)
+        assertEquals(11L, fetched.metadata.subscriptionUserInfo?.upload)
+        assertEquals("https://t.me/example", fetched.metadata.supportUrl)
+        assertEquals(1, fetched.configs.size)
+    }
+
+    @Test
+    fun `fetch reads metadata from comments inside base64 body`() = runTest {
+        val body = Base64.getEncoder().encodeToString(
+            """
+                #profile-title: Encoded Panel
+                vless://uuid@example.com:443?encryption=none&type=tcp#Node
+            """.trimIndent().toByteArray(),
+        )
+        val fetcher = capturingFetcher(
+            capture = RequestCapture(),
+            body = body,
+            contentType = "application/octet-stream",
+        )
+
+        val fetched = fetcher.fetchWithMetadata("https://subscriptions.example/base64-comments")
+
+        assertEquals("Encoded Panel", fetched.metadata.profileTitle)
+        assertEquals(1, fetched.configs.size)
+    }
+
+    @Test
+    fun `response headers win over body comment metadata`() = runTest {
+        val capture = RequestCapture()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                capture.request = chain.request()
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(OkHttpProtocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .headers(Headers.headersOf("profile-title", "Header Title"))
+                    .body(
+                        """
+                            #profile-title: Comment Title
+                            vless://uuid@example.com:443?encryption=none&type=tcp#Node
+                        """.trimIndent().toResponseBody("text/plain".toMediaType()),
+                    )
+                    .build()
+            }
+            .build()
+
+        val fetched = SubscriptionFetcher(client).fetchWithMetadata("https://subscriptions.example/precedence")
+
+        assertEquals("Header Title", fetched.metadata.profileTitle)
+    }
+
     private class RequestCapture {
         @Volatile
         var request: Request? = null

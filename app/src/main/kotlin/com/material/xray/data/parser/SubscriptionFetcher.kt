@@ -43,6 +43,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -150,7 +151,11 @@ class SubscriptionFetcher @Inject constructor(
             val resolvedUrl = response.request.url.toString()
             val bodyText = response.readSubscriptionBody()
 
-            val metadata = parseMetadata(response)
+            val headers = SubscriptionBodyComments.merge(
+                responseHeaders = response.headers,
+                bodyHeaders = bodyCommentHeaders(bodyText),
+            )
+            val metadata = parseMetadata(headers)
             val configs = parseSubscriptionBody(
                 body = bodyText,
                 contentType = metadata.contentType,
@@ -168,10 +173,21 @@ class SubscriptionFetcher @Inject constructor(
                 metadata = metadata,
                 resolvedUrl = resolvedUrl,
                 permanentRedirectUrl = response.permanentRedirectTarget(originalUrl = originalUrl),
-                appRouting = parseAppRouting(response),
-                routing = parseRouting(response),
+                appRouting = parseAppRouting(headers),
+                routing = parseRouting(headers),
             )
         }
+    }
+
+    // Panels that cannot set response headers embed the same metadata as `#key: value` comment
+    // lines in the body. Bodies are usually base64-encoded wholesale, so fall back to the decoded
+    // text when the raw body carries no known comment headers.
+    private fun bodyCommentHeaders(bodyText: String): Headers {
+        SubscriptionBodyComments.parse(bodyText)
+            .takeIf { it.size > 0 }
+            ?.let { return it }
+        val decoded = decodeBase64ToUtf8(bodyText) ?: return Headers.headersOf()
+        return SubscriptionBodyComments.parse(decoded)
     }
 
     private fun Response.requireValidSubscriptionResponse() {
@@ -523,11 +539,11 @@ class SubscriptionFetcher @Inject constructor(
         return if (host.isNotBlank() && port != null) host to port else null
     }
 
-    private fun parseMetadata(response: Response): SubscriptionMetadata = SubscriptionStandardHeaders.parseMetadata(response.headers)
+    private fun parseMetadata(headers: Headers): SubscriptionMetadata = SubscriptionStandardHeaders.parseMetadata(headers)
 
-    private fun parseAppRouting(response: Response): SubscriptionAppRouting? = SubscriptionStandardHeaders.parseAppRouting(response.headers)
+    private fun parseAppRouting(headers: Headers): SubscriptionAppRouting? = SubscriptionStandardHeaders.parseAppRouting(headers)
 
-    private fun parseRouting(response: Response): SubscriptionRouting? = SubscriptionRoutingHeaderParser.parse(response.headers)
+    private fun parseRouting(headers: Headers): SubscriptionRouting? = SubscriptionRoutingHeaderParser.parse(headers)
 
     private fun isJsonContentType(contentType: String?): Boolean = SubscriptionStandardHeaders.isJsonContentType(contentType)
 

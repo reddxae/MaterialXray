@@ -62,35 +62,73 @@ class SubscriptionFetcherTest {
     }
 
     @Test
-    fun `parse app routing reads invert flag from header`() {
+    fun `parse app routing reads invert list as exception packages`() {
         val headers = Headers.headersOf(
-            "per-app-proxy-list",
-            "com.example.app",
             "per-app-proxy-mode",
-            "bypass",
+            "on",
             "per-app-proxy-list-invert",
-            "1",
+            "com.example.app, org.example.second",
         )
 
         val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
 
+        assertEquals(SubscriptionAppRoutingMode.DefaultSelected, routing.mode)
+        assertEquals(listOf("com.example.app", "org.example.second"), routing.packageNames)
+        assertEquals(true, routing.inverted)
+        assertEquals(
+            SubscriptionAppRoutingMode.Direct,
+            routing.assignmentModeFor("com.example.app"),
+        )
+        assertEquals(
+            SubscriptionAppRoutingMode.DefaultSelected,
+            routing.assignmentModeFor("com.example.unlisted"),
+        )
+    }
+
+    @Test
+    fun `parse app routing unions invert list with regular list`() {
+        val headers = Headers.headersOf(
+            "per-app-proxy-list",
+            "com.example.proxy",
+            "per-app-proxy-mode",
+            "bypass",
+            "per-app-proxy-list-invert",
+            "com.example.app",
+        )
+
+        val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
+
+        assertEquals(SubscriptionAppRoutingMode.Direct, routing.mode)
+        assertEquals(listOf("com.example.proxy", "com.example.app"), routing.packageNames)
         assertEquals(true, routing.inverted)
     }
 
     @Test
-    fun `parse app routing keeps invert off for falsy values`() {
+    fun `parse app routing keeps invert off when header absent`() {
         val headers = Headers.headersOf(
             "per-app-proxy-list",
             "com.example.app",
             "per-app-proxy-mode",
             "bypass",
-            "per-app-proxy-list-invert",
-            "0",
         )
 
         val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
 
         assertEquals(false, routing.inverted)
+    }
+
+    @Test
+    fun `parse app routing accepts on mode header`() {
+        val headers = Headers.headersOf(
+            "per-app-proxy-list",
+            "com.example.app",
+            "per-app-proxy-mode",
+            "on",
+        )
+
+        val routing = requireNotNull(SubscriptionStandardHeaders.parseAppRouting(headers))
+
+        assertEquals(SubscriptionAppRoutingMode.DefaultSelected, routing.mode)
     }
 
     @Test
@@ -708,6 +746,30 @@ class SubscriptionFetcherTest {
         val headers = SubscriptionBodyComments.parse(body)
 
         assertEquals("0", headers["routing-enable"])
+    }
+
+    @Test
+    fun `body comment headers keep non-ascii values`() {
+        val body = """
+            #profile-title: Мой VPN
+            vless://uuid@example.com:443?encryption=none&type=tcp#Node
+        """.trimIndent()
+
+        val headers = SubscriptionBodyComments.parse(body)
+
+        assertEquals("Мой VPN", headers["profile-title"])
+    }
+
+    @Test
+    fun `merged headers keep non-ascii response header values`() {
+        val responseHeaders = Headers.Builder()
+            .addUnsafeNonAscii("profile-title", "Титул из заголовка")
+            .build()
+        val bodyHeaders = SubscriptionBodyComments.parse("#per-app-proxy-list: com.example.one")
+
+        val merged = SubscriptionBodyComments.merge(responseHeaders, bodyHeaders)
+
+        assertEquals("Титул из заголовка", merged["profile-title"])
     }
 
     @Test

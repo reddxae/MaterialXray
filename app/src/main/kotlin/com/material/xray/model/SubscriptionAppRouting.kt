@@ -46,8 +46,8 @@ enum class SubscriptionAppRoutingMode(val persistedValue: String) {
 
     companion object {
         fun fromHeader(value: String?): SubscriptionAppRoutingMode? = when (value?.trim()?.lowercase()?.replace('-', '_')) {
-            "bypass", "direct" -> Direct
-            "default", "default_selected", "proxy" -> DefaultSelected
+            "bypass", "direct", "off" -> Direct
+            "on", "default", "default_selected", "proxy" -> DefaultSelected
             "default_outbound", "inherit" -> DefaultOutbound
             else -> null
         }

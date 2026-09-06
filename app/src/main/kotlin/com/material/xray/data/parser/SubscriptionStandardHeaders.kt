@@ -107,10 +107,22 @@ object SubscriptionStandardHeaders {
             }
             .map { it.trim().trim('"', '\'') }
             .filter { it.isNotEmpty() }
+        // Happ's invert form lists the exception apps: "all apps except these". The listed
+        // packages land in packageNames alongside any regular list, flipping their mode.
+        val invertedPackages = headers.values(PER_APP_PROXY_LIST_INVERT)
+            .flatMap { value ->
+                normalizeNullableHeader(value)
+                    ?.split(PACKAGE_LIST_SEPARATOR_REGEX)
+                    .orEmpty()
+            }
+            .map { it.trim().trim('"', '\'') }
+            .filter { it.isNotEmpty() }
         val mode = SubscriptionAppRoutingMode.fromHeader(headers[PER_APP_PROXY_MODE]) ?: return null
-        val inverted = normalizeNullableHeader(headers[PER_APP_PROXY_LIST_INVERT])
-            ?.lowercase() in TRUTHY_HEADER_VALUES
-        return SubscriptionAppRouting(packageNames, mode, inverted).normalized()
+        return SubscriptionAppRouting(
+            packageNames = packageNames + invertedPackages,
+            mode = mode,
+            inverted = invertedPackages.isNotEmpty(),
+        ).normalized()
     }
 
     fun normalizeContentType(value: String?): String? {

@@ -43,6 +43,9 @@ class SubscriptionAppRoutingRepository @Inject constructor(
     private suspend fun buildProviderAssignments(routing: SubscriptionAppRouting): List<AppBypassEntity> {
         if (routing.packageNames.isEmpty()) return emptyList()
 
+        // Assignments are materialised against the currently installed snapshot. An inverted list
+        // writes explicit rows for every unlisted app, so an app installed afterwards has no row
+        // (and keeps the default proxy route) until the next subscription refresh re-applies it.
         return appInventory.loadRoutingSnapshot().apps
             .mapNotNull { app ->
                 val mode = routing.assignmentModeFor(app.packageName) ?: return@mapNotNull null

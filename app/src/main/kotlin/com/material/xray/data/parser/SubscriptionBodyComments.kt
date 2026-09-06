@@ -16,7 +16,7 @@ object SubscriptionBodyComments {
             val match = commentLineRegex.matchEntire(trimmed) ?: return@forEach
             val (name, value) = match.destructured
             if (name.lowercase() !in knownHeaderNames) return@forEach
-            runCatching { builder.add(name, value) }
+            runCatching { builder.addUnsafeNonAscii(name, value) }
         }
         return builder.build()
     }
@@ -30,9 +30,11 @@ object SubscriptionBodyComments {
         if (bodyHeaders.size == 0) return responseHeaders
         val builder = Headers.Builder()
         // OkHttp resolves duplicate names to the last value, so response headers must be appended
-        // after the body comments to win.
-        bodyHeaders.forEach { (name, value) -> runCatching { builder.add(name, value) } }
-        responseHeaders.forEach { (name, value) -> runCatching { builder.add(name, value) } }
+        // after the body comments to win. Values may be non-ASCII (a Cyrillic profile-title, for
+        // example), and rebuilding real response headers through the strict `add` would silently
+        // drop them, so every insert skips value validation.
+        bodyHeaders.forEach { (name, value) -> runCatching { builder.addUnsafeNonAscii(name, value) } }
+        responseHeaders.forEach { (name, value) -> runCatching { builder.addUnsafeNonAscii(name, value) } }
         return builder.build()
     }
 

@@ -57,7 +57,9 @@ object SubscriptionRoutingHeaderParser {
     }
 
     // Happ's `routing-enable: 0` tells the client the provider does not want the routing header
-    // imported on this subscription. Only explicit falsy values disable; absence stays enabled.
+    // imported on this subscription. Happ's own docs say "any other non-empty value disables", but
+    // unknown truthy spellings are far more likely to be data-entry noise than a real opt-out, so
+    // only explicit falsy values disable here and absence stays enabled.
     private fun routingEnabled(headers: Headers): Boolean {
         val raw = headers[SubscriptionStandardHeaders.ROUTING_ENABLE] ?: return true
         val normalized = SubscriptionStandardHeaders.normalizeNullableHeader(raw) ?: return true
